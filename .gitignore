@@ -3,9 +3,9 @@ dist/
 .env
 .env.*
 !.env.example
-runtime/
-output/
-coverage/
+/runtime/
+/output/
+/coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
