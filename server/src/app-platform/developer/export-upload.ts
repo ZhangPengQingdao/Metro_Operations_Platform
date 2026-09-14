@@ -1,0 +1,12 @@
+import {resolve} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
+import {encodeInstallPackage,INSTALL_BODY_LIMIT} from '../install/wire.js';
+const [directory,signatureFile,output,...rest]=process.argv.slice(2);
+if(!directory||!signatureFile||!output||rest.length)throw Error('Usage: app:export-upload <package-directory> <signature-json> <output-json>');
+const requestId=randomUUID();
+const value=await encodeInstallPackage(resolve(directory),resolve(signatureFile),requestId);
+const bytes=JSON.stringify(value);
+if(Buffer.byteLength(bytes)>INSTALL_BODY_LIMIT)throw Error('INSTALL_PACKAGE_TOO_LARGE');
+await writeFile(resolve(output),bytes,{flag:'wx',mode:0o600});
+console.log(JSON.stringify({appId:value.manifest.id,version:value.manifest.version,requestId,output:resolve(output)}));

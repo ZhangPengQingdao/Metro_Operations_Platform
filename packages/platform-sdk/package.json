@@ -1,0 +1,57 @@
+{
+  "name": "@metro/platform-sdk",
+  "version": "0.0.1",
+  "description": "Public contracts and application SDK for Metro Operations Platform.",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
+    },
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "import": "./dist/capabilities.js"
+    },
+    "./references": {
+      "types": "./dist/references.d.ts",
+      "import": "./dist/references.js"
+    },
+    "./app-manifest": {
+      "types": "./dist/app-manifest.d.ts",
+      "import": "./dist/app-manifest.js"
+    },
+    "./app-gateway": {
+      "types": "./dist/app-gateway.d.ts",
+      "import": "./dist/app-gateway.js"
+    },
+    "./app-test-kit": {
+      "types": "./dist/app-test-kit.d.ts",
+      "import": "./dist/app-test-kit.js"
+    },
+    "./app-sandbox": {
+      "types": "./dist/app-sandbox.d.ts",
+      "import": "./dist/app-sandbox.js"
+    },
+    "./app-backend": {
+      "types": "./dist/app-backend.d.ts",
+      "import": "./dist/app-backend.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

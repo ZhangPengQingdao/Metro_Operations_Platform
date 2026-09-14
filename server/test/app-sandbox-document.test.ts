@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createHash } from 'node:crypto';
+import { buildSandboxDocument } from '../src/app-platform/sandbox/document.ts';
+const part=(text:string)=>({text,bytes:Buffer.byteLength(text),sha256:createHash('sha256').update(text).digest('hex')});
+test('sandbox document validates bytes/hash and emits restrictive response policy before executable content',()=>{
+  const a=buildSandboxDocument({script:part('document.getElementById("app").textContent="hello"'),platformOrigin:'https://platform.example.com'});
+  assert.match(a.headers['Content-Security-Policy'],/sandbox allow-scripts; frame-ancestors https:\/\/platform.example.com/);
+  assert.match(a.html,/connect-src 'none'/);assert.ok(a.html.indexOf('Content-Security-Policy')<a.html.indexOf('<script'));
+  assert.doesNotMatch(a.headers['Content-Security-Policy'],/allow-same-origin|unsafe-inline|unsafe-eval/);
+  const b=buildSandboxDocument({script:part('0'),platformOrigin:'https://platform.example.com'});
+  assert.notEqual(a.headers['Content-Security-Policy'],b.headers['Content-Security-Policy']);
+  assert.equal(a.headers['Cache-Control'],'no-store');
+});
+test('sandbox builder rejects tampered/oversized/unencodable artifacts and origin injection; closing tags cannot escape',()=>{
+  for(const script of [{...part('0'),bytes:2},{...part('0'),sha256:'0'.repeat(64)},part('a'.repeat(1024*1024+1)),part('\ud800')]) {
+    assert.throws(()=>buildSandboxDocument({script,platformOrigin:'https://platform.example.com'}),/SANDBOX_INVALID_ARTIFACT/);
+  }
+  for(const platformOrigin of ['https://platform.example.com/path','https://u:p@example.com','http://platform.example.com',"https://example.com;script-src *"]) {
+    assert.throws(()=>buildSandboxDocument({script:part('0'),platformOrigin}),/SANDBOX_INVALID_PLATFORM_ORIGIN/);
+  }
+  const html=buildSandboxDocument({script:part('const s="</script><img src=x>"'),style:part('/* </style><script> */'),platformOrigin:'http://127.0.0.1:5173'}).html;
+  assert.equal((html.match(/<script nonce=/g)||[]).length,1);assert.equal((html.match(/<\/script>/g)||[]).length,1);
+});

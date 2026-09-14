@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "artifactRoot": "/srv/metro/packages",
+  "runtimeRoot": "/srv/metro/runtime",
+  "uploadRoot": "/srv/metro/uploads",
+  "publisherPolicyFile": "/srv/metro/publishers.json",
+  "approvedManifestDigests": []
+}

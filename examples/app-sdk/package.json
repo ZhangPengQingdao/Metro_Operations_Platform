@@ -1,0 +1,18 @@
+{
+  "name": "afc-sdk-application-examples",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@metro/platform-sdk": "0.1.0-alpha.9",
+    "react": "19.2.4"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

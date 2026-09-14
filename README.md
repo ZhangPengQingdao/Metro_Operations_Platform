@@ -1,0 +1,44 @@
+# 运管开放平台
+
+Metro Operations Platform · 0.0.1
+
+独立的运维应用平台，提供管理员控制台、组织/人员/车站/设备目录、授权审计、模型配置、应用签名安装更新和隔离运行基础。业务功能以独立应用接入。
+
+## 本地开发
+
+需要 Node.js 22.16+、npm、PostgreSQL 16+；独立后端应用另需本地 Docker Engine。
+
+```sh
+npm ci
+npm run build:sdk
+npm --prefix server ci
+cp server/.env.example server/.env
+# 在 server/.env 中配置新的数据库与密钥
+npm --prefix server run db:init
+# 设置 MOP_ADMIN_USERNAME / MOP_ADMIN_DISPLAY_NAME / MOP_ADMIN_PASSWORD 后初始化首位管理员
+npm --prefix server run admin:create
+npm --prefix server run dev
+# 另一个终端
+npm run dev
+```
+
+管理端：http://127.0.0.1:3100/#/admin 。API：127.0.0.1:3101。初始化只创建平台结构，不导入旧系统业务或管理员；服务启动不会自动迁移数据库。
+
+## 检查
+
+```sh
+npm run build
+npm run typecheck
+npm --prefix server run build
+npm test
+npm run version:check
+```
+
+- [开发与目录结构](docs/development.md)
+- [应用接入](docs/applications.md)
+- [运行与部署](docs/deployment.md)
+- [版本规则](docs/versioning.md)
+- [当前能力边界](docs/limitations.md)
+- [拆分说明](docs/extraction.md)
+
+SDK 位于 `packages/platform-sdk`，共享组件位于 `src/components/ui`。源码、数据及启动流程不依赖旧仓库。

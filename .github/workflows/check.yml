@@ -1,0 +1,24 @@
+name: Platform checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - run: npm ci
+      - run: npm run build:sdk
+      - run: npm --prefix server ci
+      - run: npm run version:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm --prefix server run build
+      - run: npm test
