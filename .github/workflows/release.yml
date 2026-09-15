@@ -30,7 +30,8 @@ jobs:
           docker pull "$(python3 -c 'import json; print(json.load(open("deploy/images.json"))["postgres"])')"
           python3 deploy/release.py "$VERSION" release-assets "$RUNNER_TEMP/release-key.pem"
           openssl pkey -in "$RUNNER_TEMP/release-key.pem" -pubout -out release-assets/release-public.pem
-          tar --exclude='__pycache__' -czf release-assets/installer.tar.gz deploy/install.sh deploy/updater.py docs/linux-installation.md
+          cmp deploy/release-public.pub release-assets/release-public.pem
+          tar --exclude='__pycache__' -czf release-assets/installer.tar.gz package.json deploy/install.sh deploy/updater.py deploy/release-public.pub docs/linux-installation.md docs/server-first-install.md
       - name: Publish draft release for review
         env:
           GH_TOKEN: ${{ github.token }}
