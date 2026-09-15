@@ -40,6 +40,8 @@ npm run version:check
 - [员工身份与目录接口](docs/employee-gateway.md)
 - [运行与部署](docs/deployment.md)
 - [Ubuntu 一键安装与在线更新](docs/linux-installation.md)
+- [首次服务器安装步骤](docs/server-first-install.md)
+- [0.2.0 正式发行记录](docs/release-0.2.0.md)
 - [Linux 安装与在线更新实施方案](docs/linux-install-and-update-plan.md)
 - [版本规则](docs/versioning.md)
 - [当前能力边界](docs/limitations.md)
