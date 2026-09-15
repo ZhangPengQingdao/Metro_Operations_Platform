@@ -1,3 +1,4 @@
+import {SystemUpdates} from './SystemUpdates';
 import metadata from '../../../package.json';
 import {Button,Input} from '../../components/ui';
 import React,{useCallback,useEffect,useState} from 'react';
@@ -42,6 +43,6 @@ export default function AdminApp(){
  if(loading)return <div className="afc-admin"><p role="status">正在检查管理员会话…</p></div>;
  if(!user)return <>{error&&<div className="afc-admin"><ErrorNotice error={error}/></div>}<AdminLogin onLogin={async(username,password)=>{setUser(await adminRequest<AdminUser>('/auth/login',{method:'POST',body:{username,password}}));setError('');navigate('/admin');}}/></>;
  if(location.pathname==='/admin/login')return <Navigate to="/admin" replace/>;
- const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage onChange={reloadApps}/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/audit'?<AuditPanel/>:path==='/admin/developer'?<DeveloperPage/>:path.startsWith('/admin/app/')?<AdminApplicationOutlet/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
+ const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage onChange={reloadApps}/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/updates'?<SystemUpdates/>:path==='/admin/audit'?<AuditPanel/>:path==='/admin/developer'?<DeveloperPage/>:path.startsWith('/admin/app/')?<AdminApplicationOutlet/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
  return <AdminShell user={user} applications={applications} onLogout={logout} profileContent={<PasswordPanel onChanged={()=>{setUser(null);navigate('/admin/login');}}/>} notificationsContent={<NotificationsPanel/>}>{content}</AdminShell>;
 }

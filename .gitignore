@@ -11,3 +11,7 @@ dist/
 .DS_Store
 *.pem
 *.key
+
+__pycache__/
+*.pyc
+/release-assets/

@@ -15,6 +15,7 @@ const navigation = [
   {path: '/admin/data', label: '基础数据', icon: 'database' as PlatformIconName},
   {path: '/admin/accounts', label: '账号与权限', icon: 'users' as PlatformIconName},
   {path: '/admin/developer', label: '开发者中心', icon: 'terminal' as PlatformIconName},
+  {path: '/admin/updates', label: '系统更新', icon: 'database' as PlatformIconName},
   {path: '/admin/audit', label: '操作记录', icon: 'clock' as PlatformIconName},
 ];
 const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',navigation:[

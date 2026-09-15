@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import {registerPlatformUpdateRoutes} from './app-platform/admin/update-routes.js';
 import {getCoreConfig} from './core/config/index.js';
 import {getDatabasePool} from './core/database/index.js';
 import {createFastifyRuntimeOptions} from './core/http/index.js';
@@ -27,6 +28,7 @@ export async function buildApp(){
  const management=file?await createAppManagement(file,origin):undefined;
  if(management)app.addHook('onClose',async()=>management.close());
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
+ registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
  registerEmployeeRoutes(app,{origin,service:new EmployeeIdentityService(pool),resolveAdmin:resolveContext,management});
  await registerAdminConsoleRoutes(app,{origin,identity,pool,management,
   lifecycle:management?{origin,resolveContext,getHost:management.getHost}:undefined,

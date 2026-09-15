@@ -26,7 +26,7 @@ export function createAdministratorContext(request:FastifyRequest,identity:Admin
   return {actorType:'administrator',administrator:account,execution:{type:'platform'},request:{requestId:request.id,traceId:request.id,startedAt:new Date().toISOString()},
    authorize:async permission=>{
     const fresh=await identity.authenticate(token);
-    const allowed=!!fresh&&fresh.id===account.id&&['platform.authorization.read','platform.authorization.manage'].includes(permission);
+    const allowed=!!fresh&&fresh.id===account.id&&['platform.authorization.read','platform.authorization.manage','platform.system.update'].includes(permission);
     return {id:randomUUID(),allowed,reasonCode:allowed?'allowed':'permission_not_granted',permissionCode:permission,subjectType:'administrator',effectiveScopes:allowed?[{source:'role',scope:{kind:'all',targets:[]}}]:[],decidedAt:new Date().toISOString()};
    }};
  });
