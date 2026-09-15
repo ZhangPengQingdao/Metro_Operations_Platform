@@ -110,6 +110,8 @@ class Deployment:
    'volumes':[root+'/caddy:/data'],'networks':['internal','edge']}
   atomic(directory/'compose.json',{'services':{'database':db,'api':api,'web':web},'networks':{'internal':{'internal':True},'edge':{}}})
  def backup(self,current,task):
+  database_bytes=sum(p.stat().st_size for p in (self.root/'database').rglob('*') if p.is_file())
+  require(shutil.disk_usage(self.root).free>database_bytes*2+1024**3,'BACKUP_SPACE_REQUIRED')
   folder=self.root/'backups'/task;folder.mkdir(mode=0o700,parents=True,exist_ok=False)
   for filename,args in [('database.dump',['pg_dump','-U','postgres','-Fc','metro_operations_platform']),('roles.sql',['pg_dumpall','-U','postgres','--roles-only'])]:
    with (folder/filename).open('wb') as out:self.compose(current,'exec','-T','database',*args,output=out);out.flush();os.fsync(out.fileno())
@@ -282,7 +284,7 @@ def install(root,v,key):
    'SESSION_SECRET':secrets.token_hex(32),'AI_PROVIDER_ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_BASE_URL':'https://'+domain,'CORS_ORIGIN':'https://'+domain,'COOKIE_SECURE':'true',
    'MOP_ADMIN_USERNAME':username,'MOP_ADMIN_DISPLAY_NAME':'平台管理员','MOP_ADMIN_PASSWORD':password}
   atomic(secretsdir/'api.json',api,0o400);os.chown(secretsdir/'api.json',1000,1000)
-  atomic(root/'config.json',{'domain':domain,'socketGid':gid})
+  atomic(root/'config.json',{'domain':domain,'socketGid':gid,'bootstrapUsername':username.lower()})
   shutil.copyfile(key,root/'release-public.pem');(root/'release-public.pem').chmod(0o600)
   atomic(marker,{'version':v,'phase':'configured'})
  else:
@@ -310,11 +312,13 @@ DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='metro_api' AND (rols
  deployment.compose(directory,'run','--rm','--no-deps','api','dist/setup/database.js')
  # A prior bootstrap acknowledgement may have been lost. Observe the exact saved administrator first.
  count=deployment.compose(directory,'exec','-T','database','psql','-U','postgres','-d','metro_operations_platform','-Atc','SELECT count(*) FROM platform_admin_accounts').decode().strip()
- if count=='0':deployment.compose(directory,'run','--rm','--no-deps','api','dist/core/admin-identity/bootstrap.js')
+ if count=='0':
+  require('MOP_ADMIN_USERNAME' in api and 'MOP_ADMIN_PASSWORD' in api,'BOOTSTRAP_SECRET_MISSING')
+  deployment.compose(directory,'run','--rm','--no-deps','api','dist/core/admin-identity/bootstrap.js')
  else:
   require(count=='1','ADMIN_BOOTSTRAP_CONFLICT')
   existing=deployment.compose(directory,'exec','-T','database','psql','-U','postgres','-d','metro_operations_platform','-Atc','SELECT username FROM platform_admin_accounts').decode().strip()
-  require(existing==api['MOP_ADMIN_USERNAME'].lower(),'ADMIN_BOOTSTRAP_CONFLICT')
+  require(existing==read(root/'config.json').get('bootstrapUsername',api.get('MOP_ADMIN_USERNAME','')).lower(),'ADMIN_BOOTSTRAP_CONFLICT')
  atomic(marker,{'version':v,'phase':'starting'})
  deployment.compose(directory,'up','-d','api');deployment.healthy(directory)
  # Keep bootstrap secrets until completion, allowing interrupted first installation to be resumed.
@@ -338,10 +342,11 @@ WantedBy=multi-user.target
 '''
  pathlib.Path('/etc/systemd/system/mop-updater.service').write_text(unit)
  command(['systemctl','daemon-reload']);command(['systemctl','enable','mop-updater.service']);command(['systemctl','start','--no-block','mop-updater.service'])
- atomic(marker,{'version':v,'phase':'completed'})
+ atomic(marker,{'version':v,'phase':'finalizing'})
  for field in ['MOP_ADMIN_USERNAME','MOP_ADMIN_DISPLAY_NAME','MOP_ADMIN_PASSWORD']:api.pop(field,None)
  atomic(root/'secrets/api.json',api,0o400);os.chown(root/'secrets/api.json',1000,1000)
- deployment.compose(directory,'up','-d','--force-recreate','api');deployment.healthy(directory)
+ deployment.compose(directory,'up','-d','--force-recreate','api');deployment.healthy(directory);deployment.web_healthy()
+ atomic(marker,{'version':v,'phase':'completed'})
  print('Installed: https://'+config['domain']+'/#/admin')
 if __name__=='__main__':
  try:main()
