@@ -7,14 +7,16 @@ import {AppInstaller} from '../install/service.js';
 import {PostgresInstallJournal} from '../install/journal.js';
 import {AppVersionService,PostgresAppVersionJournal,createVersionedArtifactReader} from '../install/version-service.js';
 import {createAppRuntimeComposition} from '../runtime/composition.js';
-import {AppGateway} from '../gateway/gateway.js';
-import {createPlatformActorContextResolver,type PlatformManagementContext} from '../../platform/context/index.js';
+import {type PlatformManagementContext} from '../../platform/context/index.js';
 import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
 import {createAuthorizationService,createPostgresAuthorizationRepository} from '../../platform/authorization/index.js';
 import {loadPublisherPolicy} from '../developer/publisher-policy.js';
 import {loadAppManagementConfig,manifestApprovalDigest,isAppRuntimeSupported} from './config.js';
 import {createManagementQueue} from './queue.js';
 import {readInstalledAdminUi,AppManagementError} from './ui.js';
+import {createManagedStorageComposition,createStorageArtifactReader} from './storage.js';
+import {createManagementGateway} from './gateway.js';
+import {GatewayError} from '../gateway/model.js';
 /** Opt-in application management composition; does not run schema migrations on startup. */
 export async function createAppManagement(configFile:string,origin:string){
  const config=await loadAppManagementConfig(configFile);
@@ -33,16 +35,18 @@ export async function createAppManagement(configFile:string,origin:string){
  const people=createPostgresPeopleDirectoryRepository(db);
  const authorization=createAuthorizationService(createPostgresAuthorizationRepository(db),{findPerson:id=>people.findPersonById(id)});
  const registry=new AppRegistryService(repository,{authorization,host:async()=>({platformVersion:getCoreConfig().runtime.releaseVersion.value,capabilities:PLATFORM_CAPABILITY_CATALOG.map(({id,contractVersion})=>({id,contractVersion})),applications:(await repository.list(500)).filter(record=>record.enabled).map(record=>({id:record.appId,version:record.manifest.version}))})});
- const resolver=createPlatformActorContextResolver({people,authorization,resolveAppGrant:registry.createGrantResolver()});
- // No implicit business operations. Named adapters must be composed explicitly before admission.
- const gateway=new AppGateway({registry,contextResolver:resolver,operations:[]});
  const installJournal=new PostgresInstallJournal(db);
  const versionJournal=new PostgresAppVersionJournal(db);
  const readArtifact=createVersionedArtifactReader(installJournal,versionJournal);
- const runtime=createAppRuntimeComposition({registry,gateway,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(config.docker?{docker:{...config.docker,client:db}}:{})});
+ const storage=config.managedStorage?await createManagedStorageComposition({apiDatabaseUrl:connectionString,
+  adminDatabaseUrl:process.env.MOP_APP_STORAGE_ADMIN_DATABASE_URL,apiClient:db,
+  registry:client=>new AppRegistryService(new PostgresAppRegistryRepository(client),{authorization,host:()=>{throw new Error('STORAGE_REGISTRY_READ_ONLY');}}),
+  reader:createStorageArtifactReader({getInstallation:appId=>repository.findByAppId(appId),readArtifact})}):undefined;
+ const gateway=createManagementGateway(getDatabasePool()!,storage?.runtimeData.operations());
+ const runtime=createAppRuntimeComposition({registry,gateway,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
  const approve=async(_context:PlatformManagementContext,manifest:Parameters<typeof manifestApprovalDigest>[0])=>{
   const fresh=await loadAppManagementConfig(configFile);
-  return isAppRuntimeSupported(manifest,config)&&fresh.approvedManifestDigests.includes(manifestApprovalDigest(manifest));
+  return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&fresh.approvedManifestDigests.includes(manifestApprovalDigest(manifest));
  };
  const loadPolicy=()=>loadPublisherPolicy(config.publisherPolicyFile);
  const installer=new AppInstaller({registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
@@ -58,6 +62,11 @@ export async function createAppManagement(configFile:string,origin:string){
  }
 
  return {
+  async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown){
+   const host=runtime.findHost(appId);
+   if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   return host.invokeDelegated(resolveIdentity,request);
+  },
   uploadRoot:config.uploadRoot,
   install:(context:PlatformManagementContext,input:Parameters<AppInstaller['install']>[1])=>queue.run(()=>installer.install(context,input)),
   status:(context:PlatformManagementContext,appId:string)=>queue.run(()=>installer.status(context,appId)),

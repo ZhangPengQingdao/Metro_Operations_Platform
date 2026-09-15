@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { QueryableClient } from '../../core/database/index.js';
 import { isNativeManagementActor, managementActorId, type PlatformManagementContext } from '../../platform/context/index.js';
 import type { AppRegistryService } from '../registry/index.js';
+import {recoverRuntimeStorageLease} from './runtime-evidence.js';
 import { AppStorageService } from './index.js';
 import { AppStorageError, binding, manage, type ManagedAppStorage } from './binding.js';
 import type { AppMigrationCredentials } from './postgres-migration-driver.js';
@@ -135,6 +136,7 @@ export class ManagedAppOperations {
  }
 
  private async recoverLocked(client: QueryableClient, plan: Readonly<ManagedAppStorage>) {
+  await recoverRuntimeStorageLease(client,plan);
   const leases = await rows<{id:string;owner_role:string}>(client,
    "SELECT id,owner_role FROM public.platform_app_storage_leases WHERE installation_id=$1 AND status='active'",[plan.installationId]);
   if (!leases.length) return;
@@ -155,7 +157,7 @@ export class ManagedAppOperations {
  }
 }
 
-function scram(password: string) {
+export function scram(password: string) {
  const salt = randomBytes(16); const iterations = 4096;
  const salted = pbkdf2Sync(password,salt,iterations,32,'sha256');
  const clientKey = createHmac('sha256',salted).update('Client Key').digest();

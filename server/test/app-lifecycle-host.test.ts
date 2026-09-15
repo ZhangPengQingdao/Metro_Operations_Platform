@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createAppRuntimeComposition } from '../src/app-platform/runtime/composition.ts';
 import { AppLifecycleHost } from '../src/app-platform/runtime/lifecycle-host.ts';
 import { AppGateway } from '../src/app-platform/gateway/gateway.ts';
 import assert from 'node:assert/strict';
@@ -185,4 +186,40 @@ test('lifecycle recovery after definitive create rejection stays disabled withou
   r=await p.registry.get(p.admin,m.id);assert.equal(r.enabled,false);assert.equal((await journal.latest(r.id))!.status,'rejected');
   r=await host.recover(p.admin,r.revision);assert.equal(r.enabled,false);assert.equal(r.lifecycle!.status,'cancelled');assert.equal(creates,1);
  }finally{await host?.close();await db.close();await f.close();}
+});
+
+test('employee Gateway ingress requires a serving lifecycle owner and closes on disable',async()=>{
+ const f=await hostFixture();let reads=0;
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[{
+  name:'platform.assets.get',permissionCode,mode:'read',validateParams:()=>true,validateResult:()=>true,
+  resolveResources:async()=>[{organizationUnitId:org}],execute:async()=>{reads++;return {ok:true};}
+ }]});
+ const host=new AppLifecycleHost({...f.options,gateway});
+ const identity=async()=>({source:'session' as const,userId:personId});
+ const request={version:'1.0',operation:'platform.assets.get',params:{}};
+ try{
+  let r=await f.registry.register(f.admin,manifest());
+  await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);
+  r=await f.registry.approveGrant(f.admin,r.appId,r.revision,{mode:'delegated_user',permissionCode,scope:{kind:'all',targets:[]}});
+  r=await host.execute(f.admin,{revision:r.revision,action:'install'});
+  assert.equal((await host.invokeDelegated(identity,request)).result.ok,true);
+  r=await host.execute(f.admin,{revision:r.revision,action:'disable'});
+  await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);assert.equal(reads,1);
+  r=await host.execute(f.admin,{revision:r.revision,action:'enable'});
+  const live=f.sessions.filter(s=>s.listenerCount('error')>0).at(-1)!;
+  live.emit('error');
+  await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);assert.equal(reads,1);
+ }finally{await host.close();await f.close();}
+});
+
+
+test('employee ingress lookup does not create runtime hosts and closes with composition',async()=>{
+ const f=await hostFixture();const runtime=createAppRuntimeComposition(f.options);
+ try{
+  assert.equal(runtime.findHost('unknown-app'),undefined);
+  const host=await runtime.getHost('tool-lending');
+  assert.equal(runtime.findHost('tool-lending'),host);
+  assert.equal(runtime.findHost('unknown-app'),undefined);
+  await runtime.close();assert.equal(runtime.findHost('tool-lending'),undefined);
+ }finally{await runtime.close();await f.close();}
 });

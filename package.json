@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -32,7 +32,7 @@
     "react-router-dom": "^7.13.0",
     "xlsx": "^0.18.5",
     "zod": "4.2.0",
-    "@metro/platform-sdk": "0.0.1"
+    "@metro/platform-sdk": "0.1.0"
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",

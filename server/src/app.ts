@@ -10,6 +10,8 @@ import {registerCors} from './plugins/cors.js';
 import {registerSecurity} from './plugins/security.js';
 import {registerErrorHandler} from './middleware/error-handler.js';
 import {registerHealthRoutes} from './core/health/index.js';
+import {EmployeeIdentityService} from './platform/employee-identity/index.js';
+import {registerEmployeeRoutes} from './app-platform/employee/routes.js';
 
 export async function buildApp(){
  const config=getCoreConfig();
@@ -25,6 +27,7 @@ export async function buildApp(){
  const management=file?await createAppManagement(file,origin):undefined;
  if(management)app.addHook('onClose',async()=>management.close());
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
+ registerEmployeeRoutes(app,{origin,service:new EmployeeIdentityService(pool),resolveAdmin:resolveContext,management});
  await registerAdminConsoleRoutes(app,{origin,identity,pool,management,
   lifecycle:management?{origin,resolveContext,getHost:management.getHost}:undefined,
   install:management?{origin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});

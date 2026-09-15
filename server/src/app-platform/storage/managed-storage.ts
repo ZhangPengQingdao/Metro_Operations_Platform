@@ -1,3 +1,4 @@
+import {assertRuntimeWritesSettled} from './runtime-evidence.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { runDatabaseTransaction } from '../../core/database/index.js';
@@ -13,7 +14,7 @@ import { AppMigrationReceipts } from './migration-receipts.js';
 import { PostgresAppMigrationDriver, type AppMigrationCredentials } from './postgres-migration-driver.js';
 import { exportAppData, restoreAppData, type AppPortableClient } from './portable-data.js';
 
-import { assertNoPendingRestore, acceptsMigrationDigest } from './lifecycle-evidence.js';
+import { assertNoPendingRestore, assertStorageMigrationsReady } from './lifecycle-evidence.js';
 
 /** Platform composition entrypoint. Never expose dependency constructors or owner callbacks to apps. */
 export class ManagedAppStorageService {
@@ -157,23 +158,8 @@ export class ManagedAppStorageService {
     }
   }
   private async requireSettled(scope: ManagedAppLockedScope, context: PlatformManagementContext, appId: string, digest = scope.binding.manifestDigest) {
-    await assertNoPendingRestore(scope.client, scope.binding.installationId);
-    const result = await scope.client.query(`SELECT id,status,ordinal,manifest_digest,migration_id,artifact_id,artifact_path,artifact_sha256,artifact_bytes FROM public.platform_app_migration_attempts
-      WHERE installation_id=$1 AND status IN ('running','uncertain','applied') ORDER BY ordinal LIMIT 129`, [scope.binding.installationId]) as { rows: { id:string; status: string; ordinal: number; manifest_digest: string; migration_id: string; artifact_id: string; artifact_path: string; artifact_sha256: string; artifact_bytes: number }[] };
-    const current = await scope.registry.get(context, appId);
-    if (result.rows.some(row => row.status !== 'applied')) throw new AppStorageError('MIGRATION_ATTEMPT_BLOCKED');
-    if (current.manifest.storage.mode !== 'managed' || result.rows.length !== current.manifest.storage.migrations.length
-      || result.rows.some((row, ordinal) => row.ordinal !== ordinal)) throw new AppStorageError('MIGRATIONS_NOT_COMPLETE');
-    const declarations = current.manifest.storage.migrations;
-    for (const [ordinal,row] of result.rows.entries()) {
-      const declaration = declarations[ordinal];
-      const artifact = current.manifest.artifacts.find(item => item.id === declaration.artifactId);
-      if (!(await acceptsMigrationDigest(scope.client,row.id,row.manifest_digest,digest)) || row.migration_id !== declaration.id
-        || !artifact || row.artifact_id !== artifact.id || row.artifact_path !== artifact.path
-        || row.artifact_sha256 !== artifact.sha256 || row.artifact_bytes !== artifact.bytes)
-        throw new AppStorageError('MIGRATION_LEDGER_CONFLICT');
-    }
-    return result.rows;
+    await assertRuntimeWritesSettled(scope.client,scope.binding.installationId);
+    return assertStorageMigrationsReady(scope.client,await scope.registry.get(context,appId),digest);
   }
   private async withConnection<T>(credentials: AppMigrationCredentials, binding: Readonly<ManagedAppStorage>, work: (client: AppPortableClient) => Promise<T>) {
     const client = new Client({ ...credentials, connectionTimeoutMillis: 5000,

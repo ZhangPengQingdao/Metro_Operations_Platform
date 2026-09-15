@@ -14,7 +14,7 @@ function fixture() {
     binding,
     storage:{assertReady:async()=>{calls.push('storage');if(state.retained)throw Error('STORAGE_RETAINED');return binding;}},
     registry:{get:async()=>({manifest:{storage:{mode:'managed',migrations:[{id:'initial',artifactId:'migration'}]},artifacts:[{id:'migration',path:row.artifact_path,sha256:row.artifact_sha256,bytes:row.artifact_bytes}]}})},
-    client:{query:async(sql:string)=>{if(sql.includes('platform_app_storage_restores'))return {rows:[]};if(sql.includes('migration_adoptions'))return {rows:[]};calls.push('ledger');return {rows:state.rows};}},
+    client:{query:async(sql:string)=>{if(sql.includes('platform_app_storage_restores')||sql.includes('platform_app_runtime_storage_writes'))return {rows:[]};if(sql.includes('migration_adoptions'))return {rows:[]};calls.push('ledger');return {rows:state.rows};}},
     revalidate:async()=>{calls.push('revalidate');if(state.stale)throw Error('STALE_REVISION');},
     withOwner:async()=>{throw Error('OWNER_MUST_NOT_BE_ISSUED');},
   } as unknown as ManagedAppLockedScope;

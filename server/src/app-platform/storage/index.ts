@@ -21,6 +21,9 @@ export * from './lifecycle-evidence.js';
 export class AppStorageService {
   constructor(private readonly registry: Pick<AppRegistryService, 'get'>, private readonly client: QueryableClient) {}
 
+  /** Read-only startup preflight; never repairs database-wide privileges. Rechecked on every operation. */
+  assertEnvironmentReady(): Promise<void> { return this.prerequisites(); }
+
   async describe(context: PlatformManagementContext, appId: string): Promise<AppStorageBinding> {
     return binding(await this.registry.get(context, appId));
   }
@@ -30,6 +33,11 @@ export class AppStorageService {
     await manage(context);
     const plan = await this.describe(context, appId);
     if (plan.mode !== 'managed') throw new AppStorageError('MIGRATION_STORAGE_NOT_MANAGED');
+    return this.assertBoundRuntimeReady(plan);
+  }
+
+  /** Trusted broker only: binding must come from a freshly authorized registry record. */
+  async assertBoundRuntimeReady(plan: ManagedAppStorage):Promise<ManagedAppStorage> {
     return runDatabaseTransaction(this.client, async () => {
       await this.lock(plan);
       if (!await this.existing(plan)) throw new AppStorageError('STORAGE_NOT_PROVISIONED');

@@ -83,6 +83,13 @@ export class AppLifecycleHost {
     return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
       ()=>api.invoke(context,request,signal),()=>transport.drain());
   }
+  /** Employee ingress uses the same durable work boundary as backend service requests. */
+  async invokeDelegated(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:unknown,signal?:AbortSignal){
+    if(!this.active||!this.lease||this.lease.signal.aborted)throw new GatewayError('ACCESS_DENIED',403);
+    const installation=this.active,lease=this.lease;
+    return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)throw new GatewayError('ACCESS_DENIED',403);},
+      ()=>this.options.gateway.invokeDelegatedFromSession(installation.appId,resolveIdentity,request,signal),()=>this.options.gateway.drain(installation.appId));
+  }
   async status(context: PlatformManagementContext) {
     const installation=await this.options.registry.get(context,this.options.appId);
     return { installation, owned:!!this.lease&&!this.lease.signal.aborted, serving:!!this.active&&this.active.revision===installation.revision&&installation.enabled };

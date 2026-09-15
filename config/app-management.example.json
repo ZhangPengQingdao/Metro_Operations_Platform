@@ -4,5 +4,6 @@
   "runtimeRoot": "/srv/metro/runtime",
   "uploadRoot": "/srv/metro/uploads",
   "publisherPolicyFile": "/srv/metro/publishers.json",
-  "approvedManifestDigests": []
+  "approvedManifestDigests": [],
+  "managedStorage": false
 }

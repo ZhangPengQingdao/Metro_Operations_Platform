@@ -83,3 +83,17 @@ function boundedJson(input: unknown, maxBytes = 65536): AppGatewayJson {
   if (new TextEncoder().encode(JSON.stringify(output)).byteLength>maxBytes) throw new AppGatewayClientError('INVALID_JSON');
   return output;
 }
+
+/** Service backend only. Persist one requestId per write intent; this helper never retries. */
+export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+  return Object.freeze({
+    get(table:string,id:string,signal?:AbortSignal){return gateway.invoke('platform.app_data.get',{table,id},signal);},
+    insert(table:string,id:string,requestId:string,values:Readonly<Record<string,AppGatewayJson>>,signal?:AbortSignal){
+      return gateway.invoke('platform.app_data.write',{table,id,requestId,action:'insert',values},signal);
+    },
+    update(table:string,id:string,requestId:string,values:Readonly<Record<string,AppGatewayJson>>,signal?:AbortSignal){
+      return gateway.invoke('platform.app_data.write',{table,id,requestId,action:'update',values},signal);
+    },
+    delete(table:string,id:string,requestId:string,signal?:AbortSignal){return gateway.invoke('platform.app_data.write',{table,id,requestId,action:'delete'},signal);},
+  });
+}

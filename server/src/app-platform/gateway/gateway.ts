@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { TrustedActorIdentity } from '../../core/identity/index.js';
 import { createCoreTraceContext, type CoreTechnicalAuditRepository } from '../../core/observability/index.js';
 import type { PlatformActorContextResolver } from '../../platform/context/index.js';
@@ -44,8 +45,16 @@ export class AppGateway {
   /** Host-only entry point: identity MUST come from verified L1 session/Bridge composition. */
   invokeDelegated(appId:string,trustedIdentity:TrustedActorIdentity,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
     const identity=structuredClone(trustedIdentity);
+    return this.invokeDelegatedFromSession(appId,async()=>identity,request,signal);
+  }
+  /** Trusted host callback, re-authenticated before execution and before result delivery. */
+  invokeDelegatedFromSession(appId:string,resolveIdentity:()=>Promise<TrustedActorIdentity>,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
+    let pinned:TrustedActorIdentity|undefined;
     return this.invoke(appId,async()=>parseGatewayRequest(request,this.admission.limits.requestBytes),async()=>{
+      const identity=structuredClone(await resolveIdentity());
       if(identity.source==='service') throw new GatewayError('INVALID_IDENTITY',401);
+      if(pinned&&!isDeepStrictEqual(pinned,identity))throw new GatewayError('INVALID_IDENTITY',401);
+      pinned??=identity;
       return {actorType:'person' as const,trustedIdentity:identity,execution:{type:'application' as const,appId}};
     },signal);
   }
@@ -118,6 +127,11 @@ export class AppGateway {
       const result=jsonSnapshot(await operation.execute(context,request.params,controller.signal),this.admission.limits.resultBytes);check();
       if(!operation.validateResult(result)) throw new GatewayError('INVALID_RESULT',502);
       await authorize();check();
+      if(operation.resolveResultResources){
+        const resources=await operation.resolveResultResources(context,result);check();
+        if(!Array.isArray(resources)||!resources.length||resources.length>128)throw new GatewayError('ACCESS_DENIED',403);
+        for(const resource of resources){if(!(await context.authorize(operation.permissionCode,resource)).allowed)throw new GatewayError('ACCESS_DENIED',403);check();}
+      }
       await boundedAudit(recordTerminal('succeeded',undefined,operation.mode));check();
       return {version:'1.0',requestId:trace.requestId!,traceId:trace.traceId,result};
     };

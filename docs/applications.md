@@ -4,6 +4,8 @@
 
 管理端默认装配支持 `ui: sandbox/none`、`backend: none/isolated`、`storage: none` 的签名应用。独立后端使用平台审批的固定 Node 镜像，内存/CPU 有界，非 root、文件系统只读、网络隔离，并提供容器内 8080 健康端点。
 
+显式开启 `managedStorage` 并配置独立存储管理连接后，隔离后端应用可声明 `storage: managed`，接通建表、迁移和同结构升级等生命周期。数据库前置条件、权限限制与验证范围见 [托管存储](managed-storage.md)。同一开关装配应用服务身份的 `platform.app_data.get/write` 与 SDK 单行读写接口；表结构与授权限制见上述文档。
+
 SDK 导出 manifest、gateway、sandbox、backend 和 test-kit 契约。`examples/installable-app` 可构建最小签名安装样本：
 
 ```sh
@@ -23,6 +25,6 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 创建请求完整收到 Docker 400 并核对容器不存在时，可记录明确拒绝并恢复到停用；超时、断连、核对失败及结果未知继续阻断，不自动重放，也不凭稍后查不到容器就清除历史。
 
-管理员页面装载不会赋予应用员工身份或业务权限。未来业务应用按需接入业务接口、授权与存储适配，详见当前能力边界。
+管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get` 与 `platform.assets.get`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
 
 CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默认管理端不挂载该入口；本版通过管理端上传导出的签名 JSON 包安装。

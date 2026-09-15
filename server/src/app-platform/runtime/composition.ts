@@ -8,6 +8,8 @@ export function createAppRuntimeComposition(options:Omit<AppLifecycleHostOptions
  const {docker,...shared}=options;
  const adapter=docker?{socketPath:docker.socketPath,runtimeImage:docker.runtimeImage,approval:docker.approval,executor:new AppDockerExecutor(new AppDockerTransport({socketPath:docker.socketPath})),journal:new AppDockerJournal(docker.client)}:undefined;
  return {
+  // Public ingress must never allocate hosts from caller-supplied application IDs.
+  findHost(appId:string){return closed?undefined:hosts.get(appId);},
   async getHost(appId:string){
    if(closed)throw Error('APP_RUNTIME_CLOSED');
    if(!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(appId)||appId.length>64)throw Error('INVALID_APP_ID');
