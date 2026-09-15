@@ -3,7 +3,7 @@ const db=new Client({connectionString:process.env.DATABASE_URL});
 try{
  await db.connect();
  const checks=[
-  "SELECT 1 FROM platform_app_installations WHERE enabled=true LIMIT 1",
+  "SELECT 1 FROM platform_app_installations WHERE record->>'enabled'='true' LIMIT 1",
   "SELECT 1 FROM platform_app_runtime_work WHERE settled_at IS NULL LIMIT 1",
   "SELECT 1 FROM platform_app_runtime_storage_writes WHERE status='dispatched' LIMIT 1",
   "SELECT 1 FROM platform_app_storage_leases WHERE status='active' LIMIT 1",
