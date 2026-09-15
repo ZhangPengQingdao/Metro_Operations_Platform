@@ -194,13 +194,15 @@ class Updater:
    self.task['failedPhase']=self.task['phase'];self.phase('recovery_required' if maintenance or migration else 'failed',code)
  def recover(self,task_id,mode):
   require(self.task and self.task['id']==task_id and self.task['phase']=='recovery_required','RECOVERY_TASK_MISMATCH')
-  stage=self.task.get('failedPhase');require(mode in ('restart-current','resume-target'),'INVALID_RECOVERY_MODE')
+  stage=self.task.get('recoveryOriginPhase',self.task.get('failedPhase'));require(mode in ('restart-current','resume-target'),'INVALID_RECOVERY_MODE')
   directory=self.root/'releases'/(self.task['fromVersion'] if mode=='restart-current' else self.task['version'])
   m=verify(directory,self.root/'release-public.pem',directory.name);verify_archive(directory,m)
   if mode=='restart-current':require(stage in ('queued','downloading','verified','preflight','maintenance','backing_up'),'DATABASE_MAY_HAVE_MIGRATED')
   else:
    require(stage in ('migrating','switching','health_check'),'NO_MIGRATION_TO_RESUME')
    require((self.root/'backups'/task_id/'complete.json').exists(),'VERIFIED_BACKUP_REQUIRED')
+  # Keep the original migration boundary across failures/restarts of recovery itself.
+  self.task.setdefault('recoveryOriginPhase',stage)
   self.task['recoveryMode']=mode;self.task['recoveryBy']='local-root';self.phase('preflight')
   try:
    self.deployment.prepare(directory,m)

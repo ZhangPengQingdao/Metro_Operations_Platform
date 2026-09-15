@@ -69,6 +69,21 @@ class Fixture(unittest.TestCase):
   u.atomic(self.root/'requests'/request,recorded)
   self.assertEqual(updater.start('download','0.3.0',actor,request),recorded)
   with self.assertRaisesRegex(u.Failure,'REQUEST_CONFLICT'):updater.start('install','0.3.0',actor,request)
+ def test_interrupted_recovery_preserves_original_migration_boundary(self):
+  class PowerLoss(BaseException):pass
+  class Deployment:
+   def prepare(self,*args):raise PowerLoss()
+  updater=u.Updater(self.root,github=object(),deployment=Deployment())
+  task_id=str(uuid.uuid4())
+  updater.task={'id':task_id,'phase':'recovery_required','failedPhase':'migrating','version':'0.3.0','fromVersion':'0.2.0','action':'install'}
+  u.atomic(self.root/'backups'/task_id/'complete.json',{'taskId':task_id})
+  with patch.object(u,'verify',return_value=self.m),patch.object(u,'verify_archive'):
+   with self.assertRaises(PowerLoss):updater.recover(task_id,'resume-target')
+   restarted=u.Updater(self.root,github=object(),deployment=Deployment())
+   self.assertEqual(restarted.task['failedPhase'],'preflight')
+   self.assertEqual(restarted.task['recoveryOriginPhase'],'migrating')
+   with self.assertRaisesRegex(u.Failure,'DATABASE_MAY_HAVE_MIGRATED'):restarted.recover(task_id,'restart-current')
+   with self.assertRaises(PowerLoss):restarted.recover(task_id,'resume-target')
  def test_repeat_install_preserves_completed_installation(self):
   u.atomic(self.root/'installation.json',{'version':'0.2.0','phase':'completed'})
   with patch.object(u.platform,'system',return_value='Linux'),patch.object(u.platform,'machine',return_value='x86_64'),patch.object(pathlib.Path,'read_text',return_value='ID=ubuntu\nVERSION_ID="24.04"'),patch.object(u,'read',return_value={'version':'0.2.0','phase':'completed'}),patch.object(u,'command'),patch.object(u.shutil,'disk_usage',return_value=type('Space',(),{'free':20*1024**3})()):
