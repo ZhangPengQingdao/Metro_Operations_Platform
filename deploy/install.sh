@@ -6,7 +6,8 @@ source /etc/os-release
 [[ "$ID" == ubuntu && "$VERSION_ID" == 24.04 && "$(uname -m)" == x86_64 ]] || { echo '首版仅支持 Ubuntu 24.04 / x86_64。' >&2; exit 1; }
 if ! command -v docker >/dev/null; then
   # Dedicated new host only; never uninstall an existing Docker/containerd installation.
-  if dpkg-query -W -f='${Status}' docker.io containerd runc 2>/dev/null | grep -q 'install ok installed'; then
+  installed_packages=$(dpkg-query -W -f='${binary:Package} ${Status}\n')
+  if grep -Eq '^(docker\.io|containerd|runc)(:[^ ]+)? install ok installed$' <<< "$installed_packages"; then
     echo '发现已有容器运行时，请先人工核对兼容性。' >&2; exit 1
   fi
   apt-get update
