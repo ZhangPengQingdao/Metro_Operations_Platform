@@ -16,7 +16,7 @@ def build(version,out,key):
  archive=root/'images.tar'
  digest=file_hash(archive)
  manifest={'format':1,'version':version,'architecture':'linux/amd64','repository':'ZhangPengQingdao/Metro_Operations_Platform',
-  'commit':run('git','rev-parse','HEAD'),'minUpdater':1,'upgradeFromMin':'0.2.0','databaseMajor':17,
+  'commit':run('git','rev-parse','HEAD'),'minUpdater':2,'upgradeFromMin':'0.2.0','databaseMajor':17,
   'images':images,'artifact':{'name':'images.tar','sha256':digest,'bytes':archive.stat().st_size}}
  (root/'release.json').write_text(json.dumps(manifest,sort_keys=True,separators=(',',':')))
  subprocess.run(['openssl','pkeyutl','-sign','-rawin','-inkey',key,'-in',str(root/'release.json'),'-out',str(root/'release.sig')],check=True)

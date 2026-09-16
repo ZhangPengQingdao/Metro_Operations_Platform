@@ -13,7 +13,7 @@ try:
  postgres=json.loads(pathlib.Path('deploy/images.json').read_text())['postgres']
  run('docker','pull',postgres)
  secret=root/'postgres';secret.write_text(password);secret.chmod(0o444)
- run('docker','run','-d','--name',db,'--network',network,'--network-alias','database','-v',str(secret)+':/run/secrets/password:ro','-e','POSTGRES_PASSWORD_FILE=/run/secrets/password',postgres)
+ run('docker','run','-d','-p','127.0.0.1::3101','--name',db,'--network',network,'--network-alias','database','-v',str(secret)+':/run/secrets/password:ro','-e','POSTGRES_PASSWORD_FILE=/run/secrets/password',postgres)
  for _ in range(60):
   if run('docker','exec',db,'pg_isready','-U','postgres',check=False).returncode==0:break
   time.sleep(1)
@@ -24,26 +24,43 @@ try:
   if statement.strip():
    r=subprocess.run(['docker','exec','-i',db,'psql','-U','postgres','-v','ON_ERROR_STOP=1'],input=statement.encode(),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    assert r.returncode==0
- settings={'DATABASE_URL':f'postgresql://metro_api:{password}@database/metro_operations_platform','SESSION_SECRET':secrets.token_hex(32),'AI_PROVIDER_ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_BASE_URL':'https://ops.example.com','CORS_ORIGIN':'https://ops.example.com','HOST':'0.0.0.0','MOP_ADMIN_USERNAME':'smokeadmin','MOP_ADMIN_DISPLAY_NAME':'Smoke','MOP_ADMIN_PASSWORD':admin_password}
+ settings={'DATABASE_URL':f'postgresql://metro_api:{password}@127.0.0.1/metro_operations_platform','SESSION_SECRET':secrets.token_hex(32),'AI_PROVIDER_ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_BASE_URL':'https://ops.example.com','CORS_ORIGIN':'https://ops.example.com','HOST':'0.0.0.0','MOP_ADMIN_USERNAME':'smokeadmin','MOP_ADMIN_DISPLAY_NAME':'Smoke','MOP_ADMIN_PASSWORD':admin_password}
+ # Exercise the same shared database network and managed-storage startup as the trial installer.
+ subprocess.run(['docker','exec','-i',db,'psql','-U','postgres','-d','metro_operations_platform','-v','ON_ERROR_STOP=1'],input=b'REVOKE CREATE,TEMPORARY ON DATABASE metro_operations_platform FROM PUBLIC; REVOKE CREATE ON SCHEMA public FROM PUBLIC;',check=True,stdout=subprocess.DEVNULL)
+ import sys
+ sys.path.insert(0,str(pathlib.Path('deploy').resolve()))
+ from updater import RUNTIME_IMAGE
+ run('docker','pull',RUNTIME_IMAGE)
+ image=json.loads(run('docker','image','inspect',RUNTIME_IMAGE).stdout)[0]
+ apps=root/'apps';apps.mkdir();apps.chmod(0o777)
+ for name in ['packages','runtime','uploads']:
+  (apps/name).mkdir();(apps/name).chmod(0o777)
+ policy=apps/'publishers.json';policy.write_text(json.dumps({'policyVersion':'1.0','revision':1,'keys':[]}));policy.chmod(0o444)
+ management=root/'app-management.json'
+ management.write_text(json.dumps({'version':1,'artifactRoot':str(apps/'packages'),'runtimeRoot':str(apps/'runtime'),'uploadRoot':str(apps/'uploads'),'publisherPolicyFile':str(policy),'approvedManifestDigests':[],'managedStorage':True,'docker':{'socketPath':'/var/run/docker.sock','runtimeImage':RUNTIME_IMAGE,'approval':{'imageId':image['Id'],'config':image['Config']}}}));management.chmod(0o444)
+ settings.update({'MOP_APP_MANAGEMENT_CONFIG':'/run/secrets/app-management.json','MOP_APP_STORAGE_ADMIN_DATABASE_URL':f'postgresql://postgres:{password}@127.0.0.1/metro_operations_platform','MOP_APP_RESOURCE_ORIGIN':'https://resources.example.net'})
+ mounts=['--group-add',str(os.stat('/var/run/docker.sock').st_gid),'-v','/var/run/docker.sock:/var/run/docker.sock','-v',str(apps)+':'+str(apps),'-v',str(management)+':/run/secrets/app-management.json:ro']
  config=root/'api.json';config.write_text(json.dumps(settings));config.chmod(0o444)
- common=['docker','run','--rm','--network',network,'-v',str(config)+':/run/secrets/api.json:ro','mop-api:test']
+ common=['docker','run','--rm','--network','container:'+db,*mounts,'-v',str(config)+':/run/secrets/api.json:ro','mop-api:test']
  for _ in range(2):assert run(*common,'dist/setup/database.js').returncode==0
  run(*common,'dist/core/admin-identity/bootstrap.js')
  assert run(*common,'dist/core/admin-identity/bootstrap.js',check=False).returncode!=0
  api='mop-api-'+suffix;containers.append(api)
- run('docker','run','-d','--read-only','--tmpfs','/tmp','--cap-drop','ALL','--security-opt','no-new-privileges','--name',api,'--network',network,'--network-alias','api','-p','127.0.0.1::3101','-v',str(config)+':/run/secrets/api.json:ro','mop-api:test')
- port=json.loads(run('docker','inspect',api).stdout)[0]['NetworkSettings']['Ports']['3101/tcp'][0]['HostPort'];base='http://127.0.0.1:'+port
+ run('docker','run','-d','--read-only','--tmpfs','/tmp','--cap-drop','ALL','--security-opt','no-new-privileges','--name',api,'--network','container:'+db,*mounts,'-v',str(config)+':/run/secrets/api.json:ro','mop-api:test')
+ port=json.loads(run('docker','inspect',db).stdout)[0]['NetworkSettings']['Ports']['3101/tcp'][0]['HostPort'];base='http://127.0.0.1:'+port
  for _ in range(60):
   try:
    if urllib.request.urlopen(base+'/api/health/ready',timeout=2).status==200:break
   except Exception:time.sleep(1)
- else:raise RuntimeError('API not ready')
+ else:
+  print(run('docker','logs',api,check=False).stdout.decode()[-6000:]);raise RuntimeError('API not ready')
  req=urllib.request.Request(base+'/api/admin/auth/login',data=json.dumps({'username':'smokeadmin','password':admin_password}).encode(),headers={'Content-Type':'application/json','Origin':'https://ops.example.com'})
  with urllib.request.urlopen(req) as response:
   assert response.status==200;assert 'password' not in json.load(response);assert response.headers.get('Set-Cookie')
  run(*common,'probe.mjs')
+ caddy=root/'Caddyfile';caddy.write_text(':80 {\n handle /api/* {\n reverse_proxy database:3101\n }\n handle {\n root * /srv\n try_files {path} /index.html\n file_server\n }\n}\n');caddy.chmod(0o444)
  web='mop-web-'+suffix;containers.append(web)
- run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-e','MOP_DOMAIN=http://localhost','mop-web:test')
+ run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')
  webport=json.loads(run('docker','inspect',web).stdout)[0]['NetworkSettings']['Ports']['80/tcp'][0]['HostPort']
  for _ in range(30):
   try:

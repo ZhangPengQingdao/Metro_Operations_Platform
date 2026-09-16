@@ -23,6 +23,7 @@ import {createManagementGateway,createManagementApiAuthorization} from './gatewa
 import {GatewayError} from '../gateway/model.js';
 import {EmployeeAppAccess} from '../employee/access.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
+import {createSandboxResourceServer} from '../sandbox/resource-server.js';
 import {buildSandboxDocument} from '../sandbox/document.js';
 /** Opt-in application management composition; does not run schema migrations on startup. */
 export async function createAppManagement(configFile:string,origin:string){
@@ -31,6 +32,7 @@ export async function createAppManagement(configFile:string,origin:string){
  if(!connectionString)throw new AppManagementError('ADMIN_DATABASE_UNAVAILABLE');
  const connect=async()=>{const client=new Client({connectionString});await client.connect();return client;};
  const db=await getDatabasePool()!.connect();const queue=createManagementQueue();
+ let resources:Awaited<ReturnType<typeof createSandboxResourceServer>>|undefined;
  try{
  const required=await db.query("SELECT to_regclass('platform_app_install_requests') AS installs,to_regclass('platform_app_runtime_work') AS work,to_regclass('platform_app_docker_dispatches') AS docker,to_regclass('platform_app_versions') AS versions");
  if(!required.rows[0].installs||!required.rows[0].work||!required.rows[0].versions||(config.docker&&!required.rows[0].docker))throw new AppManagementError('APP_MANAGEMENT_MIGRATIONS_REQUIRED');
@@ -78,6 +80,7 @@ export async function createAppManagement(configFile:string,origin:string){
   return admitEmployeeApplication({resolveIdentity,assertAccess:personId=>employeeAccess.assert(appId,personId),snapshot:()=>host.admittedSnapshot(),assertApproval:()=>assertRuntimeApproval(undefined,appId)});
  }
 
+ if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN);
  const preview=(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>previewVerifiedPackage(context,input,{
   state:()=>approvals.get(context),installed:id=>repository.findByAppId(id),
   supported:async manifest=>isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,await loadAppManagementConfig(configFile)),
@@ -104,13 +107,13 @@ export async function createAppManagement(configFile:string,origin:string){
   async employeeUi(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    const first=await admitEmployee(appId,resolveIdentity),m=first.installation.manifest;
    if(m.ui.mode!=='sandbox'||!m.routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
-   const canonical=new URL(origin);if(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
+   const canonical=new URL(origin);if(!resources&&(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname)))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
    const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);if(!artifact)throw new AppManagementError('APP_UI_ARTIFACT_MISSING');
    const bytes=await readArtifact(m,artifact.id,artifact.bytes);
    const document=buildSandboxDocument({platformOrigin:origin,script:{text:Buffer.from(bytes).toString('utf8'),bytes:artifact.bytes,sha256:artifact.sha256}});
    const fresh=await admitEmployee(appId,resolveIdentity);
    if(fresh.identity.userId!==first.identity.userId||fresh.access.revision!==first.access.revision||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
-   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
+   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));}):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
   },
   async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown,admissionKey:string){
    const host=runtime.findHost(appId);
@@ -163,9 +166,9 @@ export async function createAppManagement(configFile:string,origin:string){
     prepareCredential:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.prepareCredential(context,revision)),
    };
   },
-  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact});}),
-  close:()=>queue.close(async()=>{await runtime.close();db.release();}),
+  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();}):undefined});}),
+  close:()=>queue.close(async()=>{await resources?.close();await runtime.close();db.release();}),
  };
- }catch(error){db.release();throw error;}
+ }catch(error){await resources?.close();db.release();throw error;}
 }
 export type AppManagement=Awaited<ReturnType<typeof createAppManagement>>;

@@ -19,7 +19,7 @@ class Fixture(unittest.TestCase):
   self.assertEqual(u.verify(self.folder,self.public,'0.3.0'),self.m);u.verify_archive(self.folder,self.m)
   (self.folder/'images.tar').write_bytes(b'other')
   with self.assertRaises(u.Failure):u.verify_archive(self.folder,self.m)
-  for key,value in [('repository','evil/repo'),('architecture','linux/arm64'),('minUpdater',2)]:
+  for key,value in [('repository','evil/repo'),('architecture','linux/arm64'),('minUpdater',3)]:
    original=self.m[key];self.m[key]=value;self.sign()
    with self.assertRaises(u.Failure):u.verify(self.folder,self.public,'0.3.0')
    self.m[key]=original
@@ -108,3 +108,23 @@ class Fixture(unittest.TestCase):
   self.assertNotIn('privileged',services['api']);self.assertTrue(services['api']['read_only'])
   self.assertFalse(any('docker.sock' in v for v in services['api']['volumes']))
 if __name__=='__main__':unittest.main()
+
+class ProxyDeployment(unittest.TestCase):
+ def test_external_hosting_binds_only_loopback_and_preserves_database_isolation(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=pathlib.Path(temp);release=root/'release';release.mkdir()
+   u.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':42,'proxyMode':'external','httpPort':18080,'applications':True,'resourcePort':18081,'resourceDomain':'apps.example.net'})
+   def command(args,*a,**kw):
+    if args[:3]==['docker','image','inspect']:return json.dumps([{'Id':args[3],'Architecture':'amd64','Os':'linux'}]).encode()
+    return b''
+   manifest={'images':{name:'sha256:'+'a'*64 for name in ['api','web','database']}}
+   real_stat=u.os.stat
+   def stat(path,*a,**kw):return type('Stat',(),{'st_gid':100})() if str(path)=='/var/run/docker.sock' else real_stat(path,*a,**kw)
+   with patch.object(u,'command',side_effect=command),patch.object(u,'verify_archive'),patch.object(u.os,'stat',side_effect=stat):
+    u.Deployment(root).prepare(release,manifest)
+   services=u.read(release/'compose.json')['services']
+   self.assertEqual(services['web']['ports'],['127.0.0.1:18080:80','127.0.0.1:18081:8081'])
+   self.assertNotIn('ports',services['database']);self.assertNotIn('ports',services['api'])
+   self.assertEqual(services['api']['network_mode'],'service:database')
+   self.assertIn('header_up -Cookie',(release/'Caddyfile').read_text())
+   self.assertIn('reverse_proxy database:3103',(release/'Caddyfile').read_text())
