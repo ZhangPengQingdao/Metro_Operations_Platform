@@ -59,7 +59,7 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   const policy={policyVersion:'1.0' as const,revision:1,keys:[{keyId:'test-key',publisherId:'test',publicKeyPem:keys.publicKey.export({type:'spki',format:'pem'}).toString(),revoked:false,appIds:['upgrade-fault','storage-test','storage-fault','storage-other'],validFrom:'2020-01-01T00:00:00Z',validUntil:'2099-01-01T00:00:00Z'}]};
   const installer=new AppInstaller({registry,journal,artifactRoot:join(root,'packages'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:r=>runtime!.getHost(r.appId)});
   const versions=new AppVersionService({registry,journal:versionsJournal,installJournal:journal,artifactRoot:join(root,'packages'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:id=>runtime!.getHost(id)});
-  const migration=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'createTable',table:'records',columns:[{name:'id',type:'integer',nullable:false},{name:'value',type:'text',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'inventory',columns:[{name:'id',type:'uuid',nullable:false},{name:'quantity',type:'integer',nullable:false},{name:'version',type:'integer',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'entries',columns:[{name:'id',type:'uuid',nullable:false},{name:'value',type:'jsonb',nullable:false}],primaryKey:['id']}]});
+  const migration=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'createTable',table:'records',columns:[{name:'id',type:'integer',nullable:false},{name:'value',type:'text',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'inventory',columns:[{name:'id',type:'uuid',nullable:false},{name:'quantity',type:'integer',nullable:false},{name:'version',type:'integer',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'entries',columns:[{name:'id',type:'uuid',nullable:false},{name:'value',type:'jsonb',nullable:false},{name:'occurred_at',type:'timestamptz',nullable:true}],primaryKey:['id']}]});
   async function bundle(id:string,version:string,incremental=false){
    const directory=join(root,id+'-'+version);await mkdir(directory);
    const manifest:AppManifest={manifestVersion:'1.0',id,version,name:id,description:'test',publisherId:'test',
@@ -107,6 +107,9 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   const insert={table:'entries',id,requestId,action:'insert',values:{value:{note:'own data'}}};
   assert.equal((await storage.runtimeData.execute(appActor,insert,true,signal)).row.value.note,'own data');
   assert.equal((await call({table:'entries',id})).row.value.note,'own data');
+  await assert.rejects(call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'not-a-date'}},true),/INVALID_PARAMS/);
+  await call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'2026-09-16T00:00:00Z'}},true);
+  assert.equal(Date.parse((await call({table:'entries',id})).row.occurred_at),Date.parse('2026-09-16T00:00:00Z'));
   const page=await call({table:'entries',pageSize:1,filters:[{column:'id',value:id}]},'list');
   assert.equal(page.rows[0].id,id);assert.equal(page.nextCursor,null);
   assert.deepEqual((await call({table:'entries',afterId:id},'list')).rows,[]);

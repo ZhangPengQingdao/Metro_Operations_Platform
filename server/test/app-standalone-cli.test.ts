@@ -15,7 +15,7 @@ test('packed CLI installs outside repository and exports a signed administrator 
   const pkg=await exec('npm',['pack','--ignore-scripts','--json','--pack-destination',root],{cwd:new URL('../../packages/platform-cli/',import.meta.url)});
   const artifact=JSON.parse(pkg.stdout)[0];assert.ok(artifact.files.every((f:{path:string})=>!f.path.startsWith('src/')&&!f.path.includes('server/')));
   await writeFile(join(root,'package.json'),JSON.stringify({name:'independent-developer',private:true}));
-  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--offline',join(root,artifact.filename)],{cwd:root});
+  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--prefer-offline',join(root,artifact.filename)],{cwd:root});
   const cli=join(root,'node_modules/@metro/platform-cli/dist/cli.mjs');
   assert.ok(!(await readFile(cli,'utf8')).includes('/Users/'));
   const directory=join(root,'app');await cp(new URL('../../examples/app-sdk/dist/sandbox/',import.meta.url),directory,{recursive:true});
@@ -23,9 +23,9 @@ test('packed CLI installs outside repository and exports a signed administrator 
   const keys=generateKeyPairSync('ed25519');await writeFile(join(root,'private.pem'),keys.privateKey.export({format:'pem',type:'pkcs8'}));await writeFile(join(root,'public.pem'),keys.publicKey.export({format:'pem',type:'spki'}));
   const run=(...args:string[])=>exec(process.execPath,[cli,...args],{cwd:root});
   const sdkPack=await exec('npm',['pack','--ignore-scripts','--json','--pack-destination',root],{cwd:new URL('../../packages/platform-sdk/',import.meta.url)});
-  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--offline',join(root,JSON.parse(sdkPack.stdout)[0].filename)],{cwd:root});
+  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--prefer-offline',join(root,JSON.parse(sdkPack.stdout)[0].filename)],{cwd:root});
   const bundlerVersion=JSON.parse(await readFile(new URL('../../node_modules/esbuild/package.json',import.meta.url),'utf8')).version;
-  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--offline',`esbuild@${bundlerVersion}`],{cwd:root});
+  await exec('npm',['install','--ignore-scripts','--no-audit','--no-fund','--prefer-offline',`esbuild@${bundlerVersion}`],{cwd:root});
   for(const mode of ['sandbox','trusted','backend']){
    await run('create',`new-${mode}`,`independent-${mode}`,mode,'publisher');
    const project=join(root,`new-${mode}`),pkg=JSON.parse(await readFile(join(project,'package.json'),'utf8'));

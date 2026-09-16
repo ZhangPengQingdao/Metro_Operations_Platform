@@ -171,11 +171,12 @@ export class AppRuntimeDataService{
    AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_inherits inh WHERE inh.inhrelid=c.oid)
    AND a.attnum>0 AND NOT a.attisdropped
    AND EXISTS(SELECT 1 FROM pg_catalog.pg_index i JOIN pg_catalog.pg_attribute pk ON pk.attrelid=c.oid AND pk.attname='id' WHERE i.indrelid=c.oid AND i.indisprimary AND i.indnkeyatts=1 AND i.indkey[0]=pk.attnum AND pk.atttypid='pg_catalog.uuid'::regtype)`,[plan.schema,table,plan.ownerRole]);
-  if(!found.length||found.length>64||found.some(c=>!c.builtin||c.generated!==''||c.identity!==''||!identifier.safeParse(c.name).success||!['uuid','text','bool','int4','jsonb'].includes(c.type)))throw new AppStorageError('STORAGE_TABLE_UNSUPPORTED');
+  if(!found.length||found.length>64||found.some(c=>!c.builtin||c.generated!==''||c.identity!==''||!identifier.safeParse(c.name).success||!['uuid','text','bool','int4','jsonb','timestamptz'].includes(c.type)))throw new AppStorageError('STORAGE_TABLE_UNSUPPORTED');
   return new Map(found.map(c=>[c.name,c.type]));
  }
 }
 function validValue(type:string,value:unknown){if(value===null)return true;if(type==='jsonb')return value!==undefined;
+ if(type==='timestamptz')return typeof value==='string'&&z.string().datetime({offset:true}).safeParse(value).success;
  if(type==='text')return typeof value==='string';if(type==='uuid')return z.string().uuid().safeParse(value).success;
  if(type==='bool')return typeof value==='boolean';return typeof value==='number'&&Number.isInteger(value)&&value>=-2147483648&&value<=2147483647;
 }

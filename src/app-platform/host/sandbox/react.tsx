@@ -67,5 +67,5 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
     src={resource.mode==='isolated-origin'?resource.url:undefined}
     srcDoc={resource.mode==='local-demo'?resource.html:undefined}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',minHeight:360,border:0}} />;
+    style={{width:'100%',height:'calc(100dvh - 180px)',minHeight:600,border:0}} />;
 }

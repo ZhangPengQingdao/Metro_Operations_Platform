@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import { validateAppManifest } from '../manifest/index.js';
 import { parseAppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
 import type { AppInstallation } from '../registry/model.js';
@@ -23,7 +24,7 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
       !['trusted', 'isolated'].includes(parsed.manifest.backend.mode)) throw new AppStdioApiError('INVALID_INSTALLATION');
   const { id, appId, revision } = options.installation;
   const manifest = parsed.manifest;
-  const manifestDigest = JSON.stringify(manifest);
+  const manifestSnapshot = structuredClone(manifest);
   if (manifest.api.some(api => !api.permission)) throw new AppStdioApiError('PERMISSION_REQUIRED');
   const { getInstallation, contextResolver, authorize, transport } = options;
   let active = true;
@@ -31,7 +32,7 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
   async function current(): Promise<void> {
     const fresh = await getInstallation(appId);
     if (!active || !fresh?.enabled || fresh.id !== id || fresh.appId !== appId || fresh.revision !== revision ||
-        JSON.stringify(fresh.manifest) !== manifestDigest) throw new AppStdioApiError('STALE_API');
+        !isDeepStrictEqual(fresh.manifest, manifestSnapshot)) throw new AppStdioApiError('STALE_API');
   }
   return {
     invoke(context: PlatformActorContext, request: { apiId: string; method: string; path: string; payload: unknown }, signal?: AbortSignal, assertAdmission?:()=>Promise<void>): Promise<GatewayJson> {

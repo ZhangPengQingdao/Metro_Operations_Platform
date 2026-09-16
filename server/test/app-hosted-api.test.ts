@@ -44,7 +44,7 @@ function fixture(withManagement=false) {
  let execute=async()=>({ok:true});
  const api=createHostedAppApi({installation,getInstallation:async()=>installation,contextResolver:{resolve:async()=>{resolves++;return {...actor,execution:{type:'application',appId:'demo'}} as PlatformActorContext;}},authorize:async(_actor,permission)=>allowed&&(permission!=='app.demo.manage'||management),
  transport:{invoke:async request=>{sent=request;calls++;return execute();},drain:async()=>{}}});
- return {api,actor,request:{apiId:'read',method:'GET',path:'/read',payload:{}},revokeManagement:()=>{management=false;},get sent(){return sent;},get calls(){return calls;},get resolves(){return resolves;},disable:()=>{installation={...installation,enabled:false};},deny:()=>{allowed=false;},execute:(fn:typeof execute)=>{execute=fn;}};
+ return {api,actor,request:{apiId:'read',method:'GET',path:'/read',payload:{}},reorderManifest:()=>{installation={...installation,manifest:Object.fromEntries(Object.entries(installation.manifest).reverse()) as any};},revokeManagement:()=>{management=false;},get sent(){return sent;},get calls(){return calls;},get resolves(){return resolves;},disable:()=>{installation={...installation,enabled:false};},deny:()=>{allowed=false;},execute:(fn:typeof execute)=>{execute=fn;}};
 }
 test('API requires exact declared route and method and fresh delegated authorization',async()=>{
  const f=fixture();await assert.rejects(f.api.invoke(f.actor,{...f.request,method:'POST'}),/API_DENIED/);
@@ -86,3 +86,5 @@ test('revoking an additional host permission during a read-authorized call inval
  await assert.rejects(f.api.invoke(f.actor,f.request),error=>(error as any).code==='ACCESS_DENIED'&&(error as any).writeOutcome==='unknown');
  f.api.close();await f.api.drain();
 });
+
+test('database JSON key ordering does not invalidate an unchanged API manifest',async()=>{const f=fixture();f.reorderManifest();assert.equal((await f.api.invoke(f.actor,f.request) as {ok:boolean}).ok,true);f.api.close();await f.api.drain();});
