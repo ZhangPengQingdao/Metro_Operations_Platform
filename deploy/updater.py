@@ -114,6 +114,7 @@ class Deployment:
    web['environment']['MOP_DOMAIN']=':80'
   if self.config.get('applications'):
    apps=root+'/apps'
+   db['networks']=['internal','edge']
    # Shared network namespace keeps both database identities on verified loopback.
    api.pop('networks');api['network_mode']='service:database'
    api['depends_on']={'database':{'condition':'service_healthy'}}
@@ -345,6 +346,10 @@ def install(root,v,key):
   apps=root/'apps';apps.mkdir(mode=0o700,exist_ok=True);os.chown(apps,1000,1000)
   for child in ['packages','runtime','uploads']:
    folder=apps/child;folder.mkdir(mode=0o700,exist_ok=True);os.chown(folder,1000,1000)
+  probe=apps/'runtime'/('.visibility-'+secrets.token_hex(16));probe.write_text('mop-runtime-visible');probe.chmod(0o444)
+  try:
+   command(['docker','run','--rm','--network','none','--read-only','--user','1000:1000','--cap-drop','ALL','--security-opt','no-new-privileges:true','--mount',f'type=bind,src={probe},dst=/probe,readonly',RUNTIME_IMAGE,'node','-e',"if(require('fs').readFileSync('/probe','utf8')!=='mop-runtime-visible')process.exit(1)"],60)
+  finally:probe.unlink()
   policy=apps/'publishers.json'
   if not policy.exists():atomic(policy,{'policyVersion':'1.0','revision':1,'keys':[]});os.chown(policy,1000,1000)
   management=root/'secrets/app-management.json'
