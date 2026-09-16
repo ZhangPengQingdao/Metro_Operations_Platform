@@ -24,6 +24,8 @@ export interface AppStdioGatewayOptions {
   shutdownTimeoutMs?: number;
   writeTimeoutMs?: number;
   apiTimeoutMs?: number;
+  /** Employee API backends cannot downgrade missing call bindings to autonomous service work. */
+  requireApiContext?: boolean;
 }
 export interface AppStdioGatewaySession {
   /** Ingress closed only; this is NOT a drained receipt. Call stop to confirm. */
@@ -99,12 +101,13 @@ export function startAppStdioGateway(options: AppStdioGatewayOptions): AppStdioG
     }
     // Decode only protocol lines. Invalid UTF-8 cannot alias a valid protocol frame.
     if (!line.subarray(0, APP_STDIO_GATEWAY_PREFIX.length).equals(Buffer.from(APP_STDIO_GATEWAY_PREFIX))) return;
-    let frame: { id: string; request: unknown };
+    let frame: { id: string; request: unknown; invocationId?:string };
     try {
       const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(line.subarray(APP_STDIO_GATEWAY_PREFIX.length)));
       if (!value || typeof value !== 'object' || Array.isArray(value) ||
-        Object.keys(value).sort().join(',') !== 'id,request') throw Error();
+        !['id,request','id,invocationId,request'].includes(Object.keys(value).sort().join(','))) throw Error();
       frame = value as typeof frame;
+      if('invocationId' in frame && (typeof frame.invocationId!=='string'||! /^[0-9a-f-]{36}$/i.test(frame.invocationId)))throw Error();
       if (typeof frame.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(frame.id) ||
         pending.has(frame.id.toLowerCase()) || pending.size >= MAX_PENDING) throw Error();
     } catch { close(); return; }
@@ -115,7 +118,10 @@ export function startAppStdioGateway(options: AppStdioGatewayOptions): AppStdioG
       if (!active) return;
       let reply: unknown;
       try {
-        const response = await gateway.invokeService(appId, serviceCredential, frame.request, controller.signal);
+        if(options.requireApiContext&&!frame.invocationId)throw new GatewayError('ACCESS_DENIED',403);
+        const guard=frame.invocationId?api.admissionGuard(frame.invocationId):undefined;
+        if(guard){try{await guard();}catch{throw new GatewayError('ACCESS_DENIED',403);}}
+        const response = await gateway.invokeService(appId, serviceCredential, frame.request, controller.signal,guard);
         reply = { id, response };
       } catch (error) {
         const safe = error instanceof GatewayError ? error : new GatewayError('GATEWAY_FAILED', 500, 'unknown');

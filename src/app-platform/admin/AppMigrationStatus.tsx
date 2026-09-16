@@ -1,0 +1,13 @@
+import React,{useEffect,useState} from 'react';
+import {Button,Table} from '../../components/ui';
+import {adminRequest} from './client';
+type Attempt={id:string;sequence:number;migrationId:string;status:string};
+type History={revision:number;enabled:boolean;attempts:Attempt[];nextSequence:number|string|null};
+const labels:Record<string,string>={running:'待核对',uncertain:'结果未知',applied:'已完成',rolled_back:'已回滚',dispatched:'结果待确认',completed:'已提交'};
+export function AppMigrationStatus({appId,onChange,kind='migrations'}:{appId:string;onChange:()=>void;kind?:'migrations'|'writes'}){
+ const [data,setData]=useState<History|null>(null),[after,setAfter]=useState<number|string>(0),[serial,setSerial]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const path=`/apps/${encodeURIComponent(appId)}/storage/${kind}`;
+ useEffect(()=>{const c=new AbortController();setData(null);setError('');adminRequest<History&{writes?:{requestId:string;status:string}[];nextCursor?:string|null}>(`${path}${kind==='migrations'?`?afterSequence=${after}`:after?`?after=${after}`:''}`,{signal:c.signal}).then(v=>{if(!c.signal.aborted)setData(kind==='migrations'?v:{...v,attempts:(v.writes??[]).map(w=>({id:w.requestId,sequence:0,migrationId:w.requestId,status:w.status})),nextSequence:v.nextCursor??null});}).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[path,after,serial]);
+ async function reconcile(attemptId:string){if(!data||busy)return;setBusy(true);setError('');try{await adminRequest(`${path}/reconcile`,{method:'POST',body:{revision:data.revision,...(kind==='migrations'?{attemptId}:{requestId:attemptId})}});setSerial(v=>v+1);onChange();}catch(e){setError(e instanceof Error?e.message:'核对结果未确认，请刷新。');setData(null);}finally{setBusy(false);}}
+ return <section><h3>{kind==='migrations'?'存储迁移':'数据写入'}</h3>{error&&<p role="alert" className="afc-error">{error}</p>}<Table variant="directory" emptyState={data?.attempts.length===0?'暂无迁移记录':undefined}><thead><tr><th>{kind==='migrations'?'迁移':'请求编号'}</th><th>状态</th><th>操作</th></tr></thead><tbody>{data?.attempts.map(a=><tr key={a.id}><td>{a.migrationId}</td><td>{labels[a.status]??a.status}</td><td>{['running','uncertain','dispatched'].includes(a.status)&&<Button variant="secondary" disabled={busy||data.enabled} onClick={()=>void reconcile(a.id)}>核对原事务</Button>}</td></tr>)}</tbody></Table><p className="afc-muted">核对原事务证据，不重放操作。证据不足时继续阻断。</p><div className="admin-actions"><Button variant="secondary" disabled={busy} onClick={()=>{setAfter(0);setSerial(v=>v+1);}}>刷新记录</Button><Button variant="secondary" disabled={busy||!data?.nextSequence} onClick={()=>setAfter(data!.nextSequence!)}>下一页</Button></div></section>;
+}

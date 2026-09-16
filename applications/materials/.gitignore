@@ -1,0 +1,6 @@
+dist/
+dist-upgrade/
+node_modules/
+*.pem
+*.key
+*install.json

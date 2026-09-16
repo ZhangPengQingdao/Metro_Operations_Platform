@@ -200,14 +200,18 @@ test('employee Gateway ingress requires a serving lifecycle owner and closes on 
  try{
   let r=await f.registry.register(f.admin,manifest());
   await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);
+  await assert.rejects(host.admittedSnapshot(),/ACCESS_DENIED/);
   r=await f.registry.approveGrant(f.admin,r.appId,r.revision,{mode:'delegated_user',permissionCode,scope:{kind:'all',targets:[]}});
   r=await host.execute(f.admin,{revision:r.revision,action:'install'});
+  assert.equal((await host.admittedSnapshot()).id,r.id);
   assert.equal((await host.invokeDelegated(identity,request)).result.ok,true);
   r=await host.execute(f.admin,{revision:r.revision,action:'disable'});
+  await assert.rejects(host.admittedSnapshot(),/ACCESS_DENIED/);
   await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);assert.equal(reads,1);
   r=await host.execute(f.admin,{revision:r.revision,action:'enable'});
   const live=f.sessions.filter(s=>s.listenerCount('error')>0).at(-1)!;
   live.emit('error');
+  await assert.rejects(host.admittedSnapshot(),/ACCESS_DENIED/);
   await assert.rejects(host.invokeDelegated(identity,request),/ACCESS_DENIED/);assert.equal(reads,1);
  }finally{await host.close();await f.close();}
 });

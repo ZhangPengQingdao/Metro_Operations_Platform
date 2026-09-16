@@ -31,16 +31,16 @@ export class AppGateway {
       this.operations.set(op.name,Object.freeze({...op}));
     }
   }
-  invokeService(appId:string,credential:string,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
-    return this.invokeServiceFromTransport(appId,async()=>({credential,request:parseGatewayRequest(request,this.admission.limits.requestBytes)}),signal);
+  invokeService(appId:string,credential:string,request:unknown,signal?:AbortSignal,assertAdmission?:()=>Promise<void>):Promise<AppGatewayResponse> {
+    return this.invokeServiceFromTransport(appId,async()=>({credential,request:parseGatewayRequest(request,this.admission.limits.requestBytes)}),signal,assertAdmission);
   }
   /** Trusted transport reader runs inside the same admission slot and total deadline. */
-  invokeServiceFromTransport(appId:string,readRequest:(signal:AbortSignal)=>Promise<{credential:string;request:unknown}>,signal?:AbortSignal):Promise<AppGatewayResponse> {
+  invokeServiceFromTransport(appId:string,readRequest:(signal:AbortSignal)=>Promise<{credential:string;request:unknown}>,signal?:AbortSignal,assertAdmission?:()=>Promise<void>):Promise<AppGatewayResponse> {
     let credential='';
     return this.invoke(appId,async(signal)=>{const input=await readRequest(signal);credential=input.credential;return input.request;},async()=>{
       if(typeof credential!=='string'||credential.length>1024) throw new GatewayError('INVALID_CREDENTIAL',401);
       try {return await this.options.registry.authenticateServiceCredential(appId,credential);} catch {throw new GatewayError('INVALID_CREDENTIAL',401);}
-    },signal);
+    },signal,assertAdmission);
   }
   /** Host-only entry point: identity MUST come from verified L1 session/Bridge composition. */
   invokeDelegated(appId:string,trustedIdentity:TrustedActorIdentity,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
@@ -58,7 +58,7 @@ export class AppGateway {
       return {actorType:'person' as const,trustedIdentity:identity,execution:{type:'application' as const,appId}};
     },signal);
   }
-  private async invoke(appId:string,readInput:(signal:AbortSignal)=>Promise<unknown>,identity:()=>Promise<Omit<Parameters<PlatformActorContextResolver['resolve']>[0],'requestId'|'traceId'>>,signal?:AbortSignal):Promise<AppGatewayResponse> {
+  private async invoke(appId:string,readInput:(signal:AbortSignal)=>Promise<unknown>,identity:()=>Promise<Omit<Parameters<PlatformActorContextResolver['resolve']>[0],'requestId'|'traceId'>>,signal?:AbortSignal,assertAdmission?:()=>Promise<void>):Promise<AppGatewayResponse> {
     this.admission.preauth();
     if(typeof appId!=='string'||!/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(appId)||appId.length>100) throw new GatewayError('INVALID_REQUEST');
     const releaseSlot=this.admission.enter();
@@ -108,9 +108,16 @@ export class AppGateway {
       if(!operation) throw new GatewayError('OPERATION_DENIED',403);
       trace.operation=operation.name;
       const fresh=async()=>{
+        const guard=async()=>{check();try{await assertAdmission?.();}catch{throw new GatewayError('ACCESS_DENIED',403);}check();};
+        await guard();
         check();const authenticated=await identity();check();
         // The identity factory is trusted; the union remains correlated at runtime.
-        return this.options.contextResolver.resolve({...authenticated,requestId:trace.requestId!,traceId:trace.traceId} as Parameters<PlatformActorContextResolver['resolve']>[0]);
+        const actor=await this.options.contextResolver.resolve({...authenticated,requestId:trace.requestId!,traceId:trace.traceId} as Parameters<PlatformActorContextResolver['resolve']>[0]);
+        await guard();
+        // Storage reuses these methods immediately before COMMIT. Retain the host admission
+        // guard on the operation context, not just at initial Gateway authentication.
+        return {...actor,authorize:async(...args:Parameters<typeof actor.authorize>)=>{await guard();const result=await actor.authorize(args[0],args[1]);await guard();return result;},
+          ...(actor.authorizeApplication?{authorizeApplication:async(...args:Parameters<typeof actor.authorize>)=>{await guard();const result=await actor.authorizeApplication!(args[0],args[1]);await guard();return result;}}:{})};
       };
       let context=await fresh();check();
       trace.actorId=context.actorType==='person'?context.person.id:context.execution.serviceIdentityId;

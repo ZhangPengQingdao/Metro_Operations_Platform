@@ -8,13 +8,14 @@ export function nextVersion(current,kind){
  return kind==='major'?`${a+1}.0.0`:kind==='minor'?`${a}.${b+1}.0`:`${a}.${b}.${c+1}`;
 }
 export async function checkVersions(){
- const paths=['package.json','package-lock.json','server/package.json','server/package-lock.json','packages/platform-sdk/package.json'];
+ const paths=['package.json','package-lock.json','server/package.json','server/package-lock.json','packages/platform-sdk/package.json','packages/platform-cli/package.json'];
  const documents=await Promise.all(paths.map(async path=>({path,data:JSON.parse(await readFile(resolve(root,path),'utf8'))})));
  const version=documents[0].data.version;
  if(!/^\d+\.\d+\.\d+$/.test(version))throw Error('Invalid project version');
  for(const {path,data} of documents){if(data.version!==version)throw Error(`Version mismatch: ${path}`);if(data.packages&&data.packages[''].version!==version)throw Error(`Lock root mismatch: ${path}`);}
  const sdk=documents[1].data.packages['packages/platform-sdk'];
  if(sdk?.version!==version||documents[0].data.dependencies['@metro/platform-sdk']!==version||documents[1].data.packages[''].dependencies['@metro/platform-sdk']!==version)throw Error('SDK version mismatch');
+ if(documents[1].data.packages['packages/platform-cli']?.version!==version)throw Error('CLI version mismatch');
  return {version,documents};
 }
 async function main(){
@@ -27,6 +28,7 @@ async function main(){
   data.version=next;if(data.packages)data.packages[''].version=next;
   if(data.dependencies?.['@metro/platform-sdk'])data.dependencies['@metro/platform-sdk']=next;
   if(data.packages?.[''].dependencies?.['@metro/platform-sdk'])data.packages[''].dependencies['@metro/platform-sdk']=next;
+  if(data.packages?.['packages/platform-cli'])data.packages['packages/platform-cli'].version=next;
   if(data.packages?.['packages/platform-sdk'])data.packages['packages/platform-sdk'].version=next;
   await writeFile(resolve(root,path),JSON.stringify(data,null,2)+'\n');
  }

@@ -1,13 +1,36 @@
 /** Node-only adapter for the existing credential-free L4 stdio channel. */
 import {randomUUID} from 'node:crypto';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import type {Readable, Writable} from 'node:stream';
 import {createAppGatewayClient, AppGatewayClientError, type AppGatewayJson} from './app-gateway.js';
 
 const GATEWAY = 'AFC_GATEWAY_V1 ', API = 'AFC_API_V1 ';
+/** Host-supplied audit identity, never a credential or a substitute for fresh authorization. */
+export interface AppBackendEmployeeContext {
+  readonly version: '1.0';
+  readonly personId: string;
+  readonly organizationUnitId: string;
+  readonly requestId: string;
+  readonly traceId: string;
+  /** Fresh host-authorized permissions declared by this application. */
+  readonly permissions?: readonly string[];
+}
+export function parseAppBackendEmployeeContext(value: unknown): Readonly<AppBackendEmployeeContext> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('INVALID_EMPLOYEE_CONTEXT');
+  const record=value as Record<string,unknown>;
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if(!['organizationUnitId,personId,requestId,traceId,version','organizationUnitId,permissions,personId,requestId,traceId,version'].includes(Object.keys(record).sort().join(','))||record.version!=='1.0'||
+    ![record.personId,record.organizationUnitId].every(v=>typeof v==='string'&&uuid.test(v))||
+    ![record.requestId,record.traceId].every(v=>typeof v==='string'&&v.length>0&&v.length<=128&&!/[\u0000-\u001f\u007f]/.test(v)))throw Error('INVALID_EMPLOYEE_CONTEXT');
+  if(record.permissions!==undefined&&(!Array.isArray(record.permissions)||record.permissions.length>128||record.permissions.some(p=>typeof p!=='string'||!/^app\.[a-z0-9._-]+$/.test(p))||new Set(record.permissions).size!==record.permissions.length))throw Error('INVALID_EMPLOYEE_CONTEXT');
+  return Object.freeze({...record,...(record.permissions?{permissions:Object.freeze([...(record.permissions as string[])])}:{})}) as unknown as Readonly<AppBackendEmployeeContext>;
+}
 export interface AppBackendHandler {
   method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE';
   path: string;
-  execute(payload: AppGatewayJson, signal: AbortSignal): Promise<AppGatewayJson>;
+  /** Reject legacy frames without a host identity before executing employee business operations. */
+  requireEmployeeContext?: boolean;
+  execute(payload: AppGatewayJson, signal: AbortSignal, employee?: Readonly<AppBackendEmployeeContext>): Promise<AppGatewayJson>;
 }
 export function createAppBackend(options: {
   input: Readable;
@@ -18,6 +41,7 @@ export function createAppBackend(options: {
   const {input, output} = options, timeout = options.timeoutMs ?? 10_000;
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000 || input.destroyed || output.destroyed || options.handlers.size > 128) throw Error('INVALID_BACKEND_OPTIONS');
   const handlers = new Map([...options.handlers].map(([key,value]) => [key,{...value}]));
+  const invocation=new AsyncLocalStorage<string>();
   const controller = new AbortController();
   let buffer = Buffer.alloc(0), closed = false;
   let resolveClosed!:()=>void;
@@ -54,7 +78,8 @@ export function createAppBackend(options: {
     pending.set(id,{resolve,reject});
     // Timeout/abort terminates this channel; never replay an uncertain write.
     const timer=setTimeout(close,timeout),abort=()=>close();signal?.addEventListener('abort',abort,{once:true});
-    void write(GATEWAY,{id,request},64*1024).catch(close);
+    const invocationId=invocation.getStore();
+    void write(GATEWAY,{id,request,...(invocationId?{invocationId}:{})},64*1024).catch(close);
     try{return await response;}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);pending.delete(id);}
   });
   function accept(line:Buffer) {
@@ -71,16 +96,18 @@ export function createAppBackend(options: {
       else throw Error('INVALID_RESPONSE');
       return;
     }
-    if(Object.keys(frame).sort().join(',')!=='id,request'||!frame.request||typeof frame.request!=='object'||Array.isArray(frame.request)||Object.keys(frame.request).sort().join(',')!=='handler,method,path,payload')throw Error('INVALID_API_REQUEST');
+    if(Object.keys(frame).sort().join(',')!=='id,request'||!frame.request||typeof frame.request!=='object'||Array.isArray(frame.request)||!['handler,method,path,payload','employee,handler,method,path,payload'].includes(Object.keys(frame.request).sort().join(',')))throw Error('INVALID_API_REQUEST');
     if(ids.has(frame.id)||ids.size>=4096||work.size>=16)throw Error('BACKEND_LIMIT');
     const handler=handlers.get(frame.request.handler);
     if(!handler||handler.method!==frame.request.method||handler.path!==frame.request.path)throw Error('API_DENIED');
+    const employee='employee' in frame.request?parseAppBackendEmployeeContext(frame.request.employee):undefined;
+    if(handler.requireEmployeeContext&&!employee)throw Error('EMPLOYEE_CONTEXT_REQUIRED');
     ids.add(frame.id);
     const task=Promise.resolve().then(async()=>{
       if(closed)return;
       const timer=setTimeout(close,timeout);
       try {
-        const result=await handler.execute(frame.request.payload,controller.signal);
+        const result=await invocation.run(frame.id,()=>handler.execute(frame.request.payload,controller.signal,employee));
         if(!closed)await write(API,{id:frame.id,result},256*1024);
       }finally{clearTimeout(timer);}
     }).catch(close).finally(()=>work.delete(task));

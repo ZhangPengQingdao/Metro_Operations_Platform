@@ -1,4 +1,5 @@
 import type { PlatformActorContext } from '../../platform/context/index.js';
+import {randomUUID} from 'node:crypto';
 import { AppRuntimeWorkJournal } from './work-journal.js';
 import { createHostedAppApi, type HostedAppApiOptions } from './hosted-api.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -77,11 +78,22 @@ export class AppLifecycleHost {
     const wait=options.healthWaitMs??30_000;
     if (!Number.isInteger(wait)||wait<1||wait>60_000) fail('INVALID_HEALTH_WAIT');
   }
-  async invokeApi(context: PlatformActorContext, request: Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1], signal?: AbortSignal) {
+  async invokeApi(context: PlatformActorContext, request: Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1], signal?: AbortSignal, assertAdmission?:()=>Promise<void>) {
     if(!this.active||!this.api||!this.lease)fail('API_NOT_READY');
     const lease=this.lease,api=this.api,installation=this.active,transport=this.bridge!.api;
     return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
-      ()=>api.invoke(context,request,signal),()=>transport.drain());
+      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain());
+  }
+  /** Verified employee session callback is retained for every nested service authorization. */
+  async invokeEmployeeApi(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1],signal?:AbortSignal){
+    if(!this.active||!this.api||!this.options.api)throw new GatewayError('ACCESS_DENIED',403);
+    const input=structuredClone(request),identity=structuredClone(await resolveIdentity());
+    if(identity.source==='service')throw new GatewayError('ACCESS_DENIED',403);
+    const assertAdmission=async()=>{await this.admittedSnapshot();if(!isDeepStrictEqual(identity,await resolveIdentity()))throw new GatewayError('ACCESS_DENIED',403);};
+    await assertAdmission();
+    const actor=await this.options.api.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId:this.options.appId},requestId:randomUUID(),traceId:randomUUID()});
+    await assertAdmission();
+    return this.invokeApi(actor,input,signal,assertAdmission);
   }
   /** Employee ingress uses the same durable work boundary as backend service requests. */
   async invokeDelegated(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:unknown,signal?:AbortSignal){
@@ -93,6 +105,15 @@ export class AppLifecycleHost {
   async status(context: PlatformManagementContext) {
     const installation=await this.options.registry.get(context,this.options.appId);
     return { installation, owned:!!this.lease&&!this.lease.signal.aborted, serving:!!this.active&&this.active.revision===installation.revision&&installation.enabled };
+  }
+  async admittedSnapshot(){
+    const lease=this.lease,active=this.active;
+    if(!lease||!active||lease.signal.aborted)throw new GatewayError('ACCESS_DENIED',403);
+    await lease.assertHeld();
+    const installation=await this.options.registry.runtimeSnapshot(this.options.appId);
+    await lease.assertHeld();
+    if(lease.signal.aborted||this.active!==active||this.lease!==lease||!installation.enabled||installation.revision!==active.revision)throw new GatewayError('ACCESS_DENIED',403);
+    return installation;
   }
   /** Prepare a host-only credential before administrators approve service grants. Never returns the secret. */
   prepareCredential(context: PlatformManagementContext, revision: number) {
@@ -140,7 +161,10 @@ export class AppLifecycleHost {
         if(target) await this.stage(target);
         await this.lease!.assertHeld();
         const result=await this.options.registry.settleLifecycle(context,record.appId,record.revision,record.lifecycle!.operationId,'completed');
-        if(target&&result.manifest.storage.mode==='managed')await this.options.storage!.adoptVersion(context,result.appId,result.revision);
+        if(target&&result.manifest.storage.mode==='managed'){
+          await this.options.storage!.adoptVersion(context,result.appId,result.revision);
+          await this.migrate(context,result);
+        }
         if(target||input.action==='uninstall')this.credential=undefined;
         await this.release();return result;
       } catch(cause) {
@@ -192,16 +216,21 @@ export class AppLifecycleHost {
     } finally {this.busy=false;}
   }
   private stage(manifest: AppManifest) {return stageAppArtifacts({root:this.options.artifactRoot,manifest,read:(id,max)=>this.options.readArtifact(manifest,id,max)});}
+  private async migrate(context:PlatformManagementContext,record:AppInstallation){
+    if(record.manifest.storage.mode!=='managed')return;
+    for(let index=0;index<=record.manifest.storage.migrations.length;index++){
+      await this.lease!.assertHeld();
+      const step=await this.options.storage!.executeNext(context,record.appId,record.revision);
+      if(step.status==='complete')return;
+      if(step.status!=='applied')fail('MIGRATION_NOT_CONFIRMED');
+    }
+    fail('MIGRATION_LIMIT');
+  }
   private async start(context:PlatformManagementContext,record:AppInstallation):Promise<AppInstallation> {
     const bundle=await this.stage(record.manifest);
     if(record.manifest.storage.mode==='managed') {
       const storage=this.options.storage!;await storage.provision(context,record.appId,record.revision);
-      for(let index=0;index<=record.manifest.storage.migrations.length;index++) {
-        const step=await storage.executeNext(context,record.appId,record.revision);
-        if(step.status==='complete')break;
-        if(step.status!=='applied')fail('MIGRATION_NOT_CONFIRMED');
-        if(index===record.manifest.storage.migrations.length)fail('MIGRATION_LIMIT');
-      }
+      await this.migrate(context,record);
     }
     let checkRuntime=async()=>{};
     if(hosted(record)) {
@@ -211,7 +240,7 @@ export class AppLifecycleHost {
       const previous=await d.journal.latest(record.id);
       let attempt=await supervisor.dispatch(context,{appId:record.appId,revision:record.revision,operationId:record.lifecycle!.operationId,expectedSequence:previous?.sequence??0,action:'create',containerId:null,policy,approval:d.approval});
       const attachment=await attachAppDocker({socketPath:d.socketPath,executor:d.executor,policy,approval:d.approval,containerId:attempt.observation!.containerId});
-      try {this.bridge=startAppStdioGateway({appId:record.appId,serviceCredential:this.credential!.value,gateway:this.gatedGateway,stdout:attachment.stdout,stdin:attachment.stdin});}
+      try {this.bridge=startAppStdioGateway({appId:record.appId,serviceCredential:this.credential!.value,gateway:this.gatedGateway,stdout:attachment.stdout,stdin:attachment.stdin,requireApiContext:record.manifest.api.length>0});}
       catch(error){attachment.close();throw error;}
       attempt=await supervisor.dispatch(context,{appId:record.appId,revision:record.revision,operationId:record.lifecycle!.operationId,expectedSequence:attempt.sequence,action:'start',containerId:attempt.observation!.containerId,policy,approval:d.approval});
       const readiness=new AppDockerReadiness(this.options.registry,d.journal,d.executor);

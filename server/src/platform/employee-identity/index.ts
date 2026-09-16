@@ -33,6 +33,18 @@ export class EmployeeIdentityService{
  private transaction<T>(work:(db:QueryableClient)=>Promise<T>){return this.read(db=>runDatabaseTransaction(db,async()=>{await db.query('SELECT pg_advisory_xact_lock(6013015)');return work(db);}));}
  private async manage(context:PlatformAdministratorContext){if(context.actorType!=='administrator'||context.execution.type!=='platform'||!(await context.authorize('platform.authorization.manage',{})).allowed)throw new EmployeeIdentityError(403,'EMPLOYEE_MANAGEMENT_DENIED');}
  private async validPerson(db:QueryableClient,personId:string){if(!(await rows(db,activePerson,[personId])).length)throw new EmployeeIdentityError(403,'EMPLOYEE_PERSON_INACTIVE');}
+ async list(context:PlatformAdministratorContext,input:unknown){
+  await this.manage(context);
+  const query=z.object({search:z.string().trim().max(100).default(''),status:z.enum(['active','disabled']).optional(),page:z.coerce.number().int().min(1).max(100000).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(20)}).strict().parse(input);
+  return this.read(async db=>{
+   const where=`($1='' OR strpos(lower(a.username),lower($1))>0 OR strpos(lower(p.name),lower($1))>0 OR strpos(lower(p.employee_no),lower($1))>0) AND ($2::text IS NULL OR a.status=$2)`;
+   const args=[query.search,query.status??null];
+   const [count]=await rows<{total:string|number}>(db,`SELECT count(*) AS total FROM platform_employee_accounts a JOIN platform_people p ON p.id=a.person_id WHERE ${where}`,args);
+   const accounts=await rows<{id:string;personId:string;username:string;status:string;personName:string;employeeNo:string;employmentStatus:string}>(db,`SELECT a.id,a.person_id AS "personId",a.username,a.status,p.name AS "personName",p.employee_no AS "employeeNo",p.employment_status AS "employmentStatus" FROM platform_employee_accounts a JOIN platform_people p ON p.id=a.person_id WHERE ${where} ORDER BY a.username,a.id LIMIT $3 OFFSET $4`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
+   await this.manage(context);
+   return {accounts,total:Number(count.total),page:query.page,pageSize:query.pageSize};
+  });
+ }
  async create(context:PlatformAdministratorContext,input:unknown){
   await this.manage(context);const parsed=z.object({personId:z.string().uuid(),username,password}).strict().parse(input);
   const hash=await bcrypt.hash(parsed.password,12);

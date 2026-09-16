@@ -1,0 +1,17 @@
+import {build} from 'esbuild';
+import {readFile,writeFile,mkdir,rm,copyFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+const upgrade=process.argv.includes('--upgrade');if(process.argv.slice(2).some(arg=>arg!=='--upgrade'))throw Error('INVALID_BUILD_OPTION');
+const root=fileURLToPath(new URL('.',import.meta.url)),out=root+(upgrade?'dist-upgrade/':'dist/');
+await mkdir(out,{recursive:true});await rm(out+'manifest.json',{force:true});
+for(const [entry,output,platform,format] of [['entry.mjs','entry.cjs','node','cjs'],['ui.mjs','ui.js','browser','iife']]){
+ const result=await build({entryPoints:[root+entry],outfile:out+output,bundle:true,platform,format,target:platform==='node'?'node22':'es2022',metafile:true});
+ if(Object.keys(result.metafile.inputs).some(path=>path.includes('server/')||path.includes('src/app-platform/')))throw Error('PLATFORM_INTERNAL_IMPORT');
+}
+await copyFile(root+'migration-001.json',out+'migration-001.json');
+const artifacts=[];for(const [id,kind,path]of [['backend','backend','entry.cjs'],['frontend','frontend','ui.js'],['schema','migration','migration-001.json']]){const bytes=await readFile(out+path);artifacts.push({id,kind,path,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});}
+if(upgrade){await copyFile(root+'migration-002.json',out+'migration-002.json');const bytes=await readFile(out+'migration-002.json');artifacts.push({id:'schema-two',kind:'migration',path:'migration-002.json',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});}
+const pkg=JSON.parse(await readFile(root+'package.json','utf8'));
+const manifest={manifestVersion:'1.0',id:'materials',version:upgrade?'0.1.1':pkg.version,name:'物料管理',description:'入库、出库、库存查询及关联冲销',publisherId:'metro-apps',compatibility:{platform:{minInclusive:'0.3.0',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:['platform.app_data.read','platform.app_data.write','platform.people.read'],defined:[{code:'app.materials.read',description:'查询本组织物料和流水'},{code:'app.materials.manage',description:'工班长物料管理及设置物资管理员'},{code:'app.materials.outbound',description:'本工班出库及本人出库纠错'}]},ui:{mode:'sandbox',entryArtifactId:'frontend'},backend:{mode:'isolated',runtime:'node',entryArtifactId:'backend',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:30}},health:{path:'/health',timeoutSeconds:1},storage:{mode:'managed',migrations:[{id:'initial',artifactId:'schema'},...(upgrade?[{id:'specification',artifactId:'schema-two'}]:[])]},routes:[{id:'home',path:'/',permission:'app.materials.read'}],navigation:[{id:'home',routeId:'home',label:'物料管理',order:0}],api:['create','inbound','outbound','reverse-inbound','reverse-outbound','list','session','members','set-manager'].map(id=>({id,method:'POST',path:`/${id}`,handler:id,permission:['members','set-manager'].includes(id)?'app.materials.manage':['outbound','reverse-outbound'].includes(id)?'app.materials.outbound':'app.materials.read'})),events:{publish:[],subscribe:[]},jobs:[],tools:[],resources:[],network:{frontendOrigins:[],backendOrigins:[]},artifacts};
+await writeFile(out+'manifest.json',JSON.stringify(manifest,null,2)+'\n');

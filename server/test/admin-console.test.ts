@@ -19,11 +19,11 @@ test('real console authenticates independent accounts, rejects CSRF and writes m
   assert.equal((await app.inject({url:'/api/admin/apps'})).statusCode,401);
   const login=await app.inject({method:'POST',url:'/api/admin/auth/login',headers:{origin:'https://platform.example'},payload:{username:'console.admin',password:'Administrator-test-123'}});assert.equal(login.statusCode,200);
   const cookies=String(login.headers['set-cookie']).split(';')[0];const headers={cookie:cookies,origin:'https://platform.example'};
-  for(const path of ['/apps/sample/install-recover','/apps/sample/recover','/apps/sample/version-recover','/apps/sample/upgrade','/install']){
+  for(const path of ['/apps/sample/install-recover','/apps/sample/recover','/apps/sample/version-recover','/apps/sample/upgrade','/install-preview','/install-approve','/version-approval/revoke','/install']){
    assert.equal((await app.inject({method:'POST',url:'/api/admin'+path,headers:{cookie:cookies,origin:'https://evil.example'},payload:{}})).statusCode,403);
    assert.equal((await app.inject({method:'POST',url:'/api/admin'+path,headers:{origin:'https://platform.example'},payload:{}})).statusCode,401);
   }
-  for(const path of ['/apps/sample/install-status','/apps/sample/runtime-status','/apps/sample/version-status','/apps/sample/ui']){
+  for(const path of ['/apps/sample/install-status','/apps/sample/runtime-status','/apps/sample/version-status','/apps/sample/ui','/publisher-policy']){
    assert.equal((await app.inject({url:'/api/admin'+path})).statusCode,401);
    assert.equal((await app.inject({url:'/api/admin'+path,headers})).statusCode,503);
   }
@@ -70,4 +70,34 @@ test('management identity never masquerades as person and does not admit service
  const service:PlatformActorContext={actorType:'service',trustedIdentity:{source:'service'},execution:{type:'service',appId:'host-demo',serviceIdentityId:'s'},request:context.request,authorize:async permissionCode=>({id:'d',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'service',effectiveScopes:[],decidedAt:new Date().toISOString()})};
  await assert.rejects(registry.list(service),/REGISTRY_ACCESS_DENIED/);
  await assert.rejects(registry.list({...context,authorize:async p=>({...await context.authorize(p),allowed:false})}),/REGISTRY_ACCESS_DENIED/);
+});
+
+test('migration management validates admin session, origin, pagination and evidence-only reconciliation',async()=>{
+ const {AppStorageError}=await import('../src/app-platform/storage/binding.ts');
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);
+ const pool={connect:async()=>({query:(sql:string,args?:readonly unknown[])=>db.query(sql,[...(args??[])]),release(){}})};
+ const identity=new AdminIdentityService(pool);await identity.bootstrap({username:'migration.admin',displayName:'Admin',password:'Migration-test-password'});
+ const login=await identity.login({username:'migration.admin',password:'Migration-test-password'});
+ const app=Fastify();await app.register(cookie);let reads=0,writes=0;
+ const management={writeHistory:async()=>({writes:[],revision:4,enabled:false,nextCursor:null}),reconcileWrite:async()=>{writes++;throw new AppStorageError('STORAGE_WRITE_RECONCILIATION_REQUIRED');},migrationHistory:async(context:PlatformAdministratorContext,appId:string,after:number)=>{assert.equal(context.actorType,'administrator');assert.equal(appId,'sample');reads++;return {revision:4,enabled:false,attempts:[],nextSequence:null,after};},reconcileMigration:async()=>{writes++;throw new AppStorageError('MIGRATION_RECONCILIATION_BLOCKED');}};
+ await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool,management:management as unknown as import('../src/app-platform/management/service.ts').AppManagement});
+ try{
+  const {ADMIN_SESSION_COOKIE}=await import('../src/core/admin-identity/index.ts');
+  const path='/api/admin/apps/sample/storage/migrations',headers={cookie:`${ADMIN_SESSION_COOKIE}=${login.token}`,origin:'https://platform.example'};
+  assert.equal((await app.inject({url:path})).statusCode,401);
+  assert.equal((await app.inject({url:path+'?afterSequence=12',headers})).json().after,12);
+  assert.equal((await app.inject({url:path+'?afterSequence=-1',headers})).statusCode,400);assert.equal(reads,1);
+  const payload={revision:4,attemptId:'55000000-0000-4000-8000-000000000001'};
+  assert.equal((await app.inject({method:'POST',url:path+'/reconcile',headers:{...headers,origin:'https://other.example'},payload})).statusCode,403);
+  assert.equal((await app.inject({method:'POST',url:path+'/reconcile',headers,payload:{...payload,outcome:'applied'}})).statusCode,400);assert.equal(writes,0);
+  const result=await app.inject({method:'POST',url:path+'/reconcile',headers,payload});assert.equal(result.statusCode,409);assert.equal(result.json().error,'MIGRATION_RECONCILIATION_BLOCKED');assert.equal(writes,1);
+  const writePath='/api/admin/apps/sample/storage/writes';
+  assert.equal((await app.inject({url:writePath})).statusCode,401);
+  assert.equal((await app.inject({url:writePath+'?after=bad',headers})).statusCode,400);
+  assert.equal((await app.inject({url:writePath,headers})).statusCode,200);
+  const writePayload={revision:4,requestId:payload.attemptId};
+  assert.equal((await app.inject({method:'POST',url:writePath+'/reconcile',headers:{...headers,origin:'https://other.example'},payload:writePayload})).statusCode,403);
+  assert.equal((await app.inject({method:'POST',url:writePath+'/reconcile',headers,payload:{...writePayload,status:'completed'}})).statusCode,400);
+  const blocked=await app.inject({method:'POST',url:writePath+'/reconcile',headers,payload:writePayload});assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error,'STORAGE_WRITE_RECONCILIATION_REQUIRED');
+ }finally{await app.close();await db.close();}
 });

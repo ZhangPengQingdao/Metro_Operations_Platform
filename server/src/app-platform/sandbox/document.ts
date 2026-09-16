@@ -27,7 +27,7 @@ export function buildSandboxDocument(input: SandboxDocumentInput): SandboxDocume
   const nonce = randomBytes(24).toString('base64');
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`;
   // No arbitrary HTML, base, handlers or metadata precedes the enforced policy.
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform application</title><style nonce="${nonce}">${style.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="app"></div><script nonce="${nonce}">${script.replace(/<\/script/gi,'<\\/script')}</script></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform application</title><style nonce="${nonce}">${style.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="app"></div><script nonce="${nonce}" data-platform-origin="${origin.origin.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${script.replace(/<\/script/gi,'<\\/script')}</script></body></html>`;
   return Object.freeze({ html, headers: Object.freeze({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': `${csp}; sandbox allow-scripts; frame-ancestors ${origin.origin}`,

@@ -45,7 +45,7 @@ export function createStorageArtifactReader(options:{
  }};
 }
 
-const tables=['platform_app_migration_attempts','platform_app_storage_leases','platform_app_migration_receipts',
+const tables=['platform_app_runtime_write_receipts','platform_app_runtime_write_reconciliations','platform_app_migration_attempts','platform_app_storage_leases','platform_app_migration_receipts',
  'platform_app_runtime_storage_leases','platform_app_runtime_storage_writes','platform_app_migration_reconciliations','platform_app_storage_restores','platform_app_storage_versions','platform_app_storage_migration_adoptions'];
 
 /** Pinned, distinct management identity. Current storage executor requires superuser role administration.

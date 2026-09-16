@@ -44,3 +44,25 @@ test('lost Gateway responses do not retry and retain unknown write outcome',asyn
  await assert.rejects(backend.gateway.invoke('fixture.write',{}),error=>typeof error==='object'&&error!==null&&'writeOutcome'in error&&error.writeOutcome==='unknown');
  assert.equal(messages,1);assert.equal(backend.signal.aborted,true);await backend.drain();
 });
+
+test('employee handlers receive immutable host context separately from forged payload fields',async()=>{
+ const input=new PassThrough(),output=new PassThrough();
+ const employee={version:'1.0' as const,personId:randomUUID(),organizationUnitId:randomUUID(),requestId:'request',traceId:'trace',permissions:['app.backend-sample.manage']};
+ const backend=createAppBackend({input,output,handlers:new Map([['echo',{method:'POST',path:'/echo',requireEmployeeContext:true,execute:async(payload,_signal,current)=>{
+  assert.equal(Object.isFrozen(current),true);assert.equal(Object.isFrozen(current!.permissions),true);assert.deepEqual(current,employee);
+  assert.notEqual((payload as {personId:string}).personId,current!.personId);
+  return {operator:current!.personId};
+ }}]])});
+ const host=startAppStdioGateway({appId:'backend-sample',serviceCredential:'private',stdout:output,stdin:input,gateway:{invokeService:async()=>{throw Error('not used');},drain:async()=>{}}});
+ try{assert.equal((await host.api.invoke({handler:'echo',method:'POST',path:'/echo',payload:{personId:'forged'},employee}) as {operator:string}).operator,employee.personId);}
+ finally{backend.close();await backend.drain();host.api.confirmContainerStopped();await host.stop();}
+});
+test('employee handlers reject missing, malformed and extra identity fields before execution',async()=>{
+ const valid={version:'1.0',personId:randomUUID(),organizationUnitId:randomUUID(),requestId:'request',traceId:'trace'};
+ for(const employee of [undefined,null,{...valid,personId:'bad'},{...valid,token:'secret'},{...valid,requestId:'x'.repeat(129)},{...valid,permissions:['platform.authorization.manage']},{...valid,permissions:['app.demo.manage','app.demo.manage']}]){
+  const input=new PassThrough(),output=new PassThrough();let calls=0;
+  const backend=createAppBackend({input,output,handlers:new Map([['echo',{method:'POST',path:'/echo',requireEmployeeContext:true,execute:async()=>{calls++;return null;}}]])});
+  input.write('AFC_API_V1 '+JSON.stringify({id:randomUUID(),request:{handler:'echo',method:'POST',path:'/echo',payload:{personId:valid.personId},...(employee===undefined?{}:{employee})}})+'\n');
+  await backend.whenClosed;await backend.drain();assert.equal(calls,0);
+ }
+});

@@ -1,4 +1,5 @@
 import { validateAppManifest } from '../manifest/index.js';
+import { parseAppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
 import type { AppInstallation } from '../registry/model.js';
 import type { PlatformActorContext, PlatformActorContextResolver } from '../../platform/context/index.js';
 import { jsonSnapshot, type GatewayJson } from '../gateway/model.js';
@@ -33,19 +34,21 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
         JSON.stringify(fresh.manifest) !== manifestDigest) throw new AppStdioApiError('STALE_API');
   }
   return {
-    invoke(context: PlatformActorContext, request: { apiId: string; method: string; path: string; payload: unknown }, signal?: AbortSignal): Promise<GatewayJson> {
+    invoke(context: PlatformActorContext, request: { apiId: string; method: string; path: string; payload: unknown }, signal?: AbortSignal, assertAdmission?:()=>Promise<void>): Promise<GatewayJson> {
       if (!active || signal?.aborted) return Promise.reject(new AppStdioApiError('CLOSED'));
       if (pending.size >= 16) return Promise.reject(new AppStdioApiError('BUSY'));
       if (context.actorType !== 'person') return Promise.reject(new AppStdioApiError('ACCESS_DENIED'));
-      // The authenticated actor's identity is pinned before awaiting. Never serialize it to the app.
+      // Pin the identity before awaiting; serialize only the public audit identifiers below.
       const identity = { ...context.trustedIdentity };
       const metadata = { ...context.request };
+      const personId = context.person?.id, organizationUnitId = context.person?.organization?.id;
       let payload: GatewayJson;
       try { payload = jsonSnapshot(request.payload, 60 * 1024); }
       catch { return Promise.reject(new AppStdioApiError('INVALID_PAYLOAD')); }
       const api = manifest.api.find(api => api.id === request.apiId && api.method === request.method && api.path === request.path);
       if (!api) return Promise.reject(new AppStdioApiError('API_DENIED'));
       let dispatched = false;
+      let permissionSnapshot: string | undefined;
       const controller = new AbortController();
       let rejectAbort!: (error: Error) => void;
       const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
@@ -54,18 +57,29 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
       signal?.addEventListener('abort', onAbort, { once: true });
       const timer = setTimeout(() => abort('TIMEOUT'), timeoutMs);
       const work = Promise.resolve().then(async () => {
-        async function check(): Promise<void> {
+        async function check() {
+          await assertAdmission?.();
           await current();
           const actor = await contextResolver.resolve({ actorType: 'person', trustedIdentity: identity,
             execution: { type: 'application', appId }, requestId: metadata.requestId, traceId: metadata.traceId });
           if (actor.actorType !== 'person' || actor.execution.type !== 'application' || actor.execution.appId !== appId ||
+              !personId || !organizationUnitId || actor.person?.id !== personId || actor.person?.organization?.id !== organizationUnitId ||
               !await authorize(actor, api!.permission!, payload)) throw new AppStdioApiError('ACCESS_DENIED');
           await current();
+          await assertAdmission?.();
           if (controller.signal.aborted) throw new AppStdioApiError('ABORTED');
+          const permissions:string[]=[];
+          for(const permission of manifest.permissions.defined){
+            if(await authorize(actor,permission.code,{}))permissions.push(permission.code);
+          }
+          const serialized=JSON.stringify(permissions);
+          if(permissionSnapshot!==undefined&&permissionSnapshot!==serialized)throw new AppStdioApiError('ACCESS_DENIED');
+          permissionSnapshot=serialized;
+          return parseAppBackendEmployeeContext({version:'1.0',personId,organizationUnitId,requestId:metadata.requestId,traceId:metadata.traceId,permissions});
         }
-        await check();
+        const employee = await check();
         dispatched = true;
-        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload }, controller.signal);
+        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload, employee }, controller.signal,async()=>{await check();});
         await check();
         return jsonSnapshot(result, 256 * 1024);
       }).catch(error => {

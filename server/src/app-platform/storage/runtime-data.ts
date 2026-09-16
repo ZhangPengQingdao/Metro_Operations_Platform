@@ -1,3 +1,5 @@
+import {recordRuntimeTransaction} from './runtime-reconciliation.js';
+import {runtimeListInput,runtimeListQuery} from './runtime-list.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {Client} from 'pg';
@@ -16,6 +18,10 @@ const identifier=z.string().regex(/^[a-z][a-z0-9_]{0,62}$/).refine(v=>!v.startsW
 const base={table:identifier,id:z.string().uuid()};
 const readInput=z.object(base).strict();
 const writeInput=z.object({...base,requestId:z.string().uuid(),action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id'in v.values));
+const transactionItem=z.object({...base,action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional(),expected:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>
+ (v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id' in v.values))&&
+ (v.action==='insert'?v.expected===undefined:!!v.expected&&Object.keys(v.expected).length>0&&Object.keys(v.expected).length<=63&&!('id' in v.expected)));
+const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
 const rows=async<T>(db:QueryableClient,sql:string,args?:readonly unknown[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
 const q=(v:string)=>`"${v}"`; // Only validated binding and identifier values.
 export interface RuntimeStorageOptions{
@@ -27,25 +33,36 @@ export interface RuntimeStorageOptions{
 /** Service-only, bounded row operations. No SQL, role, schema or employee identity supplied by applications. */
 export class AppRuntimeDataService{
  constructor(private readonly options:RuntimeStorageOptions){}
- operations():AppGatewayOperation[]{return [false,true].map(write=>({
+ operations():AppGatewayOperation[]{return [false,true].map<AppGatewayOperation>(write=>({
   name:write?'platform.app_data.write':'platform.app_data.get',permissionCode:write?'platform.app_data.write':'platform.app_data.read',mode:write?'write':'read',
   validateParams:v=>(write?writeInput:readInput).safeParse(v).success&&Buffer.byteLength(JSON.stringify(v))<=16384,
   resolveResources:async c=>{this.requireService(c);return [{}];},
   execute:(c,v,signal)=>this.execute(c,v,write,signal),validateResult:()=>true,
- }));}
+ })).concat([{
+  name:'platform.app_data.list',permissionCode:'platform.app_data.read',mode:'read' as const,
+  validateParams:v=>runtimeListInput.safeParse(v).success&&Buffer.byteLength(JSON.stringify(v))<=16384,
+  resolveResources:async c=>{this.requireService(c);return [{}];},
+  execute:(c,v,signal)=>this.execute(c,v,'list',signal),validateResult:()=>true,
+ },{
+  name:'platform.app_data.transaction',permissionCode:'platform.app_data.write',mode:'write',
+  validateParams:v=>transactionInput.safeParse(v).success&&Buffer.byteLength(JSON.stringify(v))<=16384,
+  resolveResources:async c=>{this.requireService(c);return [{}];},
+  execute:(c,v,signal)=>this.execute(c,v,'transaction',signal),validateResult:()=>true,
+ }]);}
  private requireService(context:PlatformActorContext):asserts context is Extract<PlatformActorContext,{actorType:'service'}>{
   if(context.actorType!=='service'||context.execution.type!=='service')throw new GatewayError('ACCESS_DENIED',403);
  }
- async execute(context:PlatformActorContext,input:unknown,write:boolean,signal:AbortSignal):Promise<GatewayJson>{
+ async execute(context:PlatformActorContext,input:unknown,mode:boolean|'list'|'transaction',signal:AbortSignal):Promise<GatewayJson>{
   this.requireService(context);
-  const mutation=write?writeInput.parse(input):undefined;
-  const parsed=mutation??readInput.parse(input);
+  const write=mode===true||mode==='transaction',batch=mode==='transaction'?transactionInput.parse(input):undefined,listing=mode==='list'?runtimeListInput.parse(input):undefined;
+  const mutation=mode===true?writeInput.parse(input):undefined;
+  const parsed=batch??mutation??listing??readInput.parse(input);
   if(Buffer.byteLength(JSON.stringify(parsed))>16384)throw new GatewayError('INVALID_PARAMS');
   const permission=write?'platform.app_data.write':'platform.app_data.read';
   const appId=context.execution.appId!;
   let admin:ManagedAppAdminClient|undefined,runtime:ManagedAppAdminClient|undefined,plan:ManagedAppStorage|undefined;
   let transaction=false,commitSent=false,intent=false,lease=false;
-  const requestId=mutation?.requestId;
+  const requestId=batch?.requestId??mutation?.requestId;
   const check=()=>{if(signal.aborted)throw new GatewayError('ABORTED',499);};
   const authorize=async()=>{check();if(!(await context.authorize(permission,{})).allowed)throw new GatewayError('ACCESS_DENIED',403);check();};
   try{
@@ -65,9 +82,15 @@ export class AppRuntimeDataService{
    await assertStorageMigrationsReady(admin,initial,plan.manifestDigest);
    // Fail closed on abandoned migration owners, rather than borrow or repair their credentials.
    if((await rows(admin,"SELECT id FROM public.platform_app_storage_leases WHERE installation_id=$1 AND status='active'",[plan.installationId])).length)throw new AppStorageError('STORAGE_LEASE_CLEANUP_REQUIRED');
-   const columns=await this.columns(admin,plan,parsed.table);
-   if(mutation)for(const [name,value]of Object.entries(mutation.values??{})){
-    const type=columns.get(name);if(!type||name==='id'||!validValue(type,value))throw new GatewayError('INVALID_PARAMS');
+   const tables=batch?batch.operations.map(item=>item.table):[(parsed as {table:string}).table];
+   const columnSets=new Map<string,Map<string,string>>();
+   for(const table of new Set(tables))columnSets.set(table,await this.columns(admin,plan,table));
+   const columns=columnSets.get(tables[0])!;
+   const listQuery=listing?runtimeListQuery(listing,columns):undefined;
+   for(const item of batch?.operations??(mutation?[mutation]:[])){
+    for(const [name,value]of [...Object.entries(item.values??{}),...Object.entries('expected' in item?item.expected??{}:{})]){
+     const type=columnSets.get(item.table)!.get(name);if(!type||name==='id'||!validValue(type,value))throw new GatewayError('INVALID_PARAMS');
+    }
    }
    if(requestId){
     if((await rows(admin,'SELECT request_id FROM public.platform_app_runtime_storage_writes WHERE installation_id=$1 AND request_id=$2',[plan.installationId,requestId])).length)throw new AppStorageError('STORAGE_REQUEST_ALREADY_RECORDED');
@@ -86,20 +109,42 @@ export class AppRuntimeDataService{
    const identity=await rows<{session_user:string;current_user:string;database:string;rolsuper:boolean}>(runtime,'SELECT session_user,current_user,current_database() AS database,rolsuper FROM pg_catalog.pg_roles WHERE rolname=current_user');
    if(identity.length!==1||identity[0].session_user!==plan.runtimeRole||identity[0].current_user!==plan.runtimeRole||identity[0].database!==this.options.endpoint.database||identity[0].rolsuper)throw new AppStorageError('STORAGE_IDENTITY_MISMATCH');
    await runtime.query(write?'BEGIN':'BEGIN READ ONLY');transaction=true;
+   if(requestId)await recordRuntimeTransaction(admin,runtime,plan.installationId,requestId);
    check();
-   const table=`${q(plan.schema)}.${q(parsed.table)}`;
-   let sql=`SELECT t.* FROM ${table} t WHERE id=$1`,values:unknown[]=[parsed.id];
-   if(mutation){
-    const entries=Object.entries(mutation.values??{});const names=entries.map(([key])=>key);
-    values=[parsed.id,...entries.map(([key,value])=>columns.get(key)==='jsonb'&&value!==null?JSON.stringify(value):value)];
-    if(mutation.action==='insert')sql=`INSERT INTO ${table} (${['id',...names].map(q).join(',')}) VALUES (${values.map((_,i)=>'$'+(i+1)).join(',')}) RETURNING *`;
-    if(mutation.action==='update')sql=`UPDATE ${table} SET ${names.map((name,i)=>`${q(name)}=$${i+2}`).join(',')} WHERE id=$1 RETURNING *`;
-    if(mutation.action==='delete')sql=`DELETE FROM ${table} WHERE id=$1 RETURNING *`;
+   let resultBytes=0;
+   const statement=async(item:z.infer<typeof transactionItem>|z.infer<typeof readInput>,isMutation:boolean,requireRow:boolean)=>{
+    check();const table=`${q(plan!.schema)}.${q(item.table)}`,itemColumns=columnSets.get(item.table)!;
+    let sql=`SELECT t.* FROM ${table} t WHERE id=$1`,values:unknown[]=[item.id];
+    if(listQuery){sql=`SELECT t.* FROM ${table} t${listQuery.suffix}`;values=listQuery.values;}
+    if(isMutation&&'action' in item){
+     const entries=Object.entries(item.values??{}),names=entries.map(([key])=>key);
+     const encode=(key:string,value:unknown)=>itemColumns.get(key)==='jsonb'&&value!==null?JSON.stringify(value):value;
+     values=[item.id,...entries.map(([key,value])=>encode(key,value))];
+     let where='id=$1';
+     for(const [key,value]of Object.entries('expected' in item?item.expected??{}:{})){
+      values.push(encode(key,value));where+=` AND ${q(key)} IS NOT DISTINCT FROM $${values.length}::${itemColumns.get(key)}`;
+     }
+     if(item.action==='insert')sql=`INSERT INTO ${table} (${['id',...names].map(q).join(',')}) VALUES (${values.map((_,i)=>'$'+(i+1)).join(',')}) RETURNING *`;
+     if(item.action==='update')sql=`UPDATE ${table} SET ${names.map((name,i)=>`${q(name)}=$${i+2}`).join(',')} WHERE ${where} RETURNING *`;
+     if(item.action==='delete')sql=`DELETE FROM ${table} WHERE ${where} RETURNING *`;
+    }
+    // Bounds apply to the whole response, including transaction operations and list lookahead.
+    const result=await rows<{text:string;bytes:number}>(runtime!,`WITH r AS (${sql}) SELECT left(row_to_json(r)::text,32769) AS text,octet_length(row_to_json(r)::text) AS bytes FROM r`,values);
+    resultBytes+=result.reduce((sum,r)=>sum+r.bytes,0);
+    if(result.length>(listing?listing.pageSize+1:1)||result.some(r=>r.bytes>32768)||resultBytes>60000)throw new AppStorageError('STORAGE_RESULT_LIMIT');
+    if(requireRow&&result.length!==1)throw new GatewayError('STORAGE_CONFLICT',409);
+    return result.map(r=>JSON.parse(r.text));
+   };
+   let output:GatewayJson;
+   if(batch){
+    const results=[];
+    for(const item of batch.operations){await revalidate();results.push({row:(await statement(item,true,true))[0]});}
+    output=jsonSnapshot({results},65536);
+   }else{
+    const result=await statement(parsed as z.infer<typeof readInput>,!!mutation,false);
+    const page=listing?result.slice(0,listing.pageSize):undefined;
+    output=jsonSnapshot(listing?{rows:page,nextCursor:result.length>listing.pageSize?page![page!.length-1].id:null}:{row:result[0]??null},65536);
    }
-   // PostgreSQL bounds the returned text before it reaches the driver.
-   const result=await rows<{text:string;bytes:number}>(runtime,`WITH r AS (${sql}) SELECT left(row_to_json(r)::text,32769) AS text,octet_length(row_to_json(r)::text) AS bytes FROM r`,values);
-   if(result.length>1||result.some(r=>r.bytes>32768))throw new AppStorageError('STORAGE_RESULT_LIMIT');
-   const output=jsonSnapshot({row:result.length?JSON.parse(result[0].text):null},65536);
    await revalidate();check();commitSent=true;await runtime.query('COMMIT');transaction=false;
    if(intent)await admin.query("UPDATE public.platform_app_runtime_storage_writes SET status='completed',completed_at=clock_timestamp() WHERE installation_id=$1 AND request_id=$2 AND status='dispatched'",[plan.installationId,requestId]);
    return output;

@@ -21,6 +21,7 @@ const navigation = [
 const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',navigation:[
  ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['lines','线路'],['locations','车站与位置'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
 ].map(([id,label])=>({id,label,path:`/admin/data/${id}`}))};
+const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'}]};
 export function applicationNavigation(pathname: string, applications: AdminApplication[]) {
   const app = applications.find(item => pathname === `/admin/app/${encodeURIComponent(item.id)}` || pathname.startsWith(`/admin/app/${encodeURIComponent(item.id)}/`));
   if (!app) return undefined;
@@ -56,7 +57,7 @@ export function AdminShell({user, applications, children, onLogout, profileConte
   const [error, setError] = useState('');
   const account = useRef<HTMLDivElement>(null);
   const accountTrigger = useRef<HTMLButtonElement>(null);
-  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : applicationNavigation(pathname, applications);
+  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications);
   const secondary = Boolean(app) && navigationMode !== 'primary';
   const rail = !secondary && collapsed;
   const toggleNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {

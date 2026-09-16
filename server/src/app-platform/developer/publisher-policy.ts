@@ -18,7 +18,7 @@ export async function loadPublisherPolicy(file: string): Promise<PublisherPolicy
   catch { throw new AppPackageError('INVALID_PUBLISHER_POLICY'); }
   return parsePolicy(value);
 }
-function parsePolicy(input: unknown): PublisherPolicy {
+export function parsePolicy(input: unknown): PublisherPolicy {
   const parsed = schema.safeParse(input);
   if (!parsed.success || Buffer.byteLength(JSON.stringify(parsed.data)) > 262144) throw new AppPackageError('INVALID_PUBLISHER_POLICY');
   const identities = new Set<string>();

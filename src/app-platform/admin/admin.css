@@ -116,3 +116,5 @@
 @media(prefers-reduced-motion:reduce) {
  .afc-sidebar-nav--secondary, .afc-sidebar-nav--primary { animation:none; }
 }
+
+.employee-workspace{max-width:1280px;margin:0 auto;padding:24px;}

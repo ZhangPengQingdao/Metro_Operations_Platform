@@ -1,3 +1,4 @@
+import {isAppendOnlyStorageVersion} from '../manifest/storage-version.js';
 import { runAtomicOperation, type AtomicParticipant, type QueryableClient } from '../../core/database/index.js';
 import { validateAppManifest } from '../manifest/index.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -95,7 +96,7 @@ function validateLifecycleTransition(current: StoredAppInstallation | null, next
     const versionChange = op.action === 'upgrade' || op.action === 'rollback';
     if (versionChange) {
       const parsed = validateAppManifest(op.targetManifest);
-      if (!parsed.ok || !isDeepStrictEqual(parsed.manifest, op.targetManifest) || parsed.manifest.id !== current.appId || parsed.manifest.publisherId !== current.manifest.publisherId || parsed.manifest.version === current.manifest.version || !isDeepStrictEqual(parsed.manifest.storage, current.manifest.storage)) return reject();
+      if (!parsed.ok || !isDeepStrictEqual(parsed.manifest, op.targetManifest) || parsed.manifest.id !== current.appId || parsed.manifest.publisherId !== current.manifest.publisherId || parsed.manifest.version === current.manifest.version || !isAppendOnlyStorageVersion(current.manifest,parsed.manifest)) return reject();
     } else if (op.targetManifest !== null) return reject();
     expected.lifecycle = { operationId: op.operationId, action: op.action, status: 'running', baseManifest: structuredClone(current.manifest), targetManifest: structuredClone(op.targetManifest), startedAt: next.updatedAt, settledAt: null };
   } else {

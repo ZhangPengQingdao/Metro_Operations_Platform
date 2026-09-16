@@ -1,3 +1,5 @@
+import {reconcileRuntimeWrite} from './runtime-reconciliation.js';
+import {isAppendOnlyStorageVersion} from '../manifest/storage-version.js';
 import {assertRuntimeWritesSettled} from './runtime-evidence.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -62,6 +64,7 @@ export class ManagedAppStorageService {
     return this.operations.withLock(context, appId, revision, async scope => {
       if ((await scope.registry.get(context,appId)).enabled) throw new AppStorageError('STORAGE_REQUIRES_DISABLED');
       await assertNoPendingRestore(scope.client, scope.binding.installationId);
+      await assertRuntimeWritesSettled(scope.client,scope.binding.installationId);
       const ledger = new AppMigrationLedger(scope.registry, scope.client);
       const receipts = new AppMigrationReceipts(scope.client);
       const planner = new AppMigrationPlanner(scope.registry, this.reader);
@@ -81,8 +84,17 @@ export class ManagedAppStorageService {
     });
   }
   reconcile(context: PlatformManagementContext, appId: string, revision: number, attemptId: string) {
-    return this.operations.withLock(context, appId, revision, scope =>
-      new AppMigrationLedger(scope.registry, scope.client).reconcile(context, appId, attemptId));
+    return this.operations.withLock(context, appId, revision, async scope => {
+      if((await scope.registry.get(context,appId)).enabled)throw new AppStorageError('STORAGE_REQUIRES_DISABLED');
+      return new AppMigrationLedger(scope.registry, scope.client).reconcile(context, appId, attemptId);
+    });
+  }
+  reconcileWrite(context:PlatformManagementContext,appId:string,revision:number,requestId:string){
+    return this.operations.withLock(context,appId,revision,async scope=>{
+      if((await scope.registry.get(context,appId)).enabled)throw new AppStorageError('STORAGE_REQUIRES_DISABLED');
+      await scope.revalidate();
+      return reconcileRuntimeWrite(scope.client,context,scope.binding,requestId);
+    });
   }
   exportData(context: PlatformManagementContext, appId: string, revision: number) {
     return this.operations.withLock(context, appId, revision, async scope => {
@@ -129,10 +141,12 @@ export class ManagedAppStorageService {
           throw new AppStorageError('STORAGE_BINDING_CONFLICT');
         await scope.storage.assertReady(context,appId);
         await scope.client.query('SET LOCAL search_path = pg_catalog, public');
-        await this.requireSettled(scope,context,appId);
+        await assertRuntimeWritesSettled(scope.client,scope.binding.installationId);
+        await assertStorageMigrationsReady(scope.client,current,scope.binding.manifestDigest,true);
       } else {
         // Original attempts must already be complete for the source version; uncertainty never migrates forward.
-        const attempts = await this.requireSettled(scope,context,appId,previous.manifestDigest);
+        await assertRuntimeWritesSettled(scope.client,scope.binding.installationId);
+        const attempts = await assertStorageMigrationsReady(scope.client,{...current,manifest:lifecycle.baseManifest},previous.manifestDigest);
         await scope.storage.transitionBinding(context,appId,previous);
         // Nested storage inspection narrows search_path; restore platform metadata lookup
         // before the registry revision recheck in this enclosing transaction.
@@ -149,14 +163,10 @@ export class ManagedAppStorageService {
   }
   private compatibleVersion(previous: AppManifest, next: AppManifest) {
     if (previous.id !== next.id || previous.publisherId !== next.publisherId || previous.storage.mode !== 'managed'
-      || next.storage.mode !== 'managed' || !isDeepStrictEqual(previous.storage,next.storage))
+      || next.storage.mode !== 'managed' || !isAppendOnlyStorageVersion(previous,next))
       throw new AppStorageError('STORAGE_VERSION_INCOMPATIBLE');
-    for (const declaration of next.storage.migrations) {
-      const old = previous.artifacts.find(a=>a.id===declaration.artifactId);
-      const target = next.artifacts.find(a=>a.id===declaration.artifactId);
-      if (!old || !isDeepStrictEqual(old,target)) throw new AppStorageError('STORAGE_VERSION_INCOMPATIBLE');
-    }
   }
+
   private async requireSettled(scope: ManagedAppLockedScope, context: PlatformManagementContext, appId: string, digest = scope.binding.manifestDigest) {
     await assertRuntimeWritesSettled(scope.client,scope.binding.installationId);
     return assertStorageMigrationsReady(scope.client,await scope.registry.get(context,appId),digest);

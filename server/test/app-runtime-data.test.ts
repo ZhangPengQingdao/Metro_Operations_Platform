@@ -49,3 +49,18 @@ test('SDK preserves caller write intent and never retries an unknown result',asy
  assert.equal(requests.length,1);
  assert.equal(JSON.stringify(requests[0]),JSON.stringify({version:'1.0',operation:'platform.app_data.write',params:{table:'entries',id,requestId:id,action:'insert',values:{value:{note:'test'}}}}));
 });
+
+test('atomic storage transactions require bounded compare-and-set mutations',async()=>{
+ const f=fixture(),operation=f.service.operations().find(o=>o.name==='platform.app_data.transaction')!;
+ const update={table:'inventory',id,action:'update',values:{quantity:7},expected:{quantity:10}};
+ assert.ok(operation.validateParams({requestId:id,operations:[update]}));
+ for(const operations of [[],Array(17).fill(update),[{...update,expected:{}}],[{table:'inventory',id,action:'update',values:{quantity:7}}],[{...update,values:{id}}],[{table:'entries',id,action:'insert',values:{note:'x'},expected:{note:'y'}}]])assert.equal(operation.validateParams({requestId:id,operations}),false);
+ await assert.rejects(operation.execute({...f.actor,actorType:'person'} as PlatformActorContext,{requestId:id,operations:[update]},new AbortController().signal),/ACCESS_DENIED/);assert.equal(f.connections(),0);
+});
+test('SDK forwards one atomic intent without replaying an uncertain transaction',async()=>{
+ const {createAppDataClient,createAppGatewayClient}=await import('@metro/platform-sdk/app-gateway');
+ let count=0;
+ const operations=[{action:'update' as const,table:'inventory',id,values:{quantity:7},expected:{quantity:10}}];
+ const data=createAppDataClient(createAppGatewayClient(async request=>{count++;assert.deepEqual(JSON.parse(JSON.stringify(request.params.operations)),operations);return {version:'1.0',error:{code:'STORAGE_WRITE_UNCERTAIN',writeOutcome:'unknown'}};}));
+ await assert.rejects(data.transaction(id,operations),/STORAGE_WRITE_UNCERTAIN/);assert.equal(count,1);
+});

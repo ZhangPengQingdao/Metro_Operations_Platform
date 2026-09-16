@@ -15,6 +15,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - name: Require signing key
         env:
           SIGNING_KEY: ${{ secrets.MOP_RELEASE_SIGNING_KEY }}
@@ -32,6 +36,14 @@ jobs:
           openssl pkey -in "$RUNNER_TEMP/release-key.pem" -pubout -out release-assets/release-public.pem
           cmp deploy/release-public.pub release-assets/release-public.pem
           tar --exclude='__pycache__' -czf release-assets/installer.tar.gz package.json deploy/install.sh deploy/updater.py deploy/release-public.pub docs/linux-installation.md docs/server-first-install.md
+      - name: Build standalone developer packages
+        run: |
+          npm ci
+          npm run version:check
+          npm run build:sdk
+          npm run build:cli
+          npm pack --workspace @metro/platform-sdk --ignore-scripts --pack-destination release-assets
+          npm pack --workspace @metro/platform-cli --ignore-scripts --pack-destination release-assets
       - name: Publish draft release for review
         env:
           GH_TOKEN: ${{ github.token }}

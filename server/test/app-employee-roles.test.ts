@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {PGlite} from '@electric-sql/pglite';
+import {initializePlatformDatabase} from '../src/setup/schema.ts';
+import {AdminIdentityService} from '../src/core/admin-identity/index.ts';
+import {createEmployeeRoleManagement} from '../src/app-platform/admin/employee-roles.ts';
+import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
+import {createPostgresAuthorizationRepository} from '../src/platform/authorization/index.ts';
+import {createPostgresPeopleDirectoryRepository} from '../src/platform/people/index.ts';
+import {createPeopleDirectoryOperation} from '../src/app-platform/gateway/people-directory.ts';
+import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
+import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
+test('administrator configures only declared app role permissions, assigns employee roles with CAS and leaves an audit',async()=>{
+ const pg=new PGlite(),db={query:async(sql:string,args?:readonly unknown[])=>args?pg.query(sql,[...args]):(await pg.exec(sql)).at(-1)!,release(){}};
+ try{
+  await initializePlatformDatabase(db);const identity=new AdminIdentityService({connect:async()=>db}),account=await identity.bootstrap({username:'role.admin',displayName:'Admin',password:'Role-test-password123'});
+  const context:PlatformAdministratorContext={actorType:'administrator',administrator:account,execution:{type:'platform'},request:{requestId:'t',traceId:'t',startedAt:new Date().toISOString()},authorize:async permissionCode=>({id:'t',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'administrator',effectiveScopes:[],decidedAt:new Date().toISOString()})};
+  const denied={...context,authorize:async(code:string)=>({...await context.authorize(code,{}),allowed:false})};
+  const repository=createPostgresAuthorizationRepository(db),registry=new AppRegistryService(new PostgresAppRegistryRepository(db),{authorization:repository,host:()=>({platformVersion:'0.2.1',capabilities:[],applications:[]})});
+  await registry.register(context,demoManifest);const roles=createEmployeeRoleManagement(db),roleId='40000000-0000-4000-8000-000000000002',code=demoManifest.permissions.defined[0].code;
+  const state=await roles.list(context,demoManifest.id);await assert.rejects(roles.list(denied,demoManifest.id),/ADMIN_AUTH_REQUIRED/);
+  await assert.rejects(roles.set(context,demoManifest.id,{revision:state.revision,roleId,permissionCode:'platform.authorization.manage',enabled:true}),/UNDECLARED_PERMISSION/);
+  const granted=await roles.set(context,demoManifest.id,{revision:state.revision,roleId,permissionCode:code,enabled:true});assert.ok(granted.roles.find(r=>r.id===roleId)!.grants.some(g=>g.code===code));
+  await assert.rejects(roles.set(context,demoManifest.id,{revision:state.revision,roleId,permissionCode:code,enabled:false}),/STALE_REVISION/);
+  const org=randomUUID(),position=randomUUID(),person=randomUUID();
+  await pg.query("INSERT INTO platform_organization_units(id,code,name,unit_type,status,created_at,updated_at) VALUES($1,'team','Team','workgroup','active',now(),now())",[org]);
+  await pg.query("INSERT INTO platform_positions(id,code,name,status,created_at,updated_at) VALUES($1,'worker','Worker','active',now(),now())",[position]);
+  await pg.query("INSERT INTO platform_people(id,employee_no,name,organization_unit_id,position_id,employment_status,created_at,updated_at) VALUES($1,'001','Employee',$2,$3,'active',now(),now())",[person,org,position]);
+  const assigned=await roles.assign(context,{personId:person,roleId,revision:null});assert.equal(assigned.assignment.roleId,roleId);assert.equal(assigned.assignment.assignedByPersonId,null);
+  await assert.rejects(roles.assign(context,{personId:person,roleId,revision:null}),/STALE_REVISION/);
+  const op=createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(db));
+  const result:any=await op.execute(null as any,{organizationUnitId:org},new AbortController().signal);assert.deepEqual(result.rows,[{id:person,name:'Employee',employeeNo:'001',organizationUnitId:org}]);
+  assert.equal(op.validateParams({organizationUnitId:org,limit:999}),false);
+  assert.deepEqual(await op.resolveResultResources!(null as any,{organizationUnitId:org,rows:[]}),[{organizationUnitId:org}]);
+  assert.equal(op.validateResult({organizationUnitId:org,rows:[]}),true);
+  assert.deepEqual(await op.resolveResources(null as any,{organizationUnitId:org}),[{organizationUnitId:org}]);
+  assert.deepEqual((await op.execute(null as any,{organizationUnitId:randomUUID(),personId:person},new AbortController().signal) as any).rows,[]);
+  await pg.query("UPDATE platform_people SET employment_status='departed' WHERE id=$1",[person]);assert.deepEqual((await op.execute(null as any,{organizationUnitId:org},new AbortController().signal) as any).rows,[]);
+  await roles.set(context,demoManifest.id,{revision:granted.revision,roleId,permissionCode:code,enabled:false});
+  assert.equal((await pg.query("SELECT count(*)::int n FROM platform_admin_audit WHERE action LIKE 'employee.role%'")).rows[0].n,3);
+ }finally{await pg.close();}
+});

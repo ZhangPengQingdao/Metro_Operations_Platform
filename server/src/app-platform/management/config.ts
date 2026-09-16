@@ -26,6 +26,9 @@ export function isAppRuntimeSupported(manifest:AppManifest,config:AppManagementC
  return ['none','sandbox'].includes(manifest.ui.mode)
   && (manifest.backend.mode==='none'||(manifest.backend.mode==='isolated'&&!!config.docker))
   && (manifest.storage.mode==='none'||(manifest.storage.mode==='managed'&&config.managedStorage===true)) && !manifest.events.publish.length && !manifest.events.subscribe.length
-  && !manifest.jobs.length && !manifest.tools.length && !manifest.api.length
+  && !manifest.jobs.length && !manifest.tools.length
+  && (!manifest.api.length || (manifest.backend.mode==='isolated' && !!config.docker
+   && manifest.api.every(api=>!!api.permission && api.permission.startsWith(`app.${manifest.id}.`)
+    && manifest.permissions.defined.some(permission=>permission.code===api.permission))))
   && !manifest.network.frontendOrigins.length && !manifest.network.backendOrigins.length;
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
 import { jsonSnapshot, type GatewayJson } from '../gateway/model.js';
 
 export const APP_STDIO_API_PREFIX = 'AFC_API_V1 ';
@@ -7,15 +8,15 @@ export class AppStdioApiError extends Error {
     super(code); this.name = 'AppStdioApiError';
   }
 }
-export interface AppStdioApiRequest { handler: string; method: string; path: string; payload: GatewayJson }
+export interface AppStdioApiRequest { handler: string; method: string; path: string; payload: GatewayJson; employee?: AppBackendEmployeeContext }
 /** Trusted-host transport; authorization belongs to HostedAppApi. No automatic replay. */
 export function createAppStdioApiTransport(write: (value: unknown) => Promise<void>, close: () => void, timeoutMs = 10_000) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new AppStdioApiError('INVALID_OPTIONS');
   let active = true;
-  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void }>();
+  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void; admitted:boolean; assertAdmission?:()=>Promise<void> }>();
   const disconnect = (): void => { active = false; for (const entry of pending.values()) entry.fail(); };
   return {
-    async invoke(request: AppStdioApiRequest, signal?: AbortSignal): Promise<GatewayJson> {
+    async invoke(request: AppStdioApiRequest, signal?: AbortSignal, assertAdmission?:()=>Promise<void>): Promise<GatewayJson> {
       if (!active || signal?.aborted) throw new AppStdioApiError('CLOSED');
       if (pending.size >= 16) throw new AppStdioApiError('BUSY');
       const snapshot = jsonSnapshot(request, 60 * 1024);
@@ -23,14 +24,23 @@ export function createAppStdioApiTransport(write: (value: unknown) => Promise<vo
       let resolve!: (value: GatewayJson) => void, reject!: (error: Error) => void, settled!: () => void;
       const response = new Promise<GatewayJson>((yes, no) => { resolve = yes; reject = no; });
       const actual = new Promise<void>(yes => { settled = yes; });
-      const abort = () => reject(new AppStdioApiError('ABORTED', 'unknown'));
-      const timer = setTimeout(() => reject(new AppStdioApiError('TIMEOUT', 'unknown')), timeoutMs);
-      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled });
+      const invalidate=()=>{const entry=pending.get(id);if(entry)entry.admitted=false;};
+      const abort = () => {invalidate();reject(new AppStdioApiError('ABORTED', 'unknown'));};
+      const timer = setTimeout(() => {invalidate();reject(new AppStdioApiError('TIMEOUT', 'unknown'));}, timeoutMs);
+      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled, admitted:true, assertAdmission });
       signal?.addEventListener('abort', abort, { once: true });
       // Write failure may follow delivery. Keep the actual-work slot until a reply or verified stop.
       void write({ id, request: snapshot }).catch(() => { disconnect(); close(); });
       try { return await response; }
       finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+    },
+    /** Host callback only. An opaque frame ID is useful solely while its original API call is live. */
+    admissionGuard(id:string):()=>Promise<void> {
+      const entry=pending.get(id);
+      return async()=>{
+        const check=()=>{if(!active||!entry?.admitted||!entry.assertAdmission||pending.get(id)!==entry)throw new AppStdioApiError('ACCESS_DENIED');};
+        check();await entry!.assertAdmission!();check();
+      };
     },
     accept(value: unknown): void {
       try {

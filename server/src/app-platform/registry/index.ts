@@ -1,3 +1,4 @@
+import {isAppendOnlyStorageVersion} from '../manifest/storage-version.js';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { runAtomicOperation } from '../../core/database/index.js';
@@ -58,7 +59,7 @@ export class AppRegistryService {
       const versionChange = action === 'upgrade' || action === 'rollback';
       if (versionChange) {
         if (!parsed?.ok) throw new AppRegistryError('INVALID_MANIFEST');
-        if (parsed.manifest.id !== record.appId || parsed.manifest.publisherId !== record.manifest.publisherId || !isDeepStrictEqual(parsed.manifest.storage, record.manifest.storage)) throw new AppRegistryError('IMMUTABLE_INSTALLATION');
+        if (parsed.manifest.id !== record.appId || parsed.manifest.publisherId !== record.manifest.publisherId || !isAppendOnlyStorageVersion(record.manifest,parsed.manifest)) throw new AppRegistryError('IMMUTABLE_INSTALLATION');
         if (parsed.manifest.version === record.manifest.version) throw new AppRegistryError('UNCHANGED_VERSION');
         if (!checkAppManifestCompatibility(parsed.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       } else if (parsed !== null) throw new AppRegistryError('UNEXPECTED_TARGET_MANIFEST');
@@ -102,6 +103,8 @@ export class AppRegistryService {
   async get(context: PlatformManagementContext, appId: string) {
     return runAtomicOperation([this.repository], async () => { await admin(context,'read'); return publicRecord(await this.require(appId)); });
   }
+  /** Internal runtime snapshot only; transport callers require independent admission. */
+  async runtimeSnapshot(appId:string){return publicRecord(await this.require(appId));}
   async listHistory(context: PlatformManagementContext, appId: string, afterRevision = 0, limit = 100) {
     return runAtomicOperation([this.repository], async () => {
       await admin(context,'read');

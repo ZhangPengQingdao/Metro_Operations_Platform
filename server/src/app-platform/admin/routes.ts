@@ -1,3 +1,7 @@
+import {createEmployeeRoleManagement} from './employee-roles.js';
+import {parsePolicy} from '../developer/publisher-policy.js';
+import {AppPackageError} from '../developer/package.js';
+import {AppStorageError} from '../storage/binding.js';
 import {getCoreConfig} from '../../core/config/index.js';
 import {InstallError} from '../install/journal.js';
 import type {AppManagement} from '../management/service.js';
@@ -47,7 +51,8 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    reply.header('Cache-Control','no-store');
    if(req.method!=='GET'&&req.headers.origin!==options.origin)throw new AdminIdentityError(403,'ADMIN_ORIGIN_DENIED');
    await createAdministratorContext(req,options.identity);
-   if(req.method==='POST'&&(req.url==='/api/admin/install'||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(req.url))){
+   const requestPath=req.url.split('?')[0];
+   if(req.method==='POST'&&(['/api/admin/install','/api/admin/install-preview','/api/admin/install-approve'].includes(requestPath)||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(requestPath))){
     if(uploads>=2)throw new AdminIdentityError(429,'INSTALL_BUSY');uploads++;admitted.add(req);
    }
   });
@@ -59,7 +64,9 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
     const clientErrors:Record<string,number>={STALE_REVISION:409,APP_NOT_FOUND:404,GRANT_NOT_FOUND:404,REGISTRY_ACCESS_DENIED:403,UNDECLARED_PERMISSION:400,PERMISSION_NOT_ACTIVE:400,INVALID_DATA_SCOPE:400,INVALID_GRANT_MODE:400,SERVICE_IDENTITY_MISMATCH:400,SERVICE_RELATIVE_SCOPE:400,UNEXPECTED_SERVICE_IDENTITY:400,INVALID_GRANT_INTERVAL:400,GRANT_LIMIT:409};
     return reply.code(clientErrors[error.code]??503).send({error:error.code});
    }
+   if(error instanceof AppStorageError)return reply.code(error.code==='STORAGE_ACCESS_DENIED'?403:409).send({error:error.code});
    if(error instanceof InstallError){const status=error.code==='INSTALL_NOT_FOUND'?404:error.code==='INSTALL_ACCESS_DENIED'?403:error.code.startsWith('INVALID_')?400:409;return reply.code(status).send({error:error.code});}
+   if(error instanceof AppPackageError)return reply.code(400).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'ADMIN_INVALID_INPUT'});
    const code=error instanceof Error&&'code' in error&&typeof error.code==='string'?error.code:'';
    return reply.code(503).send({error:/^[A-Z][A-Z_]{3,80}$/.test(code)?code:'ADMIN_SERVICE_UNAVAILABLE'});
@@ -72,6 +79,13 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    const context=await createAdministratorContext(req,options.identity);const db=await options.pool.connect();
    try{return await work(createAdminDataService(db,{audit:event=>appendAdminAudit(db,event)}),context);}finally{db.release();}
   }
+  async function withRoles<T>(req:FastifyRequest,work:(service:ReturnType<typeof createEmployeeRoleManagement>,context:PlatformAdministratorContext)=>Promise<T>){
+   const context=await createAdministratorContext(req,options.identity),db=await options.pool.connect();try{return await work(createEmployeeRoleManagement(db),context);}finally{db.release();}
+  }
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/employee-roles',async req=>withRoles(req,(s,c)=>s.list(c,req.params.appId)));
+  scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.set(c,req.params.appId,req.body)));
+  scoped.get<{Params:{personId:string}}>('/employee-roles/:personId',async req=>withRoles(req,(s,c)=>s.assignment(c,req.params.personId)));
+  scoped.put('/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.assign(c,req.body)));
   await registerAdminAiRoutes(scoped,options.identity);
   scoped.get('/data/resources',async()=>({resources:adminDataResources()}));
   scoped.get<{Params:{key:string};Querystring:{q?:string;status?:string}}>('/data/:key',async req=>withData(req,async(service,context)=>({records:await service.list(context.administrator,req.params.key,req.query.q??'',req.query.status??'')})));
@@ -150,6 +164,52 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
    const {requestId}=z.object({requestId:z.string().regex(/^[a-zA-Z0-9-]{16,64}$/)}).strict().parse(req.body);
    return options.management.versionRecover(await createAdministratorContext(req,options.identity),req.params.appId,requestId);
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/storage/migrations',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const {afterSequence}=z.object({afterSequence:z.coerce.number().int().min(0).max(2147483647).default(0)}).strict().parse(req.query);
+   return options.management.migrationHistory(await createAdministratorContext(req,options.identity),req.params.appId,afterSequence);
+  });
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/storage/migrations/reconcile',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const {revision,attemptId}=z.object({revision:z.number().int().positive(),attemptId:z.string().uuid()}).strict().parse(req.body);
+   return options.management.reconcileMigration(await createAdministratorContext(req,options.identity),req.params.appId,revision,attemptId);
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/storage/writes',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const {after}=z.object({after:z.string().uuid().optional()}).strict().parse(req.query);
+   return options.management.writeHistory(await createAdministratorContext(req,options.identity),req.params.appId,after??null);
+  });
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/storage/writes/reconcile',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const {revision,requestId}=z.object({revision:z.number().int().positive(),requestId:z.string().uuid()}).strict().parse(req.body);
+   return options.management.reconcileWrite(await createAdministratorContext(req,options.identity),req.params.appId,revision,requestId);
+  });
+  scoped.get('/publisher-policy',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   return options.management.approvalPolicy(await createAdministratorContext(req,options.identity));
+  });
+  scoped.put('/publisher-policy',{bodyLimit:262144},async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const body=z.object({revision:z.number().int().positive(),keys:z.unknown()}).strict().parse(req.body);
+   const policy=parsePolicy({policyVersion:'1.0',revision:body.revision,keys:body.keys});
+   return options.management.savePublisherPolicy(await createAdministratorContext(req,options.identity),body.revision,policy.keys);
+  });
+  scoped.post('/install-preview',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const context=await createAdministratorContext(req,options.identity);
+   return withInstallUpload(req.body,options.management.uploadRoot,input=>options.management!.previewPackage(context,input));
+  });
+  scoped.post('/install-approve',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const body=z.object({revision:z.number().int().positive(),digest:z.string().regex(/^[a-f0-9]{64}$/),package:z.unknown()}).strict().parse(req.body);
+   const context=await createAdministratorContext(req,options.identity);
+   return withInstallUpload(body.package,options.management.uploadRoot,input=>options.management!.approvePackage(context,input,body.revision,body.digest));
+  });
+  scoped.post('/version-approval/revoke',async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const {revision,digest}=z.object({revision:z.number().int().positive(),digest:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(req.body);
+   return options.management.revokeApproval(await createAdministratorContext(req,options.identity),revision,digest);
   });
   scoped.post('/install',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
    if(!options.install)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');

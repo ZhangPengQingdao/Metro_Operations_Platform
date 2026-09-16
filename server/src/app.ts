@@ -13,6 +13,7 @@ import {registerErrorHandler} from './middleware/error-handler.js';
 import {registerHealthRoutes} from './core/health/index.js';
 import {EmployeeIdentityService} from './platform/employee-identity/index.js';
 import {registerEmployeeRoutes} from './app-platform/employee/routes.js';
+import {EmployeeAppAccess} from './app-platform/employee/access.js';
 
 export async function buildApp(){
  const config=getCoreConfig();
@@ -29,7 +30,7 @@ export async function buildApp(){
  if(management)app.addHook('onClose',async()=>management.close());
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
  registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
- registerEmployeeRoutes(app,{origin,service:new EmployeeIdentityService(pool),resolveAdmin:resolveContext,management});
+ registerEmployeeRoutes(app,{origin,service:new EmployeeIdentityService(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});
  await registerAdminConsoleRoutes(app,{origin,identity,pool,management,
   lifecycle:management?{origin,resolveContext,getHost:management.getHost}:undefined,
   install:management?{origin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});

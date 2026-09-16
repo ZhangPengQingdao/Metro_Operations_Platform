@@ -1,0 +1,13 @@
+import React,{useEffect,useState} from 'react';
+import {Button,Input,Select,Table} from '../../components/ui';
+import {adminRequest} from './client';
+
+type Grant={personId:string;name:string;employeeNo:string;enabled:boolean;revision:string};
+export function EmployeeAppAccess({appId}:{appId:string}){
+ const [grants,setGrants]=useState<Grant[]|null>(null),[people,setPeople]=useState<{id:string;name:string;employeeNo:string}[]>([]),[search,setSearch]=useState(''),[personId,setPersonId]=useState(''),[serial,setSerial]=useState(0),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const path=`/apps/${encodeURIComponent(appId)}/employee-access`;
+ useEffect(()=>{const c=new AbortController();setGrants(null);adminRequest<{grants:Grant[]}>(path,{signal:c.signal}).then(v=>setGrants(v.grants)).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[path,serial]);
+ useEffect(()=>{const c=new AbortController();adminRequest<{records:typeof people}>(`/data/people?q=${encodeURIComponent(search)}&status=active`,{signal:c.signal}).then(v=>setPeople(v.records)).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[search]);
+ async function save(person:string,enabled:boolean){if(busy||!grants)return;setBusy(true);setError('');try{await adminRequest(path,{method:'PUT',body:{personId:person,enabled,revision:grants.find(g=>g.personId===person)?.revision??null}});setPersonId('');setSerial(v=>v+1);}catch(e){setError(e instanceof Error?e.message:'操作未确认。');setGrants(null);}finally{setBusy(false);}}
+ return <section><h3>员工使用范围</h3>{error&&<p className="afc-error" role="alert">{error}</p>}<Button variant="secondary" disabled={busy} onClick={()=>{setError('');setSerial(v=>v+1);}}>刷新使用范围</Button><Table variant="directory" emptyState={grants?.length===0?'尚未分配员工':undefined}><thead><tr><th>员工</th><th>状态</th><th>操作</th></tr></thead><tbody>{grants?.map(g=><tr key={g.personId}><td>{g.name} · {g.employeeNo}</td><td>{g.enabled?'允许使用':'已撤销'}</td><td><Button variant="secondary" disabled={busy} onClick={()=>void save(g.personId,!g.enabled)}>{g.enabled?'撤销使用':'允许使用'}</Button></td></tr>)}</tbody></Table><form className="admin-form" onSubmit={e=>{e.preventDefault();void save(personId,true);}}><label>查找员工<Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="姓名或工号" disabled={busy}/></label><label>员工<Select required value={personId} onChange={e=>setPersonId(e.target.value)} disabled={busy}><option value="">请选择</option>{people.filter(p=>!grants?.some(g=>g.personId===p.id&&g.enabled)).map(p=><option key={p.id} value={p.id}>{p.name} · {p.employeeNo}</option>)}</Select></label><Button type="submit" disabled={busy||!personId||!grants}>允许使用</Button></form></section>;
+}

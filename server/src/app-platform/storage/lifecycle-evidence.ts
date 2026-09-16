@@ -46,12 +46,12 @@ export async function acceptsMigrationDigest(client: QueryableClient, attemptId:
  return result.rows.length===1;
 }
 
-export async function assertStorageMigrationsReady(client:QueryableClient,current:import('../registry/index.js').AppInstallation,digest:string){
+export async function assertStorageMigrationsReady(client:QueryableClient,current:import('../registry/index.js').AppInstallation,digest:string,allowPending=false){
     await assertNoPendingRestore(client, current.id);
     const result = await client.query(`SELECT id,status,ordinal,manifest_digest,migration_id,artifact_id,artifact_path,artifact_sha256,artifact_bytes FROM public.platform_app_migration_attempts
       WHERE installation_id=$1 AND status IN ('running','uncertain','applied') ORDER BY ordinal LIMIT 129`, [current.id]) as { rows: { id:string; status: string; ordinal: number; manifest_digest: string; migration_id: string; artifact_id: string; artifact_path: string; artifact_sha256: string; artifact_bytes: number }[] };
     if (result.rows.some(row => row.status !== 'applied')) throw new AppStorageError('MIGRATION_ATTEMPT_BLOCKED');
-    if (current.manifest.storage.mode !== 'managed' || result.rows.length !== current.manifest.storage.migrations.length
+    if (current.manifest.storage.mode !== 'managed' || (allowPending?result.rows.length>current.manifest.storage.migrations.length:result.rows.length!==current.manifest.storage.migrations.length)
       || result.rows.some((row, ordinal) => row.ordinal !== ordinal)) throw new AppStorageError('MIGRATIONS_NOT_COMPLETE');
     const declarations = current.manifest.storage.migrations;
     for (const [ordinal,row] of result.rows.entries()) {

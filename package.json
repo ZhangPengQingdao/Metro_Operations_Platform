@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -18,7 +18,8 @@
     "version:check": "node scripts/version.mjs --check",
     "version:bump": "node scripts/version.mjs",
     "build:samples": "node examples/app-sdk/build.mjs && node examples/backend-sdk/build.mjs",
-    "pretest": "npm run build:sdk && npm run build:samples"
+    "pretest": "npm run build:sdk && npm run build:samples && npm run build:cli",
+    "build:cli": "npm --workspace @metro/platform-cli run build"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
@@ -32,7 +33,7 @@
     "react-router-dom": "^7.13.0",
     "xlsx": "^0.18.5",
     "zod": "4.2.0",
-    "@metro/platform-sdk": "0.2.1"
+    "@metro/platform-sdk": "0.3.0"
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",

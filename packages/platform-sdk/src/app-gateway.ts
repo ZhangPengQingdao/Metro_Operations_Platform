@@ -84,9 +84,21 @@ function boundedJson(input: unknown, maxBytes = 65536): AppGatewayJson {
   return output;
 }
 
+export type AppDataMutation =
+  | {action:'insert';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>}
+  | {action:'update';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>;expected:Readonly<Record<string,AppGatewayJson>>}
+  | {action:'delete';table:string;id:string;expected:Readonly<Record<string,AppGatewayJson>>};
+export interface AppDataListOptions {
+  afterId?:string;
+  pageSize?:number;
+  filters?:readonly {column:string;value:string|number|boolean|null}[];
+  search?:{column:string;text:string};
+}
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */
 export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
   return Object.freeze({
+    transaction(requestId:string,operations:readonly AppDataMutation[],signal?:AbortSignal){return gateway.invoke('platform.app_data.transaction',{requestId,operations},signal);},
+    list(table:string,options:AppDataListOptions={},signal?:AbortSignal){return gateway.invoke('platform.app_data.list',{table,...options},signal);},
     get(table:string,id:string,signal?:AbortSignal){return gateway.invoke('platform.app_data.get',{table,id},signal);},
     insert(table:string,id:string,requestId:string,values:Readonly<Record<string,AppGatewayJson>>,signal?:AbortSignal){
       return gateway.invoke('platform.app_data.write',{table,id,requestId,action:'insert',values},signal);

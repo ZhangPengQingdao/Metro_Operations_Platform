@@ -10,11 +10,11 @@
 
 以一次可交付更新为单位，不因每次编辑或测试增加版本。多个变化合并交付时，采用其中最高级别。内部应用各自维护独立版本，不能把平台版本直接当应用版本。
 
-平台前端、API 和仓库内 SDK 目前统一发布版本。准备提交交付时运行：
+平台前端、API、SDK 和独立 CLI 目前统一发布版本。准备提交交付时运行：
 
 ```sh
 npm run version:bump -- patch  # 或 minor / major
 npm run version:check
 ```
 
-脚本同步 package.json、锁文件、本仓库 SDK 依赖和 README 版本，并创建 CHANGELOG 标题；必须在提交前补充实际改动与验证结果。API 默认从自己的 package.json 读取版本，管理端从根 package.json 展示版本。脚本不提交、不打标签、不推送。版本升位不是上线授权。
+脚本同步 package.json、锁文件、本仓库 SDK 依赖、CLI 和 README 版本，并创建 CHANGELOG 标题；必须在提交前补充实际改动与验证结果。API 默认从自己的 package.json 读取版本，管理端从根 package.json 展示版本。脚本不提交、不打标签、不推送。版本升位不是上线授权。

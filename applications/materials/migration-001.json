@@ -1,0 +1,248 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "materials",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "unit",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "operator_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "movements",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "material_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "delta",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "reverses_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "remark",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "receiver",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "operator_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "reversals",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "movement_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "materials",
+      "name": "materials_org_sku",
+      "columns": [
+        "organization_id",
+        "sku"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "materials",
+      "name": "materials_request",
+      "columns": [
+        "request_id"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "movements",
+      "name": "movements_request",
+      "columns": [
+        "request_id"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createTable",
+      "table": "managers",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "manager_audit",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "person_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "operator_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    }
+  ]
+}

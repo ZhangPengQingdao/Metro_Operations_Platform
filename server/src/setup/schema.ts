@@ -1,3 +1,5 @@
+import {appApprovalMigration} from '../app-platform/management/approvals.js';
+import {runtimeWriteEvidenceMigration} from '../app-platform/storage/runtime-reconciliation.js';
 import {PLATFORM_RESPONSIBILITY_MIGRATIONS} from '../platform/responsibility/migration.js';
 import {PLATFORM_SIGNATURE_MIGRATIONS} from '../platform/signatures/migration.js';
 import {PLATFORM_DATA_ALIGNMENT_MIGRATIONS} from '../platform/data-alignment/migration.js';
@@ -28,13 +30,14 @@ import {CORE_JOB_RUNS_TABLE_SQL} from '../core/jobs/index.js';
 import {createMigrationRegistry,planMigrations,type MigrationDefinition} from '../core/migrations/index.js';
 import {runDatabaseTransaction,type QueryableClient} from '../core/database/index.js';
 import {employeeIdentityMigration} from '../platform/employee-identity/index.js';
+import {employeeAppAccessMigration} from '../app-platform/employee/access.js';
 import {appRuntimeStorageMigration} from '../app-platform/storage/runtime-evidence.js';
-import {appGatewayPermissionsMigration} from '../app-platform/gateway/migration.js';
+import {appPeoplePermissionMigration,appGatewayPermissionsMigration} from '../app-platform/gateway/migration.js';
 const settings:MigrationDefinition={id:'platform-settings-expand',title:'Platform configuration',ownerTaskId:'PLATFORM-L1-001',phase:'expand',layer:'L1',dataRows:[],migrationRows:['MIG-055'],sourceTables:[],targetTables:['system_configs','core_job_runs'],recoveryNotes:'Additive schema only.',async run({client}){
  await client.query(`CREATE TABLE IF NOT EXISTS system_configs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),key text UNIQUE NOT NULL,value jsonb NOT NULL,description text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())`);
  await client.query(CORE_JOB_RUNS_TABLE_SQL);
 }};
-export const platformMigrations=createMigrationRegistry([...PLATFORM_RESPONSIBILITY_MIGRATIONS,...PLATFORM_SIGNATURE_MIGRATIONS,...PLATFORM_DATA_ALIGNMENT_MIGRATIONS,...PLATFORM_MCP_MIGRATIONS,...PLATFORM_BUSINESS_AUDIT_MIGRATIONS,...PLATFORM_LOCATION_DIRECTORY_MIGRATIONS,...PLATFORM_PEOPLE_DIRECTORY_MIGRATIONS,...PLATFORM_ATTACHMENT_MIGRATIONS,...PLATFORM_AUTHORIZATION_MIGRATIONS,...PLATFORM_ASSET_DIRECTORY_MIGRATIONS,...PLATFORM_DUTY_MIGRATIONS,...PLATFORM_NOTIFICATION_MIGRATIONS,...PLATFORM_WORK_ITEM_MIGRATIONS,...APP_VERSION_MIGRATIONS,...APP_INSTALL_MIGRATIONS,...APP_RUNTIME_WORK_MIGRATIONS,...APP_DOCKER_JOURNAL_MIGRATIONS,...APP_DOCKER_REJECTION_MIGRATIONS,...APP_STORAGE_LEASE_MIGRATIONS,...APP_MIGRATION_LEDGER_MIGRATIONS,...APP_MIGRATION_RECEIPT_MIGRATIONS,...APP_STORAGE_LIFECYCLE_MIGRATIONS,...APP_REGISTRY_MIGRATIONS,...CORE_OBSERVABILITY_MIGRATIONS,...CORE_EVENTS_MIGRATIONS,adminIdentityMigration,employeeIdentityMigration,appGatewayPermissionsMigration,appRuntimeStorageMigration,settings]);
+export const platformMigrations=createMigrationRegistry([...PLATFORM_RESPONSIBILITY_MIGRATIONS,...PLATFORM_SIGNATURE_MIGRATIONS,...PLATFORM_DATA_ALIGNMENT_MIGRATIONS,...PLATFORM_MCP_MIGRATIONS,...PLATFORM_BUSINESS_AUDIT_MIGRATIONS,...PLATFORM_LOCATION_DIRECTORY_MIGRATIONS,...PLATFORM_PEOPLE_DIRECTORY_MIGRATIONS,...PLATFORM_ATTACHMENT_MIGRATIONS,...PLATFORM_AUTHORIZATION_MIGRATIONS,...PLATFORM_ASSET_DIRECTORY_MIGRATIONS,...PLATFORM_DUTY_MIGRATIONS,...PLATFORM_NOTIFICATION_MIGRATIONS,...PLATFORM_WORK_ITEM_MIGRATIONS,...APP_VERSION_MIGRATIONS,...APP_INSTALL_MIGRATIONS,...APP_RUNTIME_WORK_MIGRATIONS,...APP_DOCKER_JOURNAL_MIGRATIONS,...APP_DOCKER_REJECTION_MIGRATIONS,...APP_STORAGE_LEASE_MIGRATIONS,...APP_MIGRATION_LEDGER_MIGRATIONS,...APP_MIGRATION_RECEIPT_MIGRATIONS,...APP_STORAGE_LIFECYCLE_MIGRATIONS,...APP_REGISTRY_MIGRATIONS,...CORE_OBSERVABILITY_MIGRATIONS,...CORE_EVENTS_MIGRATIONS,adminIdentityMigration,employeeIdentityMigration,employeeAppAccessMigration,appGatewayPermissionsMigration,appRuntimeStorageMigration,runtimeWriteEvidenceMigration,appApprovalMigration,appPeoplePermissionMigration,settings]);
 export async function initializePlatformDatabase(client:QueryableClient){
  return runDatabaseTransaction(client,async()=>{
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('metro-platform-schema',0))");

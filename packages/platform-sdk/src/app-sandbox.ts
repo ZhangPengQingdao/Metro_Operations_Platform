@@ -51,3 +51,11 @@ export function createAppSandboxClient(options:{appId:string;platformOrigin:stri
  });
  return Object.freeze({invoke:(operation:string,params:AppGatewayJson,signal?:AbortSignal)=>client.invoke(operation,params,signal),ready:()=>!closed&&!!session,close});
 }
+
+/** Invoke a manifest-declared application API through the employee sandbox host. */
+export function createAppApiClient(client:Pick<ReturnType<typeof createAppSandboxClient>,'invoke'>){
+ return Object.freeze({invoke(apiId:string,payload:AppGatewayJson,signal?:AbortSignal){
+  if(typeof apiId!=='string'||apiId.length>64||!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(apiId))return Promise.reject(new AppGatewayClientError('INVALID_REQUEST','not_started'));
+  return client.invoke(`application.api.${apiId}`,payload,signal);
+ }});
+}
