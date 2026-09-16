@@ -58,9 +58,21 @@ try:
  with urllib.request.urlopen(req) as response:
   assert response.status==200;assert 'password' not in json.load(response);assert response.headers.get('Set-Cookie')
  run(*common,'probe.mjs')
- caddy=root/'Caddyfile';caddy.write_text(':80 {\n handle /api/* {\n reverse_proxy database:3101\n }\n handle {\n root * /srv\n try_files {path} /index.html\n file_server\n }\n}\n');caddy.chmod(0o444)
+ # Validate the installer's actual generated Caddy configuration, not a test-only proxy.
+ import updater as installer
+ from unittest.mock import patch
+ installer.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':os.stat('/var/run/docker.sock').st_gid,'proxyMode':'external','httpPort':18080,'applications':True,'resourcePort':18081,'resourceDomain':'resources.example.net'})
+ release=root/'release';release.mkdir()
+ images={name:json.loads(run('docker','image','inspect',ref).stdout)[0]['Id'] for name,ref in [('api','mop-api:test'),('web','mop-web:test'),('database',postgres)]}
+ original_command=installer.command
+ def preloaded(args,*a,**kw):
+  if args[:2]==['docker','load']:return b''
+  return original_command(args,*a,**kw)
+ # Images have already been built/pulled above. Signature/archive validation has separate tests.
+ with patch.object(installer,'verify_archive'),patch.object(installer,'command',side_effect=preloaded):installer.Deployment(root).prepare(release,{'images':images})
+ caddy=release/'Caddyfile'
  web='mop-web-'+suffix;containers.append(web)
- run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')
+ run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-p','127.0.0.1::8081','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')
  webport=json.loads(run('docker','inspect',web).stdout)[0]['NetworkSettings']['Ports']['80/tcp'][0]['HostPort']
  for _ in range(30):
   try:
@@ -69,6 +81,14 @@ try:
    break
   except Exception:time.sleep(1)
  else:raise RuntimeError('Web image not ready')
+ resourceport=json.loads(run('docker','inspect',web).stdout)[0]['NetworkSettings']['Ports']['8081/tcp'][0]['HostPort']
+ resourcebase='http://127.0.0.1:'+resourceport
+ with urllib.request.urlopen(urllib.request.Request(resourcebase+'/health/live',headers={'Host':'resources.example.net','Cookie':'platform-session=ignored'})) as response:
+  assert response.status==204 and response.headers.get('X-Mop-Resource')=='1' and not response.headers.get('Set-Cookie')
+ try:
+  urllib.request.urlopen(urllib.request.Request(resourcebase+'/api/health/ready',headers={'Host':'resources.example.net'}))
+  raise AssertionError('Platform API exposed on resource domain')
+ except urllib.error.HTTPError as error:assert error.code==404
  print('Linux images: fresh DB, repeated migrations, bootstrap, non-root API login and frontend passed.')
 finally:
  for name in reversed(containers):run('docker','rm','-f','-v',name,check=False)
