@@ -39,3 +39,13 @@ test('master data uses the same island secondary navigation and exact directory 
  assert.match(html,/href="\/admin\/data\/people"/);
  assert.doesNotMatch(render('/admin/accounts'),/aria-label="基础数据导航"/);
 });
+
+test('employee workspace shares navigation, profile and messages without administrator links',()=>{
+ const employeeApp={...app,navigation:[{id:'stock',label:'库存',path:'/employee/app/example/stock'}]};
+ const page=(path:string)=>renderToStaticMarkup(<MemoryRouter initialEntries={[path]}><AdminShell mode="employee" user={{id:'e',username:'worker',displayName:'员工'}} applications={[employeeApp]} onLogout={async()=>{}}>内容</AdminShell></MemoryRouter>);
+ assert.match(page('/employee'),/工作台/);assert.match(page('/employee'),/href="\/employee\/apps"/);assert.match(page('/employee'),/通知/);assert.doesNotMatch(page('/employee'),/href="\/employee\/messages"/);assert.match(page('/employee'),/个人中心/);
+ assert.doesNotMatch(page('/employee'),/系统更新|账号与权限|\/admin/);
+ assert.match(page('/employee/app/example/stock'),/data-secondary="true"/);
+ assert.match(page('/employee/app/example/stock'),/返回一级菜单/);
+ assert.equal(applicationNavigation('/employee/app/example/stock',[{...employeeApp,navigation:[{id:'escape',label:'escape',path:'/admin/accounts'}]}],'/employee'),undefined);
+});

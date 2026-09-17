@@ -97,3 +97,76 @@ test('manager performs inbound but ordinary member and spoofed leadership are de
  assert.equal((await handlers.get('inbound').execute(payload,undefined,member)).ok,true);assert.equal(f.tables.materials.get(id).quantity,3);
  assert.equal((await handlers.get('inbound').execute({...payload,permissions:['app.materials.manage']},undefined,member)).error.code,'INVALID_INPUT');
 });
+test('record modification atomically replaces quantity and preserves the original record',async()=>{
+ const f=fixture(),id=await f.stock();await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:10},f.employee);
+ const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:4},f.employee),original=structuredClone(f.tables.movements.get(out.id));
+ const replacement=await f.service.correct({requestId:randomUUID(),movementId:out.id,quantity:2,receiver:'张三',remark:'修改领用数量'},f.employee,undefined,{expectedKind:'out',ownOnly:true});
+ assert.equal(f.tables.materials.get(id).quantity,8);assert.deepEqual(f.tables.movements.get(out.id),original);assert.equal(f.tables.movements.get(replacement.id).delta,-2);assert.ok(f.tables.reversals.has(out.id));
+ await assert.rejects(f.service.correct({requestId:randomUUID(),movementId:out.id,quantity:1},f.employee,undefined,{expectedKind:'out',ownOnly:true}),/ALREADY_REVERSED/);
+ await f.service.correct({requestId:randomUUID(),movementId:replacement.id,quantity:3},f.employee,undefined,{expectedKind:'out',ownOnly:true});assert.equal(f.tables.materials.get(id).quantity,7);
+});
+test('record modification rejects other employees and insufficient stock without partial writes',async()=>{
+ const f=fixture(),id=await f.stock();const inbound=await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:10},f.employee);
+ const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:7},f.employee),writes=f.writes;
+ await assert.rejects(f.service.correct({requestId:randomUUID(),movementId:out.id,quantity:2},{...f.employee,personId:randomUUID()},undefined,{expectedKind:'out',ownOnly:true}),/MOVEMENT_DENIED/);
+ await assert.rejects(f.service.correct({requestId:randomUUID(),movementId:inbound.id,quantity:6},f.employee,undefined,{expectedKind:'in',ownOnly:false}),/INSUFFICIENT_STOCK/);
+ assert.equal(f.writes,writes);assert.equal(f.tables.materials.get(id).quantity,3);assert.equal(f.tables.reversals.size,0);
+});
+test('initial stock and inbound record are committed together',async()=>{
+ const f=fixture(),result=await f.service.create({requestId:randomUUID(),name:'螺栓',sku:'M8',unit:'个',quantity:10},f.employee);
+ assert.equal(f.writes,1);assert.equal(f.tables.materials.get(result.id).quantity,10);assert.equal([...f.tables.movements.values()][0].delta,10);
+});
+test('movement presentation respects the single-owner storage session and includes edit ownership',async()=>{
+ const f=fixture(),id=await f.stock();await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:2},f.employee);
+ let active=false;const service=createMaterialsService({async invoke(...args){assert.equal(active,false,'storage session must not overlap');active=true;try{await new Promise(resolve=>setImmediate(resolve));return await f.gateway.invoke(...args);}finally{active=false;}}});
+ const result=await service.list({kind:'movements'},f.employee);assert.equal(result.rows.length,2);assert.equal(result.rows[0].material_name,'Bolt');assert.equal(result.rows[1].own,true);
+});
+test('material editing preserves stock, rejects stale versions, and requires a manager',async()=>{
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const input={requestId:randomUUID(),materialId:id,name:'新名称',sku:'M8',unit:'件',version:0};
+ assert.equal((await handlers.get('update').execute(input,undefined,f.employee)).error.code,'ACCESS_DENIED');
+ assert.equal((await handlers.get('update').execute(input,undefined,{...f.employee,permissions:['app.materials.manage']})).ok,true);
+ assert.equal(f.tables.materials.get(id).name,'新名称');assert.equal(f.tables.materials.get(id).quantity,0);
+ await assert.rejects(f.service.update({...input,requestId:randomUUID()},f.employee),/MATERIAL_CONFLICT/);
+ await assert.rejects(f.service.update({...input,requestId:randomUUID(),version:1,quantity:99},f.employee),/INVALID_INPUT/);
+});
+test('outbound accepts only a directory-confirmed active workgroup recipient',async()=>{
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);
+ const recipient={id:randomUUID(),name:'同班人员',employeeNo:'A01',organizationUnitId:f.employee.organizationUnitId};f.members.set(recipient.id,recipient);
+ const payload={requestId:randomUUID(),materialId:id,quantity:2,receiverId:recipient.id};
+ assert.equal((await handlers.get('outbound').execute({...payload,receiver:'伪造'},undefined,f.employee)).error.code,'INVALID_INPUT');
+ assert.equal((await handlers.get('outbound').execute({...payload,receiverId:randomUUID()},undefined,f.employee)).error.code,'ACCESS_DENIED');
+ const reply=await handlers.get('outbound').execute(payload,undefined,f.employee);assert.equal(reply.ok,true);assert.equal(f.tables.movements.get(reply.result.id).receiver,'同班人员');assert.equal(f.tables.movements.get(reply.result.id).receiver_id,recipient.id);
+ f.members.delete(recipient.id);
+ assert.equal((await handlers.get('correct-outbound').execute({requestId:randomUUID(),movementId:reply.result.id,quantity:1,receiverId:recipient.id},undefined,f.employee)).error.code,'ACCESS_DENIED');
+});
+test('deleting own consumption returns stock once, preserves ledger, and removes it from effective consumption results',async()=>{
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);
+ const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:2},f.employee),original=structuredClone(f.tables.movements.get(out.id));
+ assert.equal((await f.service.list({kind:'consumptions'},f.employee)).rows.length,1);
+ const payload={requestId:randomUUID(),movementId:out.id,reason:'删除消耗记录，返还库存'};
+ assert.equal((await handlers.get('reverse-outbound').execute(payload,undefined,{...f.employee,personId:randomUUID()})).error.code,'MOVEMENT_DENIED');
+ assert.equal((await handlers.get('reverse-outbound').execute(payload,undefined,f.employee)).ok,true);
+ assert.equal(f.tables.materials.get(id).quantity,5);assert.deepEqual(f.tables.movements.get(out.id),original);
+ assert.equal((await f.service.list({kind:'consumptions'},f.employee)).rows.length,0);
+ assert.equal((await handlers.get('reverse-outbound').execute({...payload,requestId:randomUUID()},undefined,f.employee)).error.code,'ALREADY_REVERSED');assert.equal(f.tables.materials.get(id).quantity,5);
+});
+test('ordinary employees can select recipients but cannot manage delegation or supply a foreign group',async()=>{
+ const f=fixture(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ f.members.set(f.employee.personId,{id:f.employee.personId,name:'本人',organizationUnitId:f.employee.organizationUnitId});f.members.set(randomUUID(),{id:randomUUID(),organizationUnitId:randomUUID()});
+ const result=await handlers.get('recipients').execute({},undefined,f.employee);assert.equal(result.ok,true);assert.equal(result.result.rows.length,1);
+ assert.equal((await handlers.get('recipients').execute({organizationUnitId:randomUUID()},undefined,f.employee)).error.code,'INVALID_INPUT');assert.equal((await handlers.get('members').execute({},undefined,f.employee)).error.code,'ACCESS_DENIED');
+});
+test('leader may correct and delete group consumption while ownership and organization boundaries remain intact',async()=>{
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:8},f.employee);
+ const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:3},f.employee);
+ f.members.set(f.employee.personId,{id:f.employee.personId,name:'员工',organizationUnitId:f.employee.organizationUnitId});
+ const leader={...f.employee,personId:randomUUID(),permissions:['app.materials.manage']};
+ const changed=await handlers.get('correct-outbound').execute({requestId:randomUUID(),movementId:out.id,quantity:2,receiverId:f.employee.personId},undefined,leader);
+ assert.equal(changed.ok,true);assert.equal(f.tables.movements.get(changed.result.id).operator_id,f.employee.personId);
+ assert.equal((await handlers.get('reverse-outbound').execute({requestId:randomUUID(),movementId:changed.result.id,reason:'删除'},undefined,{...leader,organizationUnitId:randomUUID()})).error.code,'MOVEMENT_DENIED');
+ assert.equal((await handlers.get('reverse-outbound').execute({requestId:randomUUID(),movementId:changed.result.id,reason:'删除'},undefined,leader)).ok,true);assert.equal(f.tables.materials.get(id).quantity,8);
+});

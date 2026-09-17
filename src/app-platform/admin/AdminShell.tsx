@@ -1,11 +1,13 @@
+import {readThemePreference,saveThemePreference} from '../identity/theme';
 import {AiSettings} from './AiSettings';
 import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {NavLink, useLocation} from 'react-router-dom';
-import {PlatformIcon,IconButton,Select,type PlatformIconName} from '../../components/ui';
+import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
 export interface AdminUser {id: string; username: string; displayName: string}
 export interface AdminApplication {id: string; name: string; navigation: {id: string; label: string; path: string}[]}
 export interface AdminShellProps {
+  mode?:'admin'|'employee';
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
   profileContent?: ReactNode; settingsContent?: ReactNode; notificationsContent?: ReactNode;
 }
@@ -22,42 +24,34 @@ const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',na
  ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['lines','线路'],['locations','车站与位置'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
 ].map(([id,label])=>({id,label,path:`/admin/data/${id}`}))};
 const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'}]};
-export function applicationNavigation(pathname: string, applications: AdminApplication[]) {
-  const app = applications.find(item => pathname === `/admin/app/${encodeURIComponent(item.id)}` || pathname.startsWith(`/admin/app/${encodeURIComponent(item.id)}/`));
+export function applicationNavigation(pathname: string, applications: AdminApplication[],base='/admin') {
+  const app = applications.find(item => pathname === `${base}/app/${encodeURIComponent(item.id)}` || pathname.startsWith(`${base}/app/${encodeURIComponent(item.id)}/`));
   if (!app) return undefined;
-  const prefix = `/admin/app/${encodeURIComponent(app.id)}`;
+  const prefix = `${base}/app/${encodeURIComponent(app.id)}`;
   const items = app.navigation.filter(item => (item.path === prefix || item.path.startsWith(`${prefix}/`)) && !/[\\?#]/.test(item.path) && !item.path.split('/').some(segment => segment === '..' || segment === '.'));
   return items.length ? {...app, navigation: items} : undefined;
 }
 
-export function AdminDialog({title, children, onClose}: {title: string; children: ReactNode; onClose: () => void}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const dialog = ref.current;
-    dialog?.showModal();
-    return () => {dialog?.close(); previous?.focus();};
-  }, []);
-  return <dialog ref={ref} className="afc-admin-dialog" aria-labelledby={titleId} onCancel={event => {event.preventDefault(); onClose();}} onClick={event => {if (event.target === event.currentTarget) {const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();}}}>
-    <header><h2 id={titleId}>{title}</h2><IconButton size="sm" type="button" label="关闭弹窗" onClick={onClose}><PlatformIcon name="x" size={20}/></IconButton></header>
-    <div className="afc-dialog-content">{children}</div>
-  </dialog>;
+export function AdminDialog({title, children, onClose, className}: {title: string; children: ReactNode; onClose: () => void; className?:string}) {
+  return <Dialog open title={title} onClose={onClose} size="lg" className={className}>{children}</Dialog>;
 }
 
-export function AdminShell({user, applications, children, onLogout, profileContent, settingsContent, notificationsContent}: AdminShellProps) {
+export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent}: AdminShellProps) {
   const {pathname} = useLocation();
+  const base=mode==='admin'?'/admin':'/employee';
+  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'grid' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'preferences' | 'notifications' | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [theme, setTheme] = useState(readThemePreference);
+  const [confirmLogout,setConfirmLogout]=useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
   const account = useRef<HTMLDivElement>(null);
   const accountTrigger = useRef<HTMLButtonElement>(null);
-  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications);
+  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications,base);
   const secondary = Boolean(app) && navigationMode !== 'primary';
   const rail = !secondary && collapsed;
   const toggleNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {
@@ -79,7 +73,7 @@ export function AdminShell({user, applications, children, onLogout, profileConte
     setLoggingOut(true); setError('');
     try {await onLogout();} catch (cause) {setError(cause instanceof Error ? cause.message : '退出登录失败，请重试');} finally {setLoggingOut(false);}
   };
-  const title = app?.name || navigation.find(item => item.path === '/admin' ? pathname === item.path : pathname.startsWith(item.path))?.label || '运管开放平台';
+  const title = app?.name || primary.find(item => item.path === base ? pathname === item.path : pathname.startsWith(item.path))?.label || '运管开放平台';
   return <div className="afc-admin afc-theme-neutral" data-theme={theme} data-rail={rail} data-secondary={secondary}>
     <a className="afc-skip-link" href="#admin-main">跳至主要内容</a>
     {mobileOpen && <button type="button" className="afc-mobile-backdrop" aria-label="关闭导航" onClick={() => setMobileOpen(false)}/>}
@@ -92,15 +86,15 @@ export function AdminShell({user, applications, children, onLogout, profileConte
           </button>
           {!rail && <IconButton size="sm" type="button" label={secondary ? "返回一级菜单" : "收起侧边栏"} onClick={() => {if(secondary)setNavigationMode('primary');else setCollapsed(true);}}><PlatformIcon name={secondary ? "arrowLeft" : "panelLeft"} size={18}/></IconButton>}
         </div>
-        {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{app.navigation.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label="管理功能">
-          {navigation.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === '/admin'} onClick={event => {if(path === '/admin' ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
-          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`/admin/app/${encodeURIComponent(item.id)}`, [item])?.navigation[0]?.path || `/admin/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><PlatformIcon name="cube" size={20}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
+        {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{app.navigation.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
+          {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
+          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><PlatformIcon name="cube" size={20}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
         </nav>}
         <div className="afc-sidebar-bottom">
           <div className="afc-account" ref={account} onKeyDown={event => {if (event.key === 'Escape') {setAccountOpen(false); accountTrigger.current?.focus();}}}>
             <button ref={accountTrigger} type="button" className="afc-account-trigger" aria-label="个人中心" aria-expanded={accountOpen} onClick={() => setAccountOpen(!accountOpen)}><span className="afc-admin-avatar">{(user.displayName || user.username).slice(0, 1)}</span>{!rail && <span>{user.displayName || user.username}</span>}</button>
             {accountOpen && <div className="afc-account-popover"><div className="afc-account-summary"><strong>{user.displayName || user.username}</strong><span>{user.username}</span></div>
-              <button onClick={() => openPanel('profile')}><PlatformIcon name="userCircle" size={18}/>个人资料</button><button onClick={() => openPanel('settings')}><PlatformIcon name="cog" size={18}/>系统设置</button><button onClick={() => openPanel('preferences')}><PlatformIcon name="sun" size={18}/>外观偏好</button><hr/><button disabled={loggingOut} onClick={logout}><PlatformIcon name="login" size={18}/>{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <p role="alert" className="afc-error">{error}</p>}
+              <button onClick={() => openPanel('profile')}><PlatformIcon name="userCircle" size={18}/>个人资料</button>{mode==='admin'&&<button onClick={() => openPanel('settings')}><PlatformIcon name="cog" size={18}/>系统设置</button>}<button onClick={() => openPanel('preferences')}><PlatformIcon name="sun" size={18}/>外观偏好</button><hr/><button disabled={loggingOut} onClick={()=>{setAccountOpen(false);setError('');setConfirmLogout(true);}}><PlatformIcon name="login" size={18}/>{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <p role="alert" className="afc-error">{error}</p>}
             </div>}
           </div>
           <IconButton size="sm" type="button" label="通知" onClick={() => openPanel('notifications')}><PlatformIcon name="bell" size={20}/></IconButton>
@@ -109,11 +103,12 @@ export function AdminShell({user, applications, children, onLogout, profileConte
 
     </aside>
     <div className="afc-admin-workspace"><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{children}</main></div>
-    {panel && <AdminDialog title={{profile: '个人资料', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => setPanel(null)}>
+    <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
+    {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => setPanel(null)}>
       {panel === 'profile' && (profileContent ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}
       {panel === 'settings' && (settingsContent ?? <AiSettings/>)}
       {panel === 'notifications' && (notificationsContent ?? <p className="afc-muted">通知服务暂不可用。</p>)}
-      {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => setTheme(event.target.value as typeof theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
+      {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => (()=>{const next=event.target.value as typeof theme;saveThemePreference(next);setTheme(next);})()}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
     </AdminDialog>}
   </div>;
 }

@@ -123,6 +123,9 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   await service.update(actor,account.id,{status:'active'});
   assert.equal(await service.authenticate(session.value),null);
   const newLogin=await service.login({username:'employee',password:'employee-test-password'});
+  const profile=await service.profile(newLogin.token);assert.equal(profile.name,'Employee');assert.equal(profile.employeeNo,'001');assert.equal('password_hash' in profile,false);
+  assert.deepEqual(await service.notifications(newLogin.token),{notifications:[]});
+  await assert.rejects(service.profile('invalid'),/EMPLOYEE_AUTH_REQUIRED/);await assert.rejects(service.notifications('invalid'),/EMPLOYEE_AUTH_REQUIRED/);
   await service.logout(newLogin.token);assert.equal(await service.authenticate(newLogin.token),null);
   const resetLogin=await service.login({username:'employee',password:'employee-test-password'});
   await service.update(actor,account.id,{password:'changed-employee-password'});

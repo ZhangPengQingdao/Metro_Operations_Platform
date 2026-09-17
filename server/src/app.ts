@@ -1,3 +1,4 @@
+import {registerUnifiedLogin} from './platform/employee-identity/unified-login.js';
 import Fastify from 'fastify';
 import {registerPlatformUpdateRoutes} from './app-platform/admin/update-routes.js';
 import {getCoreConfig} from './core/config/index.js';
@@ -30,7 +31,9 @@ export async function buildApp(){
  if(management)app.addHook('onClose',async()=>management.close());
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
  registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
- registerEmployeeRoutes(app,{origin,service:new EmployeeIdentityService(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});
+ const employeeIdentity=new EmployeeIdentityService(pool);
+ registerUnifiedLogin(app,{origin,pool,admin:identity,employee:employeeIdentity});
+ registerEmployeeRoutes(app,{origin,service:employeeIdentity,access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});
  await registerAdminConsoleRoutes(app,{origin,identity,pool,management,
   lifecycle:management?{origin,resolveContext,getHost:management.getHost}:undefined,
   install:management?{origin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});

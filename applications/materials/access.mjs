@@ -20,6 +20,17 @@ export function createMaterialsAccess(gateway){
    // Revocation competes on this row; a stale request cannot commit after revocation.
    return [{action:'update',table:'managers',id:row.id,values:{revision:row.revision},expected:{active:true,organization_id:employee.organizationUnitId,revision:row.revision}}];
   },
+  async recipients(input,employee,signal){
+   if(!employee?.personId||!employee?.organizationUnitId)deny();
+   if(!input||Object.keys(input).some(k=>k!=='search')||input.search!==undefined&&(typeof input.search!=='string'||input.search.length>100))throw Error('INVALID_INPUT');
+   return gateway.invoke('platform.people.members',{organizationUnitId:employee.organizationUnitId,...(input.search?{search:input.search}:{})},signal);
+  },
+  async recipient(personId,employee,signal){
+   if(!uuid(personId))throw Error('INVALID_INPUT');
+   const {rows}=await gateway.invoke('platform.people.members',{organizationUnitId:employee.organizationUnitId,personId},signal);
+   if(rows.length!==1||rows[0].id!==personId||rows[0].organizationUnitId!==employee.organizationUnitId)deny();
+   return rows[0];
+  },
   async members(input,employee,signal){
    requireLeader(employee);
    if(!input||Object.keys(input).some(k=>k!=='search')||input.search!==undefined&&(typeof input.search!=='string'||input.search.length>100))throw Error('INVALID_INPUT');

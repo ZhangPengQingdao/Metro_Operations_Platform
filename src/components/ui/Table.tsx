@@ -1,7 +1,9 @@
 import React from "react";
+import {Button, type ButtonProps} from "./Button";
 
 export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {
   compact?: boolean;
+  pinActions?: boolean;
   variant?: 'default' | 'directory';
   emptyState?: React.ReactNode;
   wrapperClassName?: string;
@@ -9,6 +11,7 @@ export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> 
 
 export const Table: React.FC<TableProps> = ({
   compact = false,
+  pinActions = false,
   variant = 'default',
   emptyState,
   className = "",
@@ -17,7 +20,7 @@ export const Table: React.FC<TableProps> = ({
   ...props
 }) => {
   return (
-    <div className={`afc-table-wrapper ${variant === 'directory' ? 'afc-table-wrapper--directory' : ''} ${wrapperClassName}`}>
+    <div className={`afc-table-wrapper ${variant === 'directory' ? 'afc-table-wrapper--directory' : ''} ${pinActions ? "afc-table-wrapper--actions" : ""} ${wrapperClassName}`}>
       <table className={`afc-table ${compact ? "afc-table--compact" : ""} ${className}`} {...props}>
         {children}
       </table>
@@ -45,3 +48,8 @@ export const TableHead: React.FC<React.ThHTMLAttributes<HTMLTableCellElement>> =
 export const TableCell: React.FC<React.TdHTMLAttributes<HTMLTableCellElement>> = ({ className = "", children, ...props }) => (
   <td className={className} {...props}>{children}</td>
 );
+
+/** Compact icon-and-label action for a table's trailing operations column. */
+export function TableActionButton({icon,children,className='',...props}:ButtonProps&{icon:React.ReactNode}){
+  return <Button {...props} variant="ghost" size="sm" className={`afc-table-action ${className}`}><span className="afc-table-action__icon" aria-hidden="true">{icon}</span><span>{children}</span></Button>;
+}

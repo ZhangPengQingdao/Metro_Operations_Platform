@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation } from './bridge.js';
 
 export type SandboxFrameResource = { mode: 'isolated-origin'; url: string; platformOrigin: string }
@@ -25,6 +25,11 @@ export function validateSandboxResource(resource: SandboxFrameResource): boolean
   } catch { return false; }
 }
 
+export function themedSandboxHtml(html:string,theme:'light'|'dark'):string {
+  const background=theme==='dark'?'#121212':'#fafafa',color=theme==='dark'?'#fafafa':'#171717';
+  return html.replace('<html>',`<html class="afc-theme-neutral" data-theme="${theme}">`).replace(/(<style nonce="[A-Za-z0-9+/=]+">)/,`$1html,body{background:${background};color:${color};color-scheme:${theme}}`);
+}
+
 /** Render only AFTER platform installation/session admission. Resource server must enforce response CSP. */
 export function SandboxFrame(props: SandboxFrameProps) {
   if (!props.enabled) return <div role="status">沙箱应用已停用。</div>;
@@ -41,7 +46,23 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
   const active=useRef(false);
   const config=useRef({resource,operations});
   const [session]=useState(createSandboxSession);
+  const [initialHtml]=useState(()=>{
+    if(resource.mode!=='local-demo')return undefined;
+    const preference=typeof document!=='undefined'?document.querySelector('.afc-admin')?.getAttribute('data-theme'):'light';
+    const dark=preference==='dark'||preference==='system'&&typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return themedSandboxHtml(resource.html,dark?'dark':'light');
+  });
   const [failed,setFailed]=useState(false);
+  const [modalOpen,setModalOpen]=useState(false);
+  useEffect(()=>{
+    if(!modalOpen||failed)return;
+    const shell=frame.current?.closest('.afc-admin');
+    if(!shell)return;
+    const siblings=Array.from(shell.querySelectorAll<HTMLElement>('.afc-sidebar-island,.afc-page-header'));
+    const previous=siblings.map(element=>element.inert);
+    shell.classList.add('afc-sandbox-modal-shell');siblings.forEach(element=>{element.inert=true;});
+    return()=>{shell.classList.remove('afc-sandbox-modal-shell');siblings.forEach((element,index)=>{element.inert=previous[index]!;});};
+  },[modalOpen,failed]);
   // Resource/operations replacement revokes channel even if the caller forgot its revision key.
   useLayoutEffect(()=>{
     if(config.current.resource!==resource || config.current.operations!==operations){setFailed(true);return;}
@@ -56,7 +77,18 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
     loaded.current=true;
     const target=frame.current?.contentWindow;
     if(!target){setFailed(true);return;}
-    broker.current=new SandboxBridgeBroker({appId,session,source:target,operations,
+    const frameOperations=new Map(operations);
+    frameOperations.set('platform.ui.theme',{
+      validate:params=>!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===0,
+      authorize:async()=>true,
+      execute:async()=>{const preference=frame.current?.closest('.afc-admin')?.getAttribute('data-theme');return {theme:preference==='dark'||preference==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'};},
+    });
+    frameOperations.set('platform.ui.modal',{
+      validate:params=>!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===1&&typeof (params as {open?:unknown}).open==='boolean',
+      authorize:async()=>true,
+      execute:async params=>{setModalOpen((params as {open:boolean}).open);return {ok:true};},
+    });
+    broker.current=new SandboxBridgeBroker({appId,session,source:target,operations:frameOperations,
       send:response=>target.postMessage(response,'*')});
     // Opaque target cannot be named by origin. Bootstrap carries no platform identity or bearer secret.
     target.postMessage({version:'1.0',type:'init',appId,session},'*');
@@ -65,7 +97,7 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
   return <iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
     src={resource.mode==='isolated-origin'?resource.url:undefined}
-    srcDoc={resource.mode==='local-demo'?resource.html:undefined}
+    srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 180px)',minHeight:600,border:0}} />;
+    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0}} />;
 }

@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {PGlite} from '@electric-sql/pglite';
+import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
+import {initializePlatformDatabase} from '../src/setup/schema.ts';
+import {EmployeeIdentityService,EMPLOYEE_SESSION_COOKIE} from '../src/platform/employee-identity/index.ts';
+import {AdminIdentityError} from '../src/core/admin-identity/index.ts';
+import {registerEmployeeRoutes} from '../src/app-platform/employee/routes.ts';
+import {createManagementGateway,createManagementApiAuthorization} from '../src/app-platform/management/gateway.ts';
+import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
+import {createAuthorizationService,createPostgresAuthorizationRepository,AUTHORIZATION_ROLE_SEEDS} from '../src/platform/authorization/index.ts';
+import {createPostgresPeopleDirectoryRepository} from '../src/platform/people/index.ts';
+import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
+import type {AppManifest} from '../src/app-platform/manifest/index.ts';
+import type {AppManagement} from '../src/app-platform/management/service.ts';
+import {AppStdioApiError} from '../src/app-platform/runtime/stdio-api.ts';
+import {EmployeeAppAccess} from '../src/app-platform/employee/access.ts';
+
+const org='51000000-0000-4000-8000-000000000001',person='51000000-0000-4000-8000-000000000002',position='51000000-0000-4000-8000-000000000003',place='51000000-0000-4000-8000-000000000004',otherPlace='51000000-0000-4000-8000-000000000005';
+const actor:PlatformAdministratorContext={actorType:'administrator',administrator:{id:'51000000-0000-4000-8000-000000000006',username:'admin',displayName:'Admin'},execution:{type:'platform'},request:{requestId:'test',traceId:'test',startedAt:new Date().toISOString()},authorize:async permissionCode=>({id:'test',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'administrator',effectiveScopes:[],decidedAt:new Date().toISOString()})};
+test('employee self profile and password: identity fields protected, unverified WeCom, session revocation',async()=>{
+ const pg=new PGlite();
+ const db={query:async(sql:string,args?:readonly unknown[])=>args?pg.query(sql,[...args]):(await pg.exec(sql)).at(-1)!,release(){}};
+ const pool={...db,connect:async()=>db};const app=Fastify();
+ try{
+  await initializePlatformDatabase(db);
+  await pg.query("INSERT INTO platform_organization_units(id,code,name,unit_type,status,created_at,updated_at) VALUES($1,'team','Team','workgroup','active',now(),now())",[org]);
+  await pg.query("INSERT INTO platform_positions(id,code,name,status,created_at,updated_at) VALUES($1,'worker','Worker','active',now(),now())",[position]);
+  await pg.query("INSERT INTO platform_people(id,employee_no,name,organization_unit_id,position_id,employment_status,created_at,updated_at) VALUES($1,'001','Employee',$2,$3,'active',now(),now())",[person,org,position]);
+
+ const service=new EmployeeIdentityService(pool);await service.create(actor,{personId:person,username:'employee',password:'employee-test-password'});
+ const {token}=await service.login({username:'employee',password:'employee-test-password'});
+ const origin='http://127.0.0.1:3102';await app.register(cookie);registerEmployeeRoutes(app,{origin,service,resolveAdmin:async()=>actor});await app.ready();
+ const headers={origin,cookie:`${EMPLOYEE_SESSION_COOKIE}=${token}`};
+ const patch=(body:object,h=headers)=>app.inject({method:'PATCH',url:'/api/employee/profile',headers:h,payload:body});
+ assert.equal((await patch({phone:'13800000000',wecomUserId:'worker.001'},{...headers,origin:'https://evil.test'})).statusCode,403);
+ assert.equal((await patch({phone:'13800000000',wecomUserId:'worker.001',personId:org})).statusCode,400);
+ assert.equal((await patch({phone:'13800000000',wecomUserId:'worker.001'})).statusCode,200);
+ const profile=await service.profile(token);assert.equal(profile.phone,'13800000000');assert.equal(profile.wecomUserId,'worker.001');
+ assert.equal((await pg.query('SELECT verified_at FROM platform_external_identities')).rows[0].verified_at,null);
+ await pg.query('UPDATE platform_external_identities SET verified_at=now()');
+ await patch({phone:'13900000000',wecomUserId:'worker.001'});
+ assert.ok((await pg.query('SELECT verified_at FROM platform_external_identities')).rows[0].verified_at);
+ await patch({phone:'13900000000',wecomUserId:'worker.002'});
+ assert.equal((await pg.query('SELECT verified_at FROM platform_external_identities')).rows[0].verified_at,null);
+ const second=await service.login({username:'employee',password:'employee-test-password'});
+ await assert.rejects(service.changePassword(token,{currentPassword:'wrong',newPassword:'replacement-password'}),/EMPLOYEE_PASSWORD_INCORRECT/);
+ assert.ok(await service.authenticate(token));
+ const changed=await app.inject({method:'PATCH',url:'/api/employee/auth/password',headers,payload:{currentPassword:'employee-test-password',newPassword:'replacement-password'}});
+ assert.equal(changed.statusCode,200);assert.equal(await service.authenticate(token),null);assert.equal(await service.authenticate(second.token),null);
+ assert.equal((await patch({phone:'',wecomUserId:''})).statusCode,401);
+ await assert.rejects(service.login({username:'employee',password:'employee-test-password'}),/EMPLOYEE_LOGIN_FAILED/);
+ assert.ok((await service.login({username:'employee',password:'replacement-password'})).token);
+ }finally{await app.close();await pg.close();}
+});

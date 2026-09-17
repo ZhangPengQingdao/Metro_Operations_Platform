@@ -1,6 +1,6 @@
 export { Button, IconButton, ButtonGroup, NavItem, NavSubItem, type ButtonProps, type IconButtonProps, type ButtonGroupProps, type NavItemProps, type NavSubItemProps, type ButtonVariant, type ButtonSize, type ButtonShape } from './Button';
 export { Checkbox, type CheckboxProps } from './Checkbox';
-export { Field, Input, Select, Textarea } from './FormControls';
+export { Field, Input, QuantityInput, Select, Textarea } from './FormControls';
 export { Dialog, type DialogProps } from './Dialog';
 export { DialogCloseButton, type DialogCloseButtonProps } from './DialogCloseButton';
 export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
@@ -15,7 +15,7 @@ export { Radio, RadioGroup, type RadioProps, type RadioGroupProps, type RadioOpt
 export { Switch, type SwitchProps, type SwitchSize } from './Switch';
 export { Alert, type AlertProps, type AlertVariant } from './Alert';
 export { ToastProvider, useToast, type ToastType, type ToastItem } from './Toast';
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, type TableProps } from './Table';
+export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableActionButton, type TableProps } from './Table';
 export { Tabs, TabList, TabTrigger, TabContent, type TabsProps, type TabTriggerProps, type TabsVariant } from './Tabs';
 export { Drawer, type DrawerProps } from './Drawer';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, type CardProps } from './Card';

@@ -76,3 +76,15 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 物料：工班长角色授予 read/outbound/manage，检修工角色授予 read/outbound；三个完整权限码为 `app.materials.read`、`app.materials.outbound`、`app.materials.manage`。应用委托授权分别授予这三个权限。当前自定义 API 不支持通用资源范围推断，使用完整操作授权；物料代码强制可信员工组织隔离，出库纠错还强制本人。
 
 服务身份单独授予 `platform.app_data.read`、`platform.app_data.write`、`platform.people.read`（范围全部，应用只访问自己的数据及所需工班成员）。在停用状态先「准备服务身份」，再批准服务授权，凭据不返回浏览器。委任物资管理员在物料应用内部「设置」完成，仅工班长可用；不改变平台员工角色。
+
+## 公开 L2 界面组件（0.5.0）
+
+React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+
+沙箱应用打开 L2 弹窗时，调用 `sandbox.invoke("platform.ui.modal", {open:true})`，关闭时传 `false`。宿主只接受当前沙箱通道的布尔状态，用于模糊侧边栏和页头并暂停其交互；应用内背景由共享 Dialog 的透明模糊遮罩处理。通道失效或应用卸载时自动恢复。此接口不传递身份、不授予业务权限，也不解除沙箱隔离。
+
+FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及表格前间距；默认布局保持不变。
+
+表格可设置 `pinActions` 将最后一列固定在右侧，配合 `TableActionButton` 显示图标与文字。物料应用按实际功能使用默认可展开搜索和新建操作，不添加未实现的筛选或批量操作。
+
+`platform.ui.theme` 接受空对象，返回宿主当前解析后的 `light` / `dark`，仅传递外观状态。本地沙箱首次 HTML 在原 CSP nonce 样式中注入主题，避免切页浅色闪烁。生产独立资源域仍需相应首屏主题验收。

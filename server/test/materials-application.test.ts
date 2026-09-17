@@ -38,6 +38,9 @@ test('independent materials service uses declarative schema and rolls back stock
   for(const sql of compileAppMigration(upgrade,schema))await db.exec(sql);
   const retained=(await db.query(`SELECT quantity,specification FROM "${schema}".materials`)).rows[0];assert.equal(retained.quantity,8);assert.equal(retained.specification,null);
 
+  const receiverMigration=await readFile(new URL('../../applications/materials/migration-003.json',import.meta.url),'utf8');
+  for(const sql of compileAppMigration(receiverMigration,schema))await db.exec(sql);
+  assert.equal((await db.query(`SELECT receiver_id FROM "${schema}".movements WHERE id=$1`,[inbound.id])).rows[0].receiver_id,null);
   failLedger=true;await assert.rejects(service.move({requestId:randomUUID(),materialId:material.id,direction:'out',quantity:3},employee),/ledger failed/);failLedger=false;
   assert.equal((await db.query(`SELECT quantity FROM "${schema}".materials`)).rows[0].quantity,8);
   assert.equal((await db.query(`SELECT count(*)::int n FROM "${schema}".movements`)).rows[0].n,1);
@@ -82,7 +85,7 @@ test('materials build can be signed and exported by standalone public CLI',async
   await run('validate',app);await run('sign',app,'test-key','key.pem','signature.json');
   await run('verify',app,'signature.json','test-key','metro-apps','public.pem');
   await run('export-upload',app,'signature.json','materials.json');
-  const upload=JSON.parse(await readFile(join(root,'materials.json'),'utf8'));assert.equal(upload.manifest.id,'materials');assert.equal(upload.artifacts.length,3);
+  const upload=JSON.parse(await readFile(join(root,'materials.json'),'utf8'));assert.equal(upload.manifest.id,'materials');assert.equal(upload.artifacts.length,5);assert.deepEqual(upload.manifest.storage.migrations.map((m:any)=>m.id),['initial','specification','receiver']);
   const {withInstallUpload}=await import('../src/app-platform/install/wire.ts');
   const {verifyAppDirectory}=await import('../src/app-platform/developer/signature.ts');
   await withInstallUpload(upload,join(root,'uploads'),input=>verifyAppDirectory(input.directory,input.signatureFile,{keyId:'test-key',publisherId:'metro-apps',publicKeyPem:pair.publicKey.export({type:'spki',format:'pem'}).toString(),revoked:false}));

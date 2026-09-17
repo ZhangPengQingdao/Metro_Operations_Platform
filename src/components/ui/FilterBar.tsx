@@ -41,6 +41,7 @@ export interface ActionMenuItem {
 }
 
 export interface FilterBarProps {
+  layout?: "compact" | "spread";
   // Search props
   searchValue?: string;
   onSearchChange?: (value: string) => void;
@@ -68,6 +69,7 @@ export interface FilterBarProps {
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
+  layout = "compact",
   searchValue = "",
   onSearchChange,
   searchPlaceholder = "搜索关键词...",
@@ -82,7 +84,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onRemoveTag,
   className = ""
 }) => {
-  const [isSearchOpen, setIsSearchOpen] = useState(Boolean(searchValue));
+  const [isSearchOpen, setIsSearchOpen] = useState(layout === "spread" || Boolean(searchValue));
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -106,7 +108,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   // Auto focus on search expand
   useEffect(() => {
-    if (isSearchOpen && searchInputRef.current) {
+    if (layout !== "spread" && isSearchOpen && searchInputRef.current) {
       searchInputRef.current.focus();
     }
   }, [isSearchOpen]);
@@ -228,12 +230,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   }, [filterGroups, activeFilters, showActiveTags]);
 
   return (
-    <div className={`afc-filter-bar-wrapper inline-flex flex-col ${className}`}>
+    <div className={`afc-filter-bar-wrapper inline-flex flex-col ${layout === "spread" ? "afc-filter-bar-wrapper--spread" : ""} ${className}`}>
       {/* 1. Main Toolbar Row */}
       <div className="afc-filter-bar flex items-center justify-end gap-2 relative">
         {/* SEARCH EXPANDABLE ANIMATED COMPONENT */}
         <div className="afc-filter-search-anim-wrap flex items-center gap-1.5">
-          {isSearchOpen && (
+          {isSearchOpen && layout !== "spread" && (
             <button
               type="button"
               className="afc-filter-icon-btn afc-filter-collapse-btn text-[var(--afc-color-muted)] hover:text-[var(--afc-color-primary-hover)]"
@@ -486,7 +488,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
 
         {/* Optional Right Action */}
-        {rightAction && <div className="flex items-center gap-2">{rightAction}</div>}
+        {rightAction && <div className="afc-filter-right-action flex items-center gap-2">{rightAction}</div>}
       </div>
 
       {/* 2. Optional Active Tags (Default Hidden) */}

@@ -34,6 +34,10 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.post('/auth/login',{bodyLimit:4096},async(req,reply)=>{const result=await options.service.login(req.body);reply.setCookie(EMPLOYEE_SESSION_COOKIE,result.token,{...cookie,maxAge:8*60*60});return result.account;});
   scoped.get('/auth/me',async req=>options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.post('/auth/logout',async(req,reply)=>{await options.service.logout(req.cookies[EMPLOYEE_SESSION_COOKIE]!);reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
+  scoped.get('/profile',async req=>options.service.profile(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
+  scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
+  scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.get('/apps',async req=>{
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));

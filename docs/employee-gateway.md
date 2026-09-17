@@ -86,3 +86,11 @@ SDK 自动将 handler 内的异步 Gateway 调用绑定至原始 API 帧 ID；�
 
 
 0.3.0 宿主在调用、嵌套 Gateway 和提交前复核 permissions 快照，额外管理权限被撤销时即使基础 read 仍有效，也会拒绝原调用。应用不能通过 payload 设置权限。成员目录 `platform.people.members` 仅供已授权 Gateway 调用，接受 organizationUnitId 和可选 personId/search，返回最多 50 个有效工班成员的 ID、姓名、工号与组织 ID，不包含联系方式。查询前校验组织范围，返回时复核实际成员范围；通过服务身份调用仍须单独服务授权。
+
+## 统一入口与员工工作区（0.5.0）
+
+`POST /api/auth/login` 按账号所属身份路由；管理员与员工会话 Cookie 仍各自隔离。同名跨身份账号拒绝登录，不以优先级选择更高权限身份。旧登录链接转向统一入口。
+
+员工 `GET /api/employee/profile` 读取本人资料，`GET /api/employee/notifications` 仅返回本人收件通知。工作区复用共享侧边栏、消息和个人资料。应用的 `platform.ui.navigation` 只筛选声明过的菜单，不授予路由或业务权限。
+
+`PATCH /api/employee/profile` 只接受本人的 `phone` 和 `wecomUserId`，拒绝身份、岗位与组织字段；沿用默认租户的企业微信外部身份记录，修改 UserID 后清除核验状态。`PATCH /api/employee/auth/password` 接受 `currentPassword` 和至少 12 字符的新密码 `newPassword`，验证当前密码后撤销该员工的全部会话。两个写接口均校验 Origin 和有效员工会话，事务内再次核对本人身份并记录审计。

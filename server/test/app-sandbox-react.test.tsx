@@ -24,3 +24,8 @@ test('frame refuses forged loopback configuration when actual parent origin is p
     if(previous)Object.defineProperty(globalThis,'window',previous);else Reflect.deleteProperty(globalThis,'window');
   }
 });
+test('local sandbox first document uses the host theme before application scripts run',async()=>{
+ const {themedSandboxHtml}=await import('../../src/app-platform/host/sandbox/react.tsx');
+ const html='<!doctype html><html><head><style nonce="abc123">.x{}</style></head><body><script nonce="abc123">boot()</script></body></html>';
+ const themed=themedSandboxHtml(html,'dark');assert.match(themed,/<html class="afc-theme-neutral" data-theme="dark">/);assert.match(themed,/<style nonce="abc123">html,body\{background:#121212/);assert.ok(themed.indexOf('background:#121212')<themed.indexOf('boot()'));assert.match(themed,/<script nonce="abc123">boot\(\)/);
+});

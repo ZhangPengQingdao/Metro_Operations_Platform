@@ -88,6 +88,49 @@ export class EmployeeIdentityService{
    return {account:publicAccount(account),token};
   });
  }
+ async profile(token?:string){
+  const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  const result=await this.read(db=>rows<Record<string,string>>(db,`SELECT p.name,p.phone,(SELECT external_user_id FROM platform_external_identities WHERE person_id=p.id AND provider='wecom' AND tenant_key='default' AND status='active') AS "wecomUserId",p.employee_no AS "employeeNo",o.name AS organization,pos.name AS position FROM platform_people p JOIN platform_organization_units o ON o.id=p.organization_unit_id JOIN platform_positions pos ON pos.id=p.position_id WHERE p.id=$1`,[account.personId]));
+  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  return {...account,...result[0]};
+ }
+ private async requireSelf(db:QueryableClient,token:string){
+  const [account]=await rows<Row>(db,`SELECT a.* FROM platform_employee_accounts a JOIN platform_employee_sessions s ON s.account_id=a.id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active' FOR UPDATE OF a`,[digest(token)]);
+  if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  await this.validPerson(db,account.person_id);return account;
+ }
+ async updateProfile(token:string,input:unknown){
+  const parsed=z.object({phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/)}).strict().parse(input);
+  try{return await this.transaction(async db=>{
+   const account=await this.requireSelf(db,token);
+   await db.query('UPDATE platform_people SET phone=$1,updated_at=now() WHERE id=$2',[parsed.phone||null,account.person_id]);
+   if(parsed.wecomUserId){
+    await db.query(`INSERT INTO platform_external_identities(id,person_id,provider,tenant_key,external_user_id,status,verified_at,created_at,updated_at)
+     VALUES($1,$2,'wecom','default',$3,'active',NULL,now(),now())
+     ON CONFLICT(person_id,provider,tenant_key) DO UPDATE SET external_user_id=EXCLUDED.external_user_id,status='active',
+     verified_at=CASE WHEN platform_external_identities.external_user_id=EXCLUDED.external_user_id AND platform_external_identities.status='active' THEN platform_external_identities.verified_at ELSE NULL END,updated_at=now()`,[randomUUID(),account.person_id,parsed.wecomUserId]);
+   }else await db.query("UPDATE platform_external_identities SET status='inactive',verified_at=NULL,updated_at=now() WHERE person_id=$1 AND provider='wecom' AND tenant_key='default'",[account.person_id]);
+   await appendAdminAudit(db,{actorId:account.id,action:'employee.profile-update',targetId:account.person_id});return {ok:true};
+  });}catch(error){if((error as {code?:string}).code==='23505')throw new EmployeeIdentityError(409,'EMPLOYEE_WECOM_ID_EXISTS');throw error;}
+ }
+ async changePassword(token:string,input:unknown){
+  const parsed=z.object({currentPassword:z.string().max(256),newPassword:password}).strict().parse(input);
+  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  const hash=await bcrypt.hash(parsed.newPassword,12);
+  await this.transaction(async db=>{
+   const account=await this.requireSelf(db,token);
+   if(!await bcrypt.compare(parsed.currentPassword,account.password_hash))throw new EmployeeIdentityError(403,'EMPLOYEE_PASSWORD_INCORRECT');
+   await db.query('UPDATE platform_employee_accounts SET password_hash=$1 WHERE id=$2',[hash,account.id]);
+   await db.query('DELETE FROM platform_employee_sessions WHERE account_id=$1',[account.id]);
+   await appendAdminAudit(db,{actorId:account.id,action:'employee.password-change',targetId:account.id});
+  });
+ }
+ async notifications(token?:string){
+  const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.created_at AS "createdAt",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));
+  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  return {notifications};
+ }
  async logout(token:string){await this.transaction(async db=>{await db.query('DELETE FROM platform_employee_sessions WHERE token_hash=$1',[digest(token)]);});}
  async resolveIdentity(token?:string){const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');return {source:'session' as const,userId:account.personId};}
 }

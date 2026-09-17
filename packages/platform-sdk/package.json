@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-sdk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Public contracts and application SDK for Metro Operations Platform.",
   "type": "module",
   "sideEffects": false,
@@ -45,13 +45,33 @@
     "./app-backend": {
       "types": "./dist/app-backend.d.ts",
       "import": "./dist/app-backend.js"
+    },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
+    },
+    "./ui-styles": {
+      "types": "./dist/ui-styles.d.ts",
+      "import": "./dist/ui-styles.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../../scripts/build-sdk-ui.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "devDependencies": {
     "typescript": "~5.8.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   }
 }
