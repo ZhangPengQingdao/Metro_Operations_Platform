@@ -1353,3 +1353,19 @@ input[type=number] {
 .afc-list-toolbar-actions { display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap; }
 .afc-data-list .afc-table th,.afc-data-list .afc-table td { white-space:nowrap; }
 .afc-data-list .afc-table td .app-business-rule-summary { white-space:normal; }
+
+/* Shared hierarchical organization picker: select a node or expand independently. */
+.afc-org-picker { display:block; position:relative; }
+.afc-org-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; min-height:44px; height:auto; }
+.afc-org-trigger span { overflow-wrap:anywhere; }
+.afc-org-trigger svg { flex-shrink:0; }
+.afc-org-validation { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; bottom:0; left:0; }
+.afc-org-panel { color:var(--afc-color-ink,#171717); background:var(--afc-color-paper,#fff); border:1px solid var(--afc-color-line,#ddd); border-radius:16px; box-shadow:0 12px 36px #0002; padding:8px; }
+.afc-org-tree { max-height:320px; overflow:auto; }
+.afc-org-row { display:flex; align-items:center; gap:4px; }
+.afc-org-expand,.afc-org-spacer { width:32px; min-width:32px; height:36px; display:grid; place-items:center; }
+.afc-org-option { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; flex:1; padding:10px 8px; border-radius:8px; }
+.afc-org-option[aria-pressed=true],.afc-org-option:hover,.afc-org-expand:hover { background:var(--afc-color-neutral-soft,#f2f2f2); }
+.afc-org-option:disabled { opacity:.45; cursor:not-allowed; }
+.afc-org-panel button:focus-visible { outline:2px solid currentColor; outline-offset:-2px; }
+.afc-org-footer { display:flex; justify-content:flex-end; gap:12px; margin-top:8px; padding:4px; }

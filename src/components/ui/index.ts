@@ -58,3 +58,5 @@ export {
 export { PlatformIcon, PLATFORM_ICON_NAMES, type PlatformIconName, type PlatformIconProps } from './PlatformIcon';
 export { SearchField } from './SearchField';
 export {DataList,TableActions,ListPagination,type DataListProps,type ListPaginationProps} from './DataList';
+
+export {OrganizationPicker,organizationPath,type OrganizationOption,type OrganizationPickerProps} from './OrganizationPicker';

@@ -1,4 +1,4 @@
-import {randomUUID,randomInt} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
@@ -12,17 +12,13 @@ CREATE TABLE IF NOT EXISTS platform_registration_challenges(id uuid PRIMARY KEY,
 CREATE TABLE IF NOT EXISTS platform_employee_registrations(id uuid PRIMARY KEY,employee_no text NOT NULL,name text NOT NULL,phone text,wecom_user_id text,organization_id uuid NOT NULL REFERENCES platform_organization_units(id),password_hash text,status text NOT NULL CHECK(status IN ('pending','approved','rejected')),created_at timestamptz NOT NULL DEFAULT now(),reviewed_at timestamptz,reviewer_id uuid,person_id uuid REFERENCES platform_people(id));
 CREATE UNIQUE INDEX IF NOT EXISTS platform_registration_pending_employee ON platform_employee_registrations(lower(employee_no)) WHERE status='pending';`);}};
 const rows=async<T=Record<string,unknown>>(db:QueryableClient,sql:string,args:readonly unknown[]=[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
-const application=z.object({employeeNo:z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).transform(v=>v.toLowerCase()),name:z.string().trim().min(1).max(100),phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/).default(''),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/).default(''),organizationId:z.string().uuid(),password:z.string().min(12).refine(v=>Buffer.byteLength(v,'utf8')<=72),challengeId:z.string().uuid(),slider:z.number().int().min(0).max(100)}).strict();
+const application=z.object({employeeNo:z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).transform(v=>v.toLowerCase()),name:z.string().trim().min(1).max(100),phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/).default(''),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/).default(''),organizationId:z.string().uuid(),password:z.string().min(12).refine(v=>Buffer.byteLength(v,'utf8')<=72)}).strict();
 export class RegistrationService {
  constructor(private pool:ConnectablePool){}
  private async read<T>(work:(db:QueryableClient)=>Promise<T>){const db=await this.pool.connect();try{return await work(db);}finally{db.release();}}
  private async manage(c:PlatformAdministratorContext){if(c.actorType!=='administrator'||c.execution.type!=='platform'||!(await c.authorize('platform.authorization.manage',{})).allowed)throw new EmployeeIdentityError(403,'REGISTRATION_DENIED');}
- async organizations(search:string){return this.read(db=>rows(db,"SELECT id,name,parent_id AS \"parentId\" FROM platform_organization_units WHERE status='active' AND ($1='' OR strpos(lower(name),lower($1))>0) ORDER BY name,id LIMIT 100",[search]));}
- async challenge(){return this.read(async db=>{await db.query('DELETE FROM platform_registration_challenges WHERE expires_at<now()');const id=randomUUID(),target=randomInt(65,96);await db.query("INSERT INTO platform_registration_challenges(id,target,expires_at) VALUES($1,$2,now()+interval '5 minutes')",[id,target]);return {id,target};});}
+ async organizations(search:string,after?:string){return this.read(db=>rows(db,"SELECT id,name,parent_id AS \"parentId\" FROM platform_organization_units WHERE status='active' AND ($1='' OR strpos(lower(name),lower($1))>0) AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT 100",[search,after??null]));}
  async submit(input:unknown){const v=application.parse(input);
- // Consume before validation/hash: even failed attempts cannot reuse a challenge across processes.
- const [challenge]=await this.read(db=>rows<{target:number;valid:boolean}>(db,'DELETE FROM platform_registration_challenges WHERE id=$1 RETURNING target,expires_at>clock_timestamp() AND created_at<clock_timestamp()-interval \'500 milliseconds\' AS valid',[v.challengeId]));
- if(!challenge?.valid||Math.abs(challenge.target-v.slider)>2)throw new EmployeeIdentityError(400,'REGISTRATION_CHALLENGE_FAILED');
  const hash=await bcrypt.hash(v.password,12);
  try{return await this.read(db=>runDatabaseTransaction(db,async()=>{await db.query('SELECT pg_advisory_xact_lock(6013015)');
  if(!(await rows(db,"SELECT id FROM platform_organization_units WHERE id=$1 AND status='active' FOR SHARE",[v.organizationId])).length)throw new EmployeeIdentityError(400,'REGISTRATION_ORGANIZATION_INACTIVE');
@@ -49,8 +45,7 @@ export class RegistrationService {
 export async function registerRegistrationRoutes(app:FastifyInstance,o:{pool:ConnectablePool;origin:string;resolveAdmin:(r:FastifyRequest)=>Promise<PlatformAdministratorContext>}){const s=new RegistrationService(o.pool);await app.register(async api=>{
  api.addHook('onRequest',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==o.origin)throw new EmployeeIdentityError(403,'REGISTRATION_ORIGIN_DENIED');});
  api.setErrorHandler((e,_req,reply)=>{if(e instanceof EmployeeIdentityError)return reply.code(e.statusCode).send({error:e.code});if(e instanceof z.ZodError)return reply.code(400).send({error:'REGISTRATION_INVALID_INPUT'});const status=(e as {statusCode?:number}).statusCode;return reply.code(status===401||status===403||status===429?status:503).send({error:status===429?'REGISTRATION_RATE_LIMIT':status===401?'ADMIN_AUTH_REQUIRED':'REGISTRATION_UNAVAILABLE'});});
- api.get('/api/auth/registration/organizations',{config:{rateLimit:{max:30,timeWindow:'1 minute'}}},async req=>({organizations:await s.organizations(z.object({q:z.string().trim().max(100).default('')}).parse(req.query).q)}));
- api.post('/api/auth/registration/challenge',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},()=>s.challenge());
+ api.get('/api/auth/registration/organizations',{config:{rateLimit:{max:30,timeWindow:'1 minute'}}},async req=>{const q=z.object({q:z.string().trim().max(100).default(''),after:z.string().uuid().optional()}).parse(req.query);return {organizations:await s.organizations(q.q,q.after)};});
  api.post('/api/auth/registration',{bodyLimit:4096,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},req=>s.submit(req.body));
  api.get('/api/admin/registrations',async req=>s.list(await o.resolveAdmin(req),z.object({page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(req.query).page));
  api.post<{Params:{id:string}}>('/api/admin/registrations/:id/review',{bodyLimit:4096},async req=>s.review(await o.resolveAdmin(req),req.params.id,req.body));

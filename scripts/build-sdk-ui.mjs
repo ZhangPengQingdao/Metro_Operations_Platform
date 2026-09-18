@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 // Build public application UI from the same L2 sources as the platform.
 // Published artifacts contain no imports of repository source paths.
-await build({stdin:{contents:`export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp} from '@phosphor-icons/react';export {Button,IconButton} from './src/components/ui/Button';export {Input,Select,Field,QuantityInput} from './src/components/ui/FormControls';export {SearchField} from './src/components/ui/SearchField';export {FilterBar} from './src/components/ui/FilterBar';export {Table,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton} from './src/components/ui/Table';export {DataList,TableActions,ListPagination} from './src/components/ui/DataList';export {Dialog} from './src/components/ui/Dialog';`,resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'browser',target:'es2022',external:['react','react-dom'],outfile:root+'packages/platform-sdk/dist/ui.js',minify:true});
+await build({stdin:{contents:`export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp} from '@phosphor-icons/react';export {Button,IconButton} from './src/components/ui/Button';export {Input,Select,Field,QuantityInput} from './src/components/ui/FormControls';export {OrganizationPicker} from './src/components/ui/OrganizationPicker';export {SearchField} from './src/components/ui/SearchField';export {FilterBar} from './src/components/ui/FilterBar';export {Table,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton} from './src/components/ui/Table';export {DataList,TableActions,ListPagination} from './src/components/ui/DataList';export {Dialog} from './src/components/ui/Dialog';`,resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'browser',target:'es2022',external:['react','react-dom'],outfile:root+'packages/platform-sdk/dist/ui.js',minify:true});
 const source=(await readFile(root+'index.css','utf8')).replace(/^@import[^;]+;/gm,'');
 const result=await postcss([tailwind({content:[root+'src/components/ui/**/*.{ts,tsx}'],safelist:['afc-theme-neutral','afc-filter-bar-wrapper--spread'],theme:{extend:{}},plugins:[]}),autoprefixer()]).process(source,{from:root+'index.css'});
 await writeFile(root+'packages/platform-sdk/dist/ui-styles.js',`export const platformUiCss=${JSON.stringify(result.css)};\n`);
@@ -21,6 +21,8 @@ export declare const ArrowLineUp:typeof PencilSimpleLine;
 export declare const Button:ComponentType<ButtonHTMLAttributes<HTMLButtonElement>&{variant?:'primary'|'secondary'|'ghost'|'danger'|'soft';size?:'xs'|'sm'|'md'|'lg';loading?:boolean;fullWidth?:boolean;leadingIcon?:ReactNode}>;
 export declare const IconButton:ComponentType<ButtonHTMLAttributes<HTMLButtonElement>&{label:string;size?:'sm'|'md'|'lg'}>;
 export declare const Input:ComponentType<InputHTMLAttributes<HTMLInputElement>>;
+export interface OrganizationOption {id:string;name:string;parentId?:string|null;status?:string}
+export declare const OrganizationPicker:ComponentType<{id?:string;options:readonly OrganizationOption[];value:string;onChange:(id:string)=>void;disabled?:boolean;required?:boolean;label?:string;excludeId?:string}>;
 export declare const SearchField:typeof Input;
 export declare const QuantityInput:ComponentType<Omit<InputHTMLAttributes<HTMLInputElement>,'value'|'onChange'|'min'|'max'|'type'>&{value:number|string;onValueChange:(value:string)=>void;min?:number;max?:number}>;
 export declare const Select:ComponentType<SelectHTMLAttributes<HTMLSelectElement>>;

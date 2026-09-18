@@ -62,6 +62,7 @@ export function resolveFloatingPortalHost(anchor: HTMLElement | null): HTMLEleme
 
 export interface FloatingPortalProps {
   open: boolean;
+  inheritTheme?: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
   onDismiss: () => void;
   width: number;
@@ -75,6 +76,7 @@ export interface FloatingPortalProps {
 
 export function FloatingPortal({
   open,
+  inheritTheme = false,
   anchorRef,
   onDismiss,
   width,
@@ -102,6 +104,11 @@ export function FloatingPortal({
     }
 
     const updatePosition = () => {
+      if (inheritTheme) {
+        const style = getComputedStyle(anchor);
+        for (const name of Array.from(style)) if (name.startsWith('--afc-')) element.style.setProperty(name, style.getPropertyValue(name));
+        element.style.colorScheme = style.colorScheme;
+      }
       const anchorRect = anchor.getBoundingClientRect();
       const floatingRect = element.getBoundingClientRect();
       setPosition(calculateFloatingPosition(anchorRect, floatingRect, {
@@ -148,7 +155,7 @@ export function FloatingPortal({
       }
       setPositioned(false);
     };
-  }, [align, anchorRef, floatingElement, gap, margin, open]);
+  }, [align, anchorRef, floatingElement, gap, margin, open, inheritTheme]);
 
   if (!open || !portalHost) return null;
 
@@ -161,12 +168,12 @@ export function FloatingPortal({
       data-placement={position.placement}
       className={`fixed m-0 ${className}`}
       style={{
+        inset: 'auto',
         top: position.top,
         left: position.left,
         width: `min(${width}px, calc(100vw - ${margin * 2}px))`,
         maxHeight: `calc(100vh - ${margin * 2}px)`,
-        visibility: positioned ? 'visible' : 'hidden',
-        inset: 'auto'
+        visibility: positioned ? 'visible' : 'hidden'
       }}
     >
       {children}

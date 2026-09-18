@@ -87,12 +87,17 @@
 .afc-empty { padding:40px 20px; text-align:center; color:var(--afc-muted); }
  .afc-admin-login { display:grid; place-items:center; padding:48px 24px; background:var(--afc-surface); }
 .afc-login-container { width:100%; max-width:400px; }
-.afc-login-container>header { text-align:center; margin-bottom:32px; }
+.afc-login-container>header { text-align:center; margin-bottom:44px; }
 .afc-login-container>header img { width:88px; height:88px; margin:0 auto 20px; }
 .afc-login-container>header h1 { font-size:24px; font-weight:500; letter-spacing:-.03em; }
 .afc-login-intro { text-align:center; margin-bottom:28px; }
 .afc-login-intro h2 { font-size:22px; font-weight:600; margin-bottom:8px; }
-.afc-login-container form { display:grid; gap:20px; }
+.afc-login-container form { display:grid; gap:28px; }
+.afc-auth-text-link { display:block; margin:28px auto 0; padding:4px 0; color:var(--afc-color-muted); background:none; border:0; border-radius:0; font:inherit; font-size:14px; cursor:pointer; }
+.afc-auth-text-link:hover { color:var(--afc-color-ink); text-decoration:underline; text-underline-offset:4px; }
+.afc-auth-text-link:focus-visible { outline:2px solid currentColor; outline-offset:6px; }
+.afc-auth-text-link:disabled { opacity:.5; cursor:default; }
+.afc-registration-form .afc-auth-text-link { margin:4px auto 0; }
 @media(max-width:900px) {
  .afc-sidebar-island { visibility:hidden; transform:translateX(calc(-100% - 24px)); max-width:calc(100vw - 40px); transition:transform .2s ease,visibility .2s; }
  .afc-sidebar-island.is-open { visibility:visible; transform:none; }
@@ -126,7 +131,7 @@
 .employee-app-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px}.employee-app-link{display:flex;align-items:center;gap:14px;padding:20px;border:1px solid var(--afc-border);border-radius:16px;background:var(--afc-surface)}.employee-app-link>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}.employee-app-link:hover{background:var(--afc-hover)}.employee-app-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--afc-sidebar);font-size:18px}.employee-app-link .afc-muted{font-size:12px;overflow-wrap:anywhere}.employee-application{min-width:0}.employee-message-list article{padding:20px 0;border-bottom:1px solid var(--afc-border)}.employee-message-list p{margin:8px 0}
 .afc-admin .admin-heading{flex-wrap:wrap}.afc-admin .admin-form{min-width:0}.afc-admin .afc-details{min-width:0}.afc-admin .afc-details dd{min-width:0}
 
-.app-package-upload{display:grid;gap:16px;padding:20px;border:1px solid var(--afc-border);border-radius:16px;background:var(--afc-sidebar)}.app-package-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}.app-package-upload .afc-field{min-width:0}.app-package-upload input{width:100%;min-width:0}@media(max-width:540px){.app-package-upload{padding:16px}}
+.app-package-upload{min-width:0}.app-package-filename{display:block;min-width:0;overflow-wrap:anywhere;color:inherit;font-size:inherit}.app-package-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 
 .afc-setting-row > .afc-select-wrap { width: min(75%, 360px); flex: 0 1 360px; }
 .afc-dialog .admin-form + .admin-form { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--afc-border); }
@@ -169,7 +174,7 @@
 @media(max-width:640px){.app-business-member-form{grid-template-columns:1fr;}.app-business-member-form>button{justify-self:start;}}
 
 .afc-registration-container { max-width:400px; }
-.afc-registration-container .afc-registration-form { grid-template-columns:minmax(0,1fr); gap:16px; }
+.afc-registration-container .afc-registration-form { grid-template-columns:minmax(0,1fr); gap:26px; }
 .afc-registration-wide { grid-column:1 / -1; }
 @media(max-width:600px) { .afc-registration-container .afc-registration-form { grid-template-columns:minmax(0,1fr); } }
 

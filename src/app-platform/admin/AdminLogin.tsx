@@ -20,6 +20,6 @@ export function AdminLogin({onLogin,onRegister,title='管理员登录'}: {onLogi
       <Field htmlFor="admin-password" label="密码"><Input id="admin-password" name="password" type={visible?'text':'password'} autoComplete="current-password" required placeholder="请输入密码" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} leadingIcon={<PlatformIcon name="lock"/>} trailingAction={<IconButton size="sm" label={visible?'隐藏密码':'显示密码'} aria-pressed={visible} disabled={busy} onClick={()=>setVisible(v=>!v)}><PlatformIcon name={visible?'eyeOff':'eye'} size={18}/></IconButton>}/></Field>
       {error && <p role="alert" className="afc-error">{error}</p>}
       <Button type="submit" fullWidth loading={busy} disabled={!username.trim() || !password} leadingIcon={<PlatformIcon name="login" size={18}/>}>{busy ? '正在登录…' : '登录'}</Button>
-    </form>{onRegister&&<Button variant="ghost" fullWidth onClick={onRegister}>注册员工账号</Button>}
+    </form>{onRegister&&<button type="button" className="afc-auth-text-link" onClick={onRegister}>注册员工账号</button>}
   </div></main>;
 }
