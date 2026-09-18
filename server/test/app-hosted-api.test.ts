@@ -35,16 +35,17 @@ test('late replies release timed out work; unknown replies close without pretend
  transport.accept({id:frame!.id,result:true});assert.equal(closed,true);
  await assert.rejects(transport.invoke({handler:'read',method:'GET',path:'/',payload:null}),/CLOSED/);
 });
-function fixture(withManagement=false) {
+function fixture(withManagement=false,withBusiness=false) {
  const now=new Date().toISOString();let allowed=true, management=true, calls=0, resolves=0;
  let installation:AppInstallation={id:'42000000-0000-4000-8000-000000000001',appId:'demo',enabled:true,revision:1,grants:[],serviceIdentityId:null,createdAt:now,updatedAt:now,manifest:{
  manifestVersion:'1.0',id:'demo',version:'1.0.0',name:'Demo',description:'Test app',publisherId:'example',compatibility:{platform:{minInclusive:'0.0.1-alpha.1',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:['app.demo.use'],defined:withManagement?[{code:'app.demo.manage',description:'Management'}]:[]},ui:{mode:'none'},backend:{mode:'isolated',runtime:'node',entryArtifactId:'back',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:10}},storage:{mode:'none'},routes:[],api:[{id:'read',method:'GET',path:'/read',handler:'read',permission:'app.demo.use'}],navigation:[],events:{publish:[],subscribe:[]},tools:[],jobs:[],network:{frontendOrigins:[],backendOrigins:[]},resources:[],artifacts:[{id:'back',kind:'backend',path:'back.js',sha256:'a'.repeat(64),bytes:1}]}};
  const actor={actorType:'person',person:{id:'42000000-0000-4000-8000-000000000002',organization:{id:'42000000-0000-4000-8000-000000000003'}},trustedIdentity:{source:'wecom',externalUserId:'user'},execution:{type:'platform'},request:{requestId:'r',traceId:'t',startedAt:now},authorize:async()=>({allowed})} as unknown as PlatformActorContext;
+ let businessRevision='42000000-0000-4000-8000-000000000099';
  let sent:unknown;
  let execute=async()=>({ok:true});
- const api=createHostedAppApi({installation,getInstallation:async()=>installation,contextResolver:{resolve:async()=>{resolves++;return {...actor,execution:{type:'application',appId:'demo'}} as PlatformActorContext;}},authorize:async(_actor,permission)=>allowed&&(permission!=='app.demo.manage'||management),
+ const api=createHostedAppApi({installation,...(withBusiness?{businessAuthorization:async()=>({revision:businessRevision,grants:[{permission:'app.demo.manage',all:false,self:true,organizationIds:[]}],organizations:[]})}:{}),getInstallation:async()=>installation,contextResolver:{resolve:async()=>{resolves++;return {...actor,execution:{type:'application',appId:'demo'}} as PlatformActorContext;}},authorize:async(_actor,permission)=>allowed&&(permission!=='app.demo.manage'||management),
  transport:{invoke:async request=>{sent=request;calls++;return execute();},drain:async()=>{}}});
- return {api,actor,request:{apiId:'read',method:'GET',path:'/read',payload:{}},reorderManifest:()=>{installation={...installation,manifest:Object.fromEntries(Object.entries(installation.manifest).reverse()) as any};},revokeManagement:()=>{management=false;},get sent(){return sent;},get calls(){return calls;},get resolves(){return resolves;},disable:()=>{installation={...installation,enabled:false};},deny:()=>{allowed=false;},execute:(fn:typeof execute)=>{execute=fn;}};
+ return {api,actor,revokeScope:()=>{businessRevision='42000000-0000-4000-8000-000000000098';},request:{apiId:'read',method:'GET',path:'/read',payload:{}},reorderManifest:()=>{installation={...installation,manifest:Object.fromEntries(Object.entries(installation.manifest).reverse()) as any};},revokeManagement:()=>{management=false;},get sent(){return sent;},get calls(){return calls;},get resolves(){return resolves;},disable:()=>{installation={...installation,enabled:false};},deny:()=>{allowed=false;},execute:(fn:typeof execute)=>{execute=fn;}};
 }
 test('API requires exact declared route and method and fresh delegated authorization',async()=>{
  const f=fixture();await assert.rejects(f.api.invoke(f.actor,{...f.request,method:'POST'}),/API_DENIED/);
@@ -88,3 +89,9 @@ test('revoking an additional host permission during a read-authorized call inval
 });
 
 test('database JSON key ordering does not invalidate an unchanged API manifest',async()=>{const f=fixture();f.reorderManifest();assert.equal((await f.api.invoke(f.actor,f.request) as {ok:boolean}).ok,true);f.api.close();await f.api.drain();});
+
+test('business scope revision change invalidates an in-flight call even when permission names remain unchanged',async()=>{
+ const f=fixture(true,true);f.execute(async()=>{f.revokeScope();return {ok:true};});
+ await assert.rejects(f.api.invoke(f.actor,f.request),error=>(error as any).code==='ACCESS_DENIED'&&(error as any).writeOutcome==='unknown');
+ f.api.close();await f.api.drain();
+});

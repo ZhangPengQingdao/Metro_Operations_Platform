@@ -2,7 +2,7 @@ import {readThemePreference} from '../identity/theme';
 import React, {useState, type FormEvent} from 'react';
 import {Button,Field,Input,IconButton,PlatformIcon} from '../../components/ui';
 
-export function AdminLogin({onLogin,title='管理员登录'}: {onLogin: (username: string, password: string) => Promise<void>;title?:string}) {
+export function AdminLogin({onLogin,onRegister,title='管理员登录'}: {onLogin: (username: string, password: string) => Promise<void>;title?:string;onRegister?:()=>void}) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [visible,setVisible]=useState(false);
@@ -20,6 +20,6 @@ export function AdminLogin({onLogin,title='管理员登录'}: {onLogin: (usernam
       <Field htmlFor="admin-password" label="密码"><Input id="admin-password" name="password" type={visible?'text':'password'} autoComplete="current-password" required placeholder="请输入密码" value={password} onChange={event => setPassword(event.target.value)} disabled={busy} leadingIcon={<PlatformIcon name="lock"/>} trailingAction={<IconButton size="sm" label={visible?'隐藏密码':'显示密码'} aria-pressed={visible} disabled={busy} onClick={()=>setVisible(v=>!v)}><PlatformIcon name={visible?'eyeOff':'eye'} size={18}/></IconButton>}/></Field>
       {error && <p role="alert" className="afc-error">{error}</p>}
       <Button type="submit" fullWidth loading={busy} disabled={!username.trim() || !password} leadingIcon={<PlatformIcon name="login" size={18}/>}>{busy ? '正在登录…' : '登录'}</Button>
-    </form>
+    </form>{onRegister&&<Button variant="ghost" fullWidth onClick={onRegister}>注册员工账号</Button>}
   </div></main>;
 }

@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { runDatabaseTransaction, type QueryableClient } from '../../core/database/index.js';
-import { createPeopleDirectoryService, createPostgresPeopleDirectoryRepository, ORGANIZATION_UNIT_TYPES } from '../../platform/people/index.js';
+import { createPeopleDirectoryService, createPostgresPeopleDirectoryRepository, ORGANIZATION_UNIT_TYPES, PeopleDirectoryError } from '../../platform/people/index.js';
 import { createLocationDirectoryService, createPostgresLocationDirectoryRepository, LOCATION_TYPES } from '../../platform/locations/index.js';
 import { createAssetDirectoryService, createPostgresAssetDirectoryRepository, ASSET_LIFECYCLE_STATES, ASSET_DATA_QUALITY_STATUSES } from '../../platform/assets/index.js';
 import { createPostgresDataAlignmentRepository } from '../../platform/data-alignment/index.js';
@@ -20,7 +20,7 @@ const classification = { code: text, name: text, description: optional, status: 
 const schemas = {
   organizations: z.object({ code: text, name: text, shortName: optional, unitType: z.enum(ORGANIZATION_UNIT_TYPES), parentId: uuid.nullable().optional(), status: state }).strict(),
   positions: z.object(classification).strict(),
-  people: z.object({ employeeNo: text, name: text, phone: optional, organizationUnitId: uuid, positionId: uuid, employmentStatus: z.enum(['active','inactive','departed']).optional() }).strict(),
+  people: z.object({ employeeNo: text, name: text, organizationUnitId: uuid, positionId: uuid }).strict(),
   lines: z.object({ code: text, name: text, shortName: optional, status: state }).strict(),
   locations: z.object({ code: text, name: text, shortName: optional, parentId: uuid.nullable().optional(), organizationUnitId: uuid.nullable().optional(), locationType: z.enum(LOCATION_TYPES), status: state }).strict(),
   'asset-systems': z.object(classification).strict(),
@@ -28,9 +28,9 @@ const schemas = {
   'asset-types': z.object({ ...classification, systemId: uuid, categoryId: uuid.nullable().optional() }).strict(),
   assets: z.object({ systemId: uuid, categoryId: uuid.nullable().optional(), typeId: uuid, locationId: uuid, displayName: text, assetCode: optional, lifecycleState: z.enum(ASSET_LIFECYCLE_STATES).optional(), dataQualityStatus: z.enum(ASSET_DATA_QUALITY_STATUSES).optional(), remark: optional }).strict(),
 };
-const detail = z.object({ name: text.optional(), description: optional }).strict();
-const named = z.object({ name: text.optional(), shortName: optional }).strict();
-const updates = { organizations: named, positions: detail, people: z.object({ name: text.optional(), phone: optional }).strict(), lines: named, locations: named, 'asset-systems': detail, 'asset-categories': detail, 'asset-types': detail, assets: z.object({ locationId: uuid.optional(), lifecycleState: z.enum(ASSET_LIFECYCLE_STATES).optional(), dataQualityStatus: z.enum(ASSET_DATA_QUALITY_STATUSES).optional() }).strict() };
+const detail = z.object({ name: text.optional(), description: optional, status: state }).strict();
+const named = z.object({ name: text.optional(), shortName: optional, status: state }).strict();
+const updates = { organizations: named, positions: detail, people: z.object({ organizationUnitId: uuid.optional(), positionId: uuid.optional() }).strict(), lines: named, locations: named, 'asset-systems': detail, 'asset-categories': detail, 'asset-types': detail, assets: z.object({ locationId: uuid.optional(), lifecycleState: z.enum(ASSET_LIFECYCLE_STATES).optional(), dataQualityStatus: z.enum(ASSET_DATA_QUALITY_STATUSES).optional() }).strict() };
 type WritableResource = keyof typeof schemas;
 const codePrefixes:Partial<Record<WritableResource,string>>={organizations:'org',positions:'pos',lines:'line',locations:'loc','asset-systems':'sys','asset-categories':'cat','asset-types':'type',assets:'asset'};
 const generatedField=(key:string)=>key==='assets'?'assetCode':'code';
@@ -39,15 +39,15 @@ const references: Record<string,string> = { organizationUnitId:'organizations', 
 export function adminDataResources(): AdminDataResource[] {
   const descriptors = Object.entries(schemas).map(([key,schema]) => ({
     key, label: labels[key], writable: true, updateFields: Object.keys(updates[key as WritableResource].shape),
-    columns: Object.keys(schema.shape).filter(field => !['description','remark','parentId','shortName'].includes(field)).slice(0,6),
+    columns: key === 'people' ? ['name','organizationUnitId','positionId'] : key === 'positions' ? ['name','description','status'] : Object.keys(schema.shape).filter(field => !['code','assetCode'].includes(field)),
     fields: Object.entries(schema.shape).filter(([field])=>!codePrefixes[key as WritableResource]||field!==generatedField(key)).map(([field, validator]): AdminDataField => {
       let inner: z.ZodTypeAny = validator;
       while (inner instanceof z.ZodOptional || inner instanceof z.ZodNullable) inner = inner.unwrap();
       const resource = field === 'parentId' ? key : references[field];
-      return { key: field, label: labels[field] ?? field, type: resource ? 'reference' : inner instanceof z.ZodEnum ? 'select' : 'text', required: !validator.isOptional(), ...(resource ? {resource} : {}), ...(inner instanceof z.ZodEnum ? {options: inner.options as string[]} : {}) };
+      return { key: field, label: key==='people'&&field==='name'?'姓名':labels[field] ?? field, type: resource ? 'reference' : inner instanceof z.ZodEnum ? 'select' : 'text', required: !validator.isOptional(), ...(resource ? {resource} : {}), ...(inner instanceof z.ZodEnum ? {options: inner.options as string[]} : {}) };
     })
   }));
-  return [...descriptors, { key:'dictionaries', label:'公共字典', writable:false, fields:[], updateFields:[], columns:['dictionaryKey','version','name','status'], reason:'公共字典的发布记录仍使用员工身份；独立管理员写入契约尚未接入。' }];
+  return [...descriptors, { key:'dictionaries', label:'公共字典', writable:false, fields:[], updateFields:[], columns:['name','version','status'], reason:'公共字典的发布记录仍使用员工身份；独立管理员写入契约尚未接入。' }];
 }
 
 /** Only trusted administrator sessions may be supplied by the HTTP composition layer. */
@@ -79,10 +79,10 @@ export function createAdminDataService(client: QueryableClient, options: { audit
       if (query.length > 200) throw new AdminDataError('INVALID_QUERY','搜索词过长');
       const descriptor=adminDataResources().find(item=>item.key===resource);
       const statusField=descriptor?.fields.find(field=>['status','employmentStatus','lifecycleState'].includes(field.key));
-      if(filter&&!statusField?.options?.includes(filter))throw new AdminDataError('INVALID_FILTER','筛选条件无效');
+      if(filter&&!(resource==='people'?['active','inactive','departed']:statusField?.options??[]).includes(filter))throw new AdminDataError('INVALID_FILTER','筛选条件无效');
       const filtered=<T extends object>(rows:T[])=>rows.filter(row=>{const values=row as Record<string,unknown>;return (!filter||values[statusField!.key]===filter)&&(!query||['name','code','dictionaryKey'].some(key=>String(values[key]??'').toLowerCase().includes(query.toLowerCase())));});
       switch(resource) {
-        case 'people': return (await people.searchPeople({query,limit:100,employmentStatus:filter as 'active'|'inactive'|'departed'||undefined})).map(item => item.person);
+        case 'people': return (await people.searchPeople({query,limit:100,employmentStatus:filter as 'active'|'inactive'|'departed'||undefined})).map(item => ({...item.person, organizationUnitName:item.organizationUnit.name, positionName:item.position.name}));
         case 'locations': return (await locations.searchLocations({query,limit:100,status:filter as 'active'|'inactive'||undefined})).map(item => item.location);
         case 'assets': return (await assets.searchAssets({query,limit:100,lifecycleState:filter as typeof ASSET_LIFECYCLE_STATES[number]||undefined})).map(item => item.asset);
         case 'organizations': return filtered(await peopleRepo.listOrganizationUnits());
@@ -127,7 +127,7 @@ export function createAdminDataService(client: QueryableClient, options: { audit
         switch(resource) {
           case 'organizations': return people.updateOrganizationUnitDetails(id,updates.organizations.parse(input));
           case 'positions': return people.updatePositionDetails(id,updates.positions.parse(input));
-          case 'people': return people.updatePersonDetails(id,updates.people.parse(input));
+          case 'people': { try { return await people.updatePersonDetails(id,updates.people.parse(input)); } catch(error) { if(error instanceof PeopleDirectoryError) throw new AdminDataError(error.code,error.message); throw error; } }
           case 'lines': return locations.updateLineDetails(id,updates.lines.parse(input));
           case 'locations': return locations.updateLocationDetails(id,updates.locations.parse(input));
           case 'asset-systems': return assets.updateSystemDetails(id,updates['asset-systems'].parse(input));

@@ -23,7 +23,7 @@ const navigation = [
 const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',navigation:[
  ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['lines','线路'],['locations','车站与位置'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
 ].map(([id,label])=>({id,label,path:`/admin/data/${id}`}))};
-const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'}]};
+const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'},{id:'registrations',label:'注册审核',path:'/admin/accounts/registrations'}]};
 export function applicationNavigation(pathname: string, applications: AdminApplication[],base='/admin') {
   const app = applications.find(item => pathname === `${base}/app/${encodeURIComponent(item.id)}` || pathname.startsWith(`${base}/app/${encodeURIComponent(item.id)}/`));
   if (!app) return undefined;

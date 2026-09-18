@@ -12,9 +12,9 @@ import {
 } from './model.js';
 
 export interface AssetDirectoryRepository {
-  updateSystemDetails(id: string, patch: Partial<Pick<AssetSystem, 'name' | 'description'>>, updatedAt: string): Promise<AssetSystem>;
-  updateCategoryDetails(id: string, patch: Partial<Pick<AssetCategory, 'name' | 'description'>>, updatedAt: string): Promise<AssetCategory>;
-  updateTypeDetails(id: string, patch: Partial<Pick<AssetType, 'name' | 'description'>>, updatedAt: string): Promise<AssetType>;
+  updateSystemDetails(id: string, patch: Partial<Pick<AssetSystem, 'name' | 'description' | 'status'>>, updatedAt: string): Promise<AssetSystem>;
+  updateCategoryDetails(id: string, patch: Partial<Pick<AssetCategory, 'name' | 'description' | 'status'>>, updatedAt: string): Promise<AssetCategory>;
+  updateTypeDetails(id: string, patch: Partial<Pick<AssetType, 'name' | 'description' | 'status'>>, updatedAt: string): Promise<AssetType>;
   createSystem(record: AssetSystem): Promise<AssetSystem>;
   findSystemById(id: string): Promise<AssetSystem | null>;
   findSystemByCode(code: string): Promise<AssetSystem | null>;
@@ -278,20 +278,20 @@ export function createPostgresAssetDirectoryRepository(client: QueryableClient):
   return {
     async updateSystemDetails(id, patch, updatedAt) {
       return mapSystem(requireRow(await client.query(
-        'UPDATE platform_asset_systems SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt]
+        'UPDATE platform_asset_systems SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async updateCategoryDetails(id, patch, updatedAt) {
       return mapCategory(requireRow(await client.query(
-        'UPDATE platform_asset_categories SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt]
+        'UPDATE platform_asset_categories SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async updateTypeDetails(id, patch, updatedAt) {
       return mapType(requireRow(await client.query(
-        'UPDATE platform_asset_types SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt]
+        'UPDATE platform_asset_types SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async createSystem(record) {

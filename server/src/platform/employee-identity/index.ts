@@ -40,7 +40,7 @@ export class EmployeeIdentityService{
    const where=`($1='' OR strpos(lower(a.username),lower($1))>0 OR strpos(lower(p.name),lower($1))>0 OR strpos(lower(p.employee_no),lower($1))>0) AND ($2::text IS NULL OR a.status=$2)`;
    const args=[query.search,query.status??null];
    const [count]=await rows<{total:string|number}>(db,`SELECT count(*) AS total FROM platform_employee_accounts a JOIN platform_people p ON p.id=a.person_id WHERE ${where}`,args);
-   const accounts=await rows<{id:string;personId:string;username:string;status:string;personName:string;employeeNo:string;employmentStatus:string}>(db,`SELECT a.id,a.person_id AS "personId",a.username,a.status,p.name AS "personName",p.employee_no AS "employeeNo",p.employment_status AS "employmentStatus" FROM platform_employee_accounts a JOIN platform_people p ON p.id=a.person_id WHERE ${where} ORDER BY a.username,a.id LIMIT $3 OFFSET $4`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
+   const accounts=await rows<{id:string;personId:string;username:string;status:string;personName:string;employeeNo:string;employmentStatus:string;phone:string|null;wecomUserId:string|null}>(db,`SELECT a.id,a.person_id AS "personId",a.username,a.status,p.name AS "personName",p.employee_no AS "employeeNo",p.employment_status AS "employmentStatus",p.phone,(SELECT external_user_id FROM platform_external_identities x WHERE x.person_id=p.id AND x.provider='wecom' AND x.tenant_key='default' AND x.status='active') AS "wecomUserId" FROM platform_employee_accounts a JOIN platform_people p ON p.id=a.person_id WHERE ${where} ORDER BY a.username,a.id LIMIT $3 OFFSET $4`,[...args,query.pageSize,(query.page-1)*query.pageSize]);
    await this.manage(context);
    return {accounts,total:Number(count.total),page:query.page,pageSize:query.pageSize};
   });
@@ -56,11 +56,17 @@ export class EmployeeIdentityService{
  }
  async update(context:PlatformAdministratorContext,id:string,input:unknown){
   await this.manage(context);z.string().uuid().parse(id);
-  const parsed=z.object({status:z.enum(['active','disabled']).optional(),password:password.optional()}).strict().refine(v=>v.status!==undefined||v.password!==undefined).parse(input);
+  const parsed=z.object({status:z.enum(['active','disabled']).optional(),password:password.optional(),phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/).optional(),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/).optional(),employmentStatus:z.enum(['active','inactive','departed']).optional()}).strict().refine(v=>Object.keys(v).length>0).parse(input);
   const hash=parsed.password?await bcrypt.hash(parsed.password,12):undefined;
   return this.transaction(async db=>{await this.manage(context);
    const [account]=await rows<Row>(db,'SELECT * FROM platform_employee_accounts WHERE id=$1 FOR UPDATE',[id]);if(!account)throw new EmployeeIdentityError(404,'EMPLOYEE_NOT_FOUND');
-   if(parsed.status==='active')await this.validPerson(db,account.person_id);
+   if(parsed.status==='active'&&parsed.employmentStatus!==undefined&&parsed.employmentStatus!=='active')throw new EmployeeIdentityError(403,'EMPLOYEE_PERSON_INACTIVE');
+   if(parsed.phone!==undefined||parsed.employmentStatus!==undefined) await db.query('UPDATE platform_people SET phone=CASE WHEN $1 THEN $2 ELSE phone END,employment_status=CASE WHEN $3 THEN $4 ELSE employment_status END,updated_at=now() WHERE id=$5',[parsed.phone!==undefined,parsed.phone||null,parsed.employmentStatus!==undefined,parsed.employmentStatus??null,account.person_id]);
+   if(parsed.status==='active'||parsed.employmentStatus==='active')await this.validPerson(db,account.person_id);
+   if(parsed.wecomUserId!==undefined){
+    if(parsed.wecomUserId) await db.query(`INSERT INTO platform_external_identities(id,person_id,provider,tenant_key,external_user_id,status,verified_at,created_at,updated_at) VALUES($1,$2,'wecom','default',$3,'active',NULL,now(),now()) ON CONFLICT(person_id,provider,tenant_key) DO UPDATE SET external_user_id=EXCLUDED.external_user_id,status='active',verified_at=CASE WHEN platform_external_identities.external_user_id=EXCLUDED.external_user_id AND platform_external_identities.status='active' THEN platform_external_identities.verified_at ELSE NULL END,updated_at=now()`,[randomUUID(),account.person_id,parsed.wecomUserId]);
+    else await db.query("UPDATE platform_external_identities SET status='inactive',verified_at=NULL,updated_at=now() WHERE person_id=$1 AND provider='wecom' AND tenant_key='default'",[account.person_id]);
+   }
    await db.query('UPDATE platform_employee_accounts SET status=$1,password_hash=$2 WHERE id=$3',[parsed.status??account.status,hash??account.password_hash,id]);
    await db.query('DELETE FROM platform_employee_sessions WHERE account_id=$1',[id]);
    await appendAdminAudit(db,{actorId:context.administrator.id,action:'employee.update',targetId:id});return {...publicAccount(account),status:parsed.status??account.status};

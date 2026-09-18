@@ -16,6 +16,10 @@ test('storage pages are ordered by UUID, use literal search and filter before ap
   assert.equal((await run({table:'entries',search:{column:'name',text:"' OR true --"}})).length,0);
   assert.deepEqual((await run({table:'entries',filters:[{column:'quantity',value:4}]})).map(r=>r.id),[id(4)]);
   assert.equal((await run({table:'entries',afterId:id(4)})).length,0);
+  assert.deepEqual((await run({table:'entries',pageSize:1,filters:[{column:'active',value:true}],anyOf:[[{column:'quantity',value:2}],[{column:'quantity',value:4}],[{column:'quantity',value:3}]]})).map(r=>r.id),[id(3),id(4)]);
+  assert.throws(()=>runtimeListQuery(runtimeListInput.parse({table:'entries',anyOf:[[{column:'missing',value:'x'}]]}),columns),{code:'INVALID_PARAMS'});
+  assert.equal(runtimeListInput.safeParse({table:'entries',anyOf:[[]]}).success,false);
+
  }finally{await db.close();}
 });
 test('storage list rejects arbitrary SQL, schema, ordering, excessive pages and unsupported filter types',()=>{

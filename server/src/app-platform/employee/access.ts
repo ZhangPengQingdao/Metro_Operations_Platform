@@ -1,3 +1,4 @@
+import {AppBusinessAuthorization} from '../business-authorization/service.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {runDatabaseTransaction,type ConnectablePool,type QueryableClient} from '../../core/database/index.js';
@@ -32,9 +33,13 @@ export class EmployeeAppAccess{
    return {personId:value.personId,enabled:value.enabled,revision};
   }));
  }
- async assert(appId:string,personId:string){appIdSchema.parse(appId);z.string().uuid().parse(personId);return this.read(async db=>{
+ async assert(appId:string,personId:string){appIdSchema.parse(appId);z.string().uuid().parse(personId);
+ const business=await new AppBusinessAuthorization(this.pool).resolve(appId,personId);
+ if(business){if(!business.grants.length)throw new EmployeeIdentityError(403,'EMPLOYEE_APP_ACCESS_DENIED');return this.read(async db=>{const [i]=await rows<{id:string}>(db,'SELECT id FROM platform_app_installations WHERE app_id=$1',[appId]);return {installationId:i.id,revision:business.revision};});}
+return this.read(async db=>{
   const [access]=await rows<{installationId:string;revision:string}>(db,`SELECT a.installation_id AS "installationId",a.revision FROM platform_employee_app_access a JOIN platform_app_installations i ON i.id=a.installation_id JOIN platform_people p ON p.id=a.person_id JOIN platform_organization_units o ON o.id=p.organization_unit_id JOIN platform_positions pos ON pos.id=p.position_id WHERE i.app_id=$1 AND a.person_id=$2 AND a.enabled AND i.record->>'enabled'='true' AND p.employment_status='active' AND o.status='active' AND pos.status='active'`,[appId,personId]);
   if(!access)throw new EmployeeIdentityError(403,'EMPLOYEE_APP_ACCESS_DENIED');return access;
  });}
- async candidates(personId:string){z.string().uuid().parse(personId);return this.read(db=>rows<{appId:string}>(db,`SELECT i.app_id AS "appId" FROM platform_employee_app_access a JOIN platform_app_installations i ON i.id=a.installation_id WHERE a.person_id=$1 AND a.enabled AND i.record->>'enabled'='true' ORDER BY i.app_id LIMIT 500`,[personId]));}
+ async candidates(personId:string){z.string().uuid().parse(personId);return this.read(db=>rows<{appId:string}>(db,`SELECT i.app_id AS "appId" FROM platform_employee_app_access a JOIN platform_app_installations i ON i.id=a.installation_id WHERE a.person_id=$1 AND a.enabled AND i.record->>'enabled'='true'
+ UNION SELECT i.app_id AS "appId" FROM platform_app_business_members m JOIN platform_app_installations i ON i.id=m.installation_id JOIN platform_app_authorization b ON b.installation_id=i.id WHERE m.person_id=$1 AND b.mode='application' AND i.record->>'enabled'='true' ORDER BY "appId" LIMIT 500`,[personId]));}
 }

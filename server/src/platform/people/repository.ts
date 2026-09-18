@@ -10,9 +10,9 @@ import {
 } from './model.js';
 
 export interface PeopleDirectoryRepository {
-  updateOrganizationUnitDetails(id: string, patch: Partial<Pick<OrganizationUnit, 'name' | 'shortName'>>, updatedAt: string): Promise<OrganizationUnit>;
-  updatePositionDetails(id: string, patch: Partial<Pick<Position, 'name' | 'description'>>, updatedAt: string): Promise<Position>;
-  updatePersonDetails(id: string, patch: Partial<Pick<Person, 'name' | 'phone'>>, updatedAt: string): Promise<Person>;
+  updateOrganizationUnitDetails(id: string, patch: Partial<Pick<OrganizationUnit, 'name' | 'shortName' | 'status'>>, updatedAt: string): Promise<OrganizationUnit>;
+  updatePositionDetails(id: string, patch: Partial<Pick<Position, 'name' | 'description' | 'status'>>, updatedAt: string): Promise<Position>;
+  updatePersonDetails(id: string, patch: Partial<Pick<Person, 'name' | 'phone' | 'organizationUnitId' | 'positionId'>>, updatedAt: string): Promise<Person>;
   createOrganizationUnit(record: OrganizationUnit): Promise<OrganizationUnit>;
   findOrganizationUnitById(id: string): Promise<OrganizationUnit | null>;
   findOrganizationUnitByCode(code: string): Promise<OrganizationUnit | null>;
@@ -182,20 +182,20 @@ export function createPostgresPeopleDirectoryRepository(client: QueryableClient)
   return {
     async updateOrganizationUnitDetails(id, patch, updatedAt) {
       return mapOrganizationUnit(requireRow(await client.query(
-        'UPDATE platform_organization_units SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt]
+        'UPDATE platform_organization_units SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async updatePositionDetails(id, patch, updatedAt) {
       return mapPosition(requireRow(await client.query(
-        'UPDATE platform_positions SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, updatedAt]
+        'UPDATE platform_positions SET name=CASE WHEN $2 THEN $3 ELSE name END, description=CASE WHEN $4 THEN $5 ELSE description END, status=CASE WHEN $6 THEN $7 ELSE status END, updated_at=$8 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'description'), patch.description ?? null, Object.hasOwn(patch, 'status'), patch.status ?? null, updatedAt]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async updatePersonDetails(id, patch, updatedAt) {
       return mapPerson(requireRow(await client.query(
-        'UPDATE platform_people SET name=CASE WHEN $2 THEN $3 ELSE name END, phone=CASE WHEN $4 THEN $5 ELSE phone END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'phone'), patch.phone ?? null, updatedAt]
+        'UPDATE platform_people SET name=CASE WHEN $2 THEN $3 ELSE name END, phone=CASE WHEN $4 THEN $5 ELSE phone END, updated_at=$6, organization_unit_id=CASE WHEN $7 THEN $8::uuid ELSE organization_unit_id END, position_id=CASE WHEN $9 THEN $10::uuid ELSE position_id END WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'phone'), patch.phone ?? null, updatedAt, Object.hasOwn(patch, 'organizationUnitId'), patch.organizationUnitId ?? null, Object.hasOwn(patch, 'positionId'), patch.positionId ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async createOrganizationUnit(record) {

@@ -9,7 +9,7 @@ function fixture(){
  const gateway={async invoke(operation,p){
   if(operation==='platform.people.members')return {rows:[...members.values()].filter(row=>row.organizationUnitId===p.organizationUnitId&&(!p.personId||row.id===p.personId))};
   if(operation==='platform.app_data.get')return {row:structuredClone(tables[p.table].get(p.id)??null)};
-  if(operation==='platform.app_data.list')return {rows:[...tables[p.table].values()].filter(r=>p.filters.every(f=>r[f.column]===f.value)),nextCursor:null};
+  if(operation==='platform.app_data.list')return {rows:[...tables[p.table].values()].filter(r=>p.filters.every(f=>r[f.column]===f.value)&&(!p.anyOf||p.anyOf.some(group=>group.every(f=>r[f.column]===f.value)))),nextCursor:null};
   assert.equal(operation,'platform.app_data.transaction');writes++;
   if(spent.has(p.requestId))throw Error('STORAGE_REQUEST_ALREADY_RECORDED');spent.add(p.requestId);
   const next=structuredClone(tables);
@@ -169,4 +169,22 @@ test('leader may correct and delete group consumption while ownership and organi
  assert.equal(changed.ok,true);assert.equal(f.tables.movements.get(changed.result.id).operator_id,f.employee.personId);
  assert.equal((await handlers.get('reverse-outbound').execute({requestId:randomUUID(),movementId:changed.result.id,reason:'删除'},undefined,{...leader,organizationUnitId:randomUUID()})).error.code,'MOVEMENT_DENIED');
  assert.equal((await handlers.get('reverse-outbound').execute({requestId:randomUUID(),movementId:changed.result.id,reason:'删除'},undefined,leader)).ok,true);assert.equal(f.tables.materials.get(id).quantity,8);
+});
+
+test('business roles filter list before pagination and preserve source organization on cross-team correction',async()=>{
+ const f=fixture(),stock=await f.stock();
+ await f.service.move({requestId:randomUUID(),materialId:stock,direction:'in',quantity:10},f.employee);
+ const out=await f.service.move({requestId:randomUUID(),materialId:stock,direction:'out',quantity:2},f.employee);
+ const manager={...f.employee,personId:randomUUID(),organizationUnitId:randomUUID(),businessAuthorization:{revision:randomUUID(),organizations:[{id:f.employee.organizationUnitId,name:'Team'}],grants:[{permission:'app.materials.read-records',all:false,self:false,organizationIds:[f.employee.organizationUnitId]},{permission:'app.materials.modify-consumption',all:false,self:false,organizationIds:[f.employee.organizationUnitId]}]}};
+ const read=createMaterialsService(f.gateway,{permission:'app.materials.read-records'});
+ assert.equal((await read.list({kind:'consumptions'},manager)).rows.length,1);
+ const modify=createMaterialsService(f.gateway,{permission:'app.materials.modify-consumption'});
+ const replacement=await modify.correct({requestId:randomUUID(),movementId:out.id,quantity:3},manager,undefined,{expectedKind:'out',ownOnly:false});
+ assert.equal(f.tables.movements.get(replacement.id).organization_id,f.employee.organizationUnitId);
+ assert.equal(f.tables.movements.get(replacement.id).operator_id,f.employee.personId);
+ assert.equal(f.tables.materials.get(stock).quantity,7);
+ manager.businessAuthorization.grants[1]={permission:'app.materials.modify-consumption',all:false,self:true,organizationIds:[]};
+ await assert.rejects(modify.correct({requestId:randomUUID(),movementId:replacement.id,quantity:1},manager,undefined,{expectedKind:'out',ownOnly:false}),/MOVEMENT_DENIED/);
+ manager.businessAuthorization.grants[0]={permission:'app.materials.read-records',all:false,self:true,organizationIds:[]};
+ assert.equal((await read.list({kind:'consumptions'},manager)).rows.length,0);
 });

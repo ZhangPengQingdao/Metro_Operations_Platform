@@ -7,12 +7,12 @@ import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 // Build public application UI from the same L2 sources as the platform.
 // Published artifacts contain no imports of repository source paths.
-await build({stdin:{contents:`export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp} from '@phosphor-icons/react';export {Button,IconButton} from './src/components/ui/Button';export {Input,Select,Field,QuantityInput} from './src/components/ui/FormControls';export {SearchField} from './src/components/ui/SearchField';export {FilterBar} from './src/components/ui/FilterBar';export {Table,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton} from './src/components/ui/Table';export {Dialog} from './src/components/ui/Dialog';`,resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'browser',target:'es2022',external:['react','react-dom'],outfile:root+'packages/platform-sdk/dist/ui.js',minify:true});
+await build({stdin:{contents:`export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp} from '@phosphor-icons/react';export {Button,IconButton} from './src/components/ui/Button';export {Input,Select,Field,QuantityInput} from './src/components/ui/FormControls';export {SearchField} from './src/components/ui/SearchField';export {FilterBar} from './src/components/ui/FilterBar';export {Table,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton} from './src/components/ui/Table';export {DataList,TableActions,ListPagination} from './src/components/ui/DataList';export {Dialog} from './src/components/ui/Dialog';`,resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'browser',target:'es2022',external:['react','react-dom'],outfile:root+'packages/platform-sdk/dist/ui.js',minify:true});
 const source=(await readFile(root+'index.css','utf8')).replace(/^@import[^;]+;/gm,'');
 const result=await postcss([tailwind({content:[root+'src/components/ui/**/*.{ts,tsx}'],safelist:['afc-theme-neutral','afc-filter-bar-wrapper--spread'],theme:{extend:{}},plugins:[]}),autoprefixer()]).process(source,{from:root+'index.css'});
 await writeFile(root+'packages/platform-sdk/dist/ui-styles.js',`export const platformUiCss=${JSON.stringify(result.css)};\n`);
 await writeFile(root+'packages/platform-sdk/dist/ui-styles.d.ts','export declare const platformUiCss:string;\n');
-await writeFile(root+'packages/platform-sdk/dist/ui.d.ts',`import type {ComponentType,ButtonHTMLAttributes,InputHTMLAttributes,SelectHTMLAttributes,TableHTMLAttributes,HTMLAttributes,ReactNode} from 'react';
+await writeFile(root+'packages/platform-sdk/dist/ui.d.ts',`import type {ComponentProps,ComponentType,ButtonHTMLAttributes,InputHTMLAttributes,SelectHTMLAttributes,TableHTMLAttributes,HTMLAttributes,ReactNode} from 'react';
 export declare const PencilSimpleLine:ComponentType<{size?:number;weight?:'regular'|'light'|'bold'}>;
 export declare const Trash:typeof PencilSimpleLine;
 export declare const Plus:typeof PencilSimpleLine;
@@ -28,6 +28,9 @@ export declare const Field:ComponentType<{label:ReactNode;htmlFor?:string;childr
 export declare const Dialog:ComponentType<{open:boolean;onClose:()=>void;title:ReactNode;children:ReactNode;footer?:ReactNode;size?:'sm'|'md'|'lg'|'xl'}>;
 export declare const FilterBar:ComponentType<{layout?:'compact'|'spread';searchValue?:string;onSearchChange?:(value:string)=>void;searchPlaceholder?:string;showDateRange?:boolean;rightAction?:ReactNode}>;
 export declare const Table:ComponentType<TableHTMLAttributes<HTMLTableElement>&{compact?:boolean;pinActions?:boolean;variant?:'default'|'directory';emptyState?:ReactNode;wrapperClassName?:string}>;
+export declare const DataList:ComponentType<ComponentProps<typeof Table>&{toolbar?:ReactNode;notice?:ReactNode;pagination?:ReactNode}>;
+export declare const TableActions:ComponentType<{children:ReactNode}>;
+export declare const ListPagination:ComponentType<{page:number;total?:number;hasNext:boolean;busy?:boolean;onPrevious:()=>void;onNext:()=>void;extra?:ReactNode}>;
 export declare const TableActionButton:ComponentType<ButtonHTMLAttributes<HTMLButtonElement>&{icon:ReactNode}>;
 export declare const TableHeader:ComponentType<HTMLAttributes<HTMLTableSectionElement>>;
 export declare const TableBody:typeof TableHeader;

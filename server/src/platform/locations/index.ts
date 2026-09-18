@@ -48,18 +48,20 @@ export class LocationDirectoryService {
     this.findOrganizationUnit = options.findOrganizationUnit;
   }
 
-  async updateLocationDetails(id: string, input: Partial<Pick<Location, 'name' | 'shortName'>>) {
-    const patch: Partial<Pick<Location, 'name' | 'shortName'>> = {};
+  async updateLocationDetails(id: string, input: Partial<Pick<Location, 'name' | 'shortName' | 'status'>>) {
+    const patch: Partial<Pick<Location, 'name' | 'shortName' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.shortName !== undefined) patch.shortName = normalizeOptionalText(input.shortName, 100);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new LocationDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new LocationDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateLocationDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updateLineDetails(id: string, input: Partial<Pick<Line, 'name' | 'shortName'>>) {
-    const patch: Partial<Pick<Line, 'name' | 'shortName'>> = {};
+  async updateLineDetails(id: string, input: Partial<Pick<Line, 'name' | 'shortName' | 'status'>>) {
+    const patch: Partial<Pick<Line, 'name' | 'shortName' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 100);
     if (input.shortName !== undefined) patch.shortName = normalizeOptionalText(input.shortName, 100);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new LocationDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new LocationDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateLineDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }

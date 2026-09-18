@@ -1337,3 +1337,19 @@ input[type=number] {
 
 .afc-select-wrap{position:relative;display:block;width:100%;min-width:0}.afc-select-wrap select{appearance:none;background-image:none;width:100%;padding-right:42px}.afc-select-arrow{position:absolute;right:16px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--afc-color-muted)}
 .afc-quantity-control{display:flex;align-items:center;border:1px solid var(--afc-color-line);border-radius:12px;padding:3px;background:var(--afc-color-paper);gap:8px}.afc-quantity-control .afc-control{border:0;box-shadow:none;flex:1;min-width:0;text-align:center;background:transparent;appearance:textfield}.afc-quantity-control input::-webkit-inner-spin-button,.afc-quantity-control input::-webkit-outer-spin-button{appearance:none;margin:0}.afc-quantity-control:focus-within{outline:2px solid var(--afc-color-primary);outline-offset:2px}
+
+/* L2 list layout shared by platform pages and SDK applications. */
+.afc-data-list { display:flex;flex-direction:column;gap:20px;min-width:0; }
+.afc-data-list__toolbar { min-width:0; }
+.afc-data-list__toolbar>.afc-filter-bar-wrapper { margin:0; }
+.afc-data-list>.afc-table-wrapper { margin:0; }
+.afc-data-list>.afc-table-wrapper { --afc-table-heading-background:var(--afc-color-canvas); }
+.afc-data-list .afc-table td { height:76px; }
+.afc-data-list .afc-table td:first-child { font-weight:500; }
+.afc-table-actions { display:flex;align-items:center;gap:8px;flex-wrap:nowrap; }
+.afc-list-pagination { display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap; }
+.afc-list-pagination__summary { color:var(--afc-color-muted);font-size:13px; }
+@media(max-width:640px){.afc-data-list{gap:16px}.afc-list-pagination{gap:8px}.afc-table-wrapper--actions .afc-table th:last-child,.afc-table-wrapper--actions .afc-table td:last-child{padding-left:12px;padding-right:12px}}
+.afc-list-toolbar-actions { display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap; }
+.afc-data-list .afc-table th,.afc-data-list .afc-table td { white-space:nowrap; }
+.afc-data-list .afc-table td .app-business-rule-summary { white-space:normal; }

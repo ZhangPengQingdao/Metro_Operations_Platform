@@ -68,6 +68,8 @@ export interface FilterBarProps {
   className?: string;
 }
 
+const emptyFilters: FilterState = { selectedOptions: {} };
+
 export const FilterBar: React.FC<FilterBarProps> = ({
   layout = "compact",
   searchValue = "",
@@ -75,7 +77,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   searchPlaceholder = "搜索关键词...",
   filterGroups = [],
   showDateRange = true,
-  activeFilters = { selectedOptions: {} },
+  activeFilters = emptyFilters,
   onApplyFilters,
   onResetFilters,
   moreActions = [],

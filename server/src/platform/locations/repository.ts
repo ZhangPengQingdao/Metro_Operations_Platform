@@ -12,8 +12,8 @@ import {
 } from './model.js';
 
 export interface LocationDirectoryRepository {
-  updateLocationDetails(id: string, patch: Partial<Pick<Location, 'name' | 'shortName'>>, updatedAt: string): Promise<Location>;
-  updateLineDetails(id: string, patch: Partial<Pick<Line, 'name' | 'shortName'>>, updatedAt: string): Promise<Line>;
+  updateLocationDetails(id: string, patch: Partial<Pick<Location, 'name' | 'shortName' | 'status'>>, updatedAt: string): Promise<Location>;
+  updateLineDetails(id: string, patch: Partial<Pick<Line, 'name' | 'shortName' | 'status'>>, updatedAt: string): Promise<Line>;
   createLocation(record: Location): Promise<Location>;
   findLocationById(id: string): Promise<Location | null>;
   findLocationByCode(code: string): Promise<Location | null>;
@@ -230,14 +230,14 @@ export function createPostgresLocationDirectoryRepository(client: QueryableClien
   return {
     async updateLocationDetails(id, patch, updatedAt) {
       return mapLocation(requireRow(await client.query(
-        'UPDATE platform_locations SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt]
+        'UPDATE platform_locations SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async updateLineDetails(id, patch, updatedAt) {
       return mapLine(requireRow(await client.query(
-        'UPDATE platform_lines SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, updated_at=$6 WHERE id=$1 RETURNING *',
-        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt]
+        'UPDATE platform_lines SET name=CASE WHEN $2 THEN $3 ELSE name END, short_name=CASE WHEN $4 THEN $5 ELSE short_name END, status=CASE WHEN $7 THEN $8 ELSE status END, updated_at=$6 WHERE id=$1 RETURNING *',
+        [id, Object.hasOwn(patch, 'name'), patch.name ?? null, Object.hasOwn(patch, 'shortName'), patch.shortName ?? null, updatedAt, Object.hasOwn(patch, 'status'), patch.status ?? null]
       ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async createLocation(record) {

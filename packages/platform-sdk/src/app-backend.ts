@@ -14,15 +14,30 @@ export interface AppBackendEmployeeContext {
   readonly traceId: string;
   /** Fresh host-authorized permissions declared by this application. */
   readonly permissions?: readonly string[];
+  /** Resolved application business grants. Absent only for legacy authorization. */
+  readonly businessAuthorization?: {revision:string;grants:readonly AppBusinessGrant[];organizations:readonly {id:string;name:string}[]};
+
+}
+export interface AppBusinessGrant{permission:string;all:boolean;self:boolean;organizationIds:readonly string[]}
+export function allowsAppResource(employee:AppBackendEmployeeContext,permission:string,resource:{organizationUnitId:string;ownerPersonId?:string|null}):boolean{
+ const grant=employee.businessAuthorization?.grants.find(g=>g.permission===permission);
+ return !!grant&&(grant.all||grant.organizationIds.includes(resource.organizationUnitId)||grant.self&&resource.ownerPersonId===employee.personId);
 }
 export function parseAppBackendEmployeeContext(value: unknown): Readonly<AppBackendEmployeeContext> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('INVALID_EMPLOYEE_CONTEXT');
   const record=value as Record<string,unknown>;
   const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if(!['organizationUnitId,personId,requestId,traceId,version','organizationUnitId,permissions,personId,requestId,traceId,version'].includes(Object.keys(record).sort().join(','))||record.version!=='1.0'||
+  if(!['organizationUnitId,personId,requestId,traceId,version','organizationUnitId,permissions,personId,requestId,traceId,version'].includes(Object.keys(record).filter(k=>k!=='businessAuthorization').sort().join(','))||record.version!=='1.0'||
     ![record.personId,record.organizationUnitId].every(v=>typeof v==='string'&&uuid.test(v))||
     ![record.requestId,record.traceId].every(v=>typeof v==='string'&&v.length>0&&v.length<=128&&!/[\u0000-\u001f\u007f]/.test(v)))throw Error('INVALID_EMPLOYEE_CONTEXT');
   if(record.permissions!==undefined&&(!Array.isArray(record.permissions)||record.permissions.length>128||record.permissions.some(p=>typeof p!=='string'||!/^app\.[a-z0-9._-]+$/.test(p))||new Set(record.permissions).size!==record.permissions.length))throw Error('INVALID_EMPLOYEE_CONTEXT');
+  if(record.businessAuthorization!==undefined){
+   const a=record.businessAuthorization as {revision?:unknown;grants?:unknown;organizations?:unknown};
+   if(!a||typeof a!=='object'||Array.isArray(a)||Object.keys(a).sort().join(',')!=='grants,organizations,revision'||typeof a.revision!=='string'||!uuid.test(a.revision)||!Array.isArray(a.grants)||a.grants.length>128)throw Error('INVALID_EMPLOYEE_CONTEXT');
+   if(!Array.isArray(a.organizations)||a.organizations.length>128||a.organizations.some(o=>!o||Object.keys(o).sort().join(',')!=='id,name'||typeof o.id!=='string'||!uuid.test(o.id)||typeof o.name!=='string'||o.name.length>200))throw Error('INVALID_EMPLOYEE_CONTEXT');
+   for(const g of a.grants){if(!g||typeof g!=='object'||Object.keys(g).sort().join(',')!=='all,organizationIds,permission,self'||typeof g.permission!=='string'||!/^app\.[a-z0-9._-]+$/.test(g.permission)||typeof g.all!=='boolean'||typeof g.self!=='boolean'||!Array.isArray(g.organizationIds)||g.organizationIds.length>2000||g.organizationIds.some((id:unknown)=>typeof id!=='string'||!uuid.test(id)))throw Error('INVALID_EMPLOYEE_CONTEXT');}
+   record.businessAuthorization=Object.freeze({revision:a.revision,organizations:Object.freeze(a.organizations.map(o=>Object.freeze({...o}))),grants:Object.freeze(a.grants.map(g=>Object.freeze({...g,organizationIds:Object.freeze([...g.organizationIds])})))});
+  }
   return Object.freeze({...record,...(record.permissions?{permissions:Object.freeze([...(record.permissions as string[])])}:{})}) as unknown as Readonly<AppBackendEmployeeContext>;
 }
 export interface AppBackendHandler {

@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util';
 import { validateAppManifest } from '../manifest/index.js';
-import { parseAppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
+import { parseAppBackendEmployeeContext, type AppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
 import type { AppInstallation } from '../registry/model.js';
 import type { PlatformActorContext, PlatformActorContextResolver } from '../../platform/context/index.js';
 import { jsonSnapshot, type GatewayJson } from '../gateway/model.js';
@@ -13,6 +13,7 @@ export interface HostedAppApiOptions {
   contextResolver: Pick<PlatformActorContextResolver, 'resolve'>;
   /** Trusted adapter must authorize all resource scopes implied by this payload. */
   authorize(context: PlatformActorContext, permission: string, payload: GatewayJson): Promise<boolean>;
+  businessAuthorization?(context:PlatformActorContext):Promise<AppBackendEmployeeContext['businessAuthorization']>;
   transport: Pick<AppStdioApiTransport, 'invoke' | 'drain'>;
 }
 /** Process-local API generation. Only trusted authenticated person contexts enter this boundary. */
@@ -63,9 +64,12 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
           await current();
           const actor = await contextResolver.resolve({ actorType: 'person', trustedIdentity: identity,
             execution: { type: 'application', appId }, requestId: metadata.requestId, traceId: metadata.traceId });
+          const businessAuthorization=await options.businessAuthorization?.(actor);
+          const businessEntry=businessAuthorization&&api!.businessEntry;
+          const effectivePermission=businessAuthorization?api!.businessPermission??api!.permission!:api!.permission!;
           if (actor.actorType !== 'person' || actor.execution.type !== 'application' || actor.execution.appId !== appId ||
               !personId || !organizationUnitId || actor.person?.id !== personId || actor.person?.organization?.id !== organizationUnitId ||
-              !await authorize(actor, api!.permission!, payload)) throw new AppStdioApiError('ACCESS_DENIED');
+              !(businessEntry?businessAuthorization.grants.length>0:await authorize(actor, effectivePermission, payload))) throw new AppStdioApiError('ACCESS_DENIED');
           await current();
           await assertAdmission?.();
           if (controller.signal.aborted) throw new AppStdioApiError('ABORTED');
@@ -73,10 +77,10 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
           for(const permission of manifest.permissions.defined){
             if(await authorize(actor,permission.code,{}))permissions.push(permission.code);
           }
-          const serialized=JSON.stringify(permissions);
+          const serialized=JSON.stringify({permissions,businessAuthorization});
           if(permissionSnapshot!==undefined&&permissionSnapshot!==serialized)throw new AppStdioApiError('ACCESS_DENIED');
           permissionSnapshot=serialized;
-          return parseAppBackendEmployeeContext({version:'1.0',personId,organizationUnitId,requestId:metadata.requestId,traceId:metadata.traceId,permissions});
+          return parseAppBackendEmployeeContext({version:'1.0',personId,organizationUnitId,requestId:metadata.requestId,traceId:metadata.traceId,permissions,...(businessAuthorization?{businessAuthorization}:{})});
         }
         const employee = await check();
         dispatched = true;

@@ -1,3 +1,4 @@
+import type {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {EmployeeIdentityService,EmployeeIdentityError,EMPLOYEE_SESSION_COOKIE} from '../../platform/employee-identity/index.js';
@@ -9,7 +10,7 @@ import type {EmployeeAppAccess} from './access.js';
 import {AppManagementError} from '../management/ui.js';
 import {AppStdioApiError} from '../runtime/stdio-api.js';
 
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -38,6 +39,11 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
   scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE])).userId):[]}));
+  async function ownerId(req:FastifyRequest){return (await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE])).userId;}
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-authorization',{bodyLimit:65536},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.change(req.params.appId,await ownerId(req),req.body);});
   scoped.get('/apps',async req=>{
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));

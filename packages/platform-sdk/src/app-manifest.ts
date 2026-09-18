@@ -43,12 +43,12 @@ export interface AppManifest {
     capabilities: { id: string; contractVersion: string }[];
     applications: { id: string; version: AppVersionRange }[];
   };
-  permissions: { requested: string[]; defined: { code: string; description: string }[] };
+  permissions: { requested: string[]; defined: { code: string; description: string; scopeKinds?: ('self'|'workgroup'|'department'|'organizations'|'all')[] }[] };
   ui: AppUiDeclaration;
   backend: AppBackendDeclaration;
   storage: AppStorageDeclaration;
   routes: { id: string; path: string; permission?: string }[];
-  api: { id: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; handler: string; permission?: string }[];
+  api: { id: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; handler: string; permission?: string; businessPermission?:string; businessEntry?:true }[];
   navigation: { id: string; label: string; routeId: string; order: number }[];
   events: { publish: string[]; subscribe: { event: string; handler: string }[] };
   tools: { name: string; contributionArtifactId: string; uiResourceId?: string }[];

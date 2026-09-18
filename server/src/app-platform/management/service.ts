@@ -21,6 +21,7 @@ import {readInstalledAdminUi,AppManagementError} from './ui.js';
 import {createManagedStorageComposition,createStorageArtifactReader} from './storage.js';
 import {createManagementGateway,createManagementApiAuthorization} from './gateway.js';
 import {GatewayError} from '../gateway/model.js';
+import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {EmployeeAppAccess} from '../employee/access.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
@@ -100,7 +101,7 @@ export async function createAppManagement(configFile:string,origin:string){
   async employeeApps(resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    const identity=await resolveIdentity();if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    const candidates=await employeeAccess.candidates(identity.userId);const applications=[];
-   for(const {appId}of candidates){try{const admitted=await admitEmployee(appId,resolveIdentity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;if(m.ui.mode==='sandbox')applications.push({appId,name:m.name,description:m.description,version:m.version,navigation:m.navigation,routes:m.routes});}catch(e){if(e instanceof GatewayError||e instanceof AppManagementError)continue;throw e;}}
+   for(const {appId}of candidates){try{const admitted=await admitEmployee(appId,resolveIdentity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;if(m.ui.mode==='sandbox')applications.push({appId,name:m.name,description:m.description,version:m.version,navigation:m.navigation,routes:m.routes});}catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}}
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
   },

@@ -92,6 +92,7 @@ export interface AppDataListOptions {
   afterId?:string;
   pageSize?:number;
   filters?:readonly {column:string;value:string|number|boolean|null}[];
+  anyOf?:readonly (readonly {column:string;value:string|number|boolean|null}[])[];
   search?:{column:string;text:string};
 }
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */

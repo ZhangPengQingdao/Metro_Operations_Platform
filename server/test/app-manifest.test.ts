@@ -158,3 +158,12 @@ test('SDK manifest entrypoint stays browser-safe and separate from the L3 root',
   const pkg = JSON.parse(await readFile(new URL('../../packages/platform-sdk/package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.exports['./app-manifest'].types, './dist/app-manifest.d.ts');
 });
+
+test('business API permissions stay application-defined and entry declarations cannot bypass explicit bindings',()=>{
+ const m=fixture();m.permissions.defined[0].scopeKinds=['self','workgroup'];m.api[0].businessPermission=m.permissions.defined[0].code;
+ assert.equal(validateAppManifest(m).ok,true);
+ m.api[0].businessEntry=true;assert.equal(validateAppManifest(m).ok,false);
+ delete m.api[0].businessPermission;assert.equal(validateAppManifest(m).ok,true);
+ rejects(value=>{value.api[0].businessPermission='platform.authorization.manage';});
+ rejects(value=>{value.permissions.defined[0].scopeKinds=[];});
+});

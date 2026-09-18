@@ -49,26 +49,29 @@ export class AssetDirectoryService {
     this.findLocation = options.findLocation;
   }
 
-  async updateSystemDetails(id: string, input: Partial<Pick<AssetSystem, 'name' | 'description'>>) {
-    const patch: Partial<Pick<AssetSystem, 'name' | 'description'>> = {};
+  async updateSystemDetails(id: string, input: Partial<Pick<AssetSystem, 'name' | 'description' | 'status'>>) {
+    const patch: Partial<Pick<AssetSystem, 'name' | 'description' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.description !== undefined) patch.description = normalizeOptionalText(input.description, 1000);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new AssetDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new AssetDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateSystemDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updateCategoryDetails(id: string, input: Partial<Pick<AssetCategory, 'name' | 'description'>>) {
-    const patch: Partial<Pick<AssetCategory, 'name' | 'description'>> = {};
+  async updateCategoryDetails(id: string, input: Partial<Pick<AssetCategory, 'name' | 'description' | 'status'>>) {
+    const patch: Partial<Pick<AssetCategory, 'name' | 'description' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.description !== undefined) patch.description = normalizeOptionalText(input.description, 1000);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new AssetDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new AssetDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateCategoryDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updateTypeDetails(id: string, input: Partial<Pick<AssetType, 'name' | 'description'>>) {
-    const patch: Partial<Pick<AssetType, 'name' | 'description'>> = {};
+  async updateTypeDetails(id: string, input: Partial<Pick<AssetType, 'name' | 'description' | 'status'>>) {
+    const patch: Partial<Pick<AssetType, 'name' | 'description' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.description !== undefined) patch.description = normalizeOptionalText(input.description, 1000);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new AssetDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new AssetDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateTypeDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }

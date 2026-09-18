@@ -52,12 +52,30 @@ test('real console authenticates independent accounts, rejects CSRF and writes m
   const another=await app.inject({method:'POST',url:'/api/admin/data/organizations',headers,payload:input});assert.equal(another.statusCode,200);assert.notEqual(another.json().code,create.json().code);
   assert.equal((await app.inject({method:'POST',url:'/api/admin/data/organizations',headers,payload:{...input,code:'manual'}})).statusCode,400);
   const resources=await app.inject({url:'/api/admin/data/resources',headers});assert.ok(resources.json().resources.filter((r:{key:string})=>r.key!=='people').every((r:{fields:{key:string}[]})=>r.fields.every(f=>!['code','assetCode'].includes(f.key))));
+  const personResource=resources.json().resources.find((r:{key:string})=>r.key==='people');
+  assert.deepEqual(personResource.columns,['name','organizationUnitId','positionId']);
+  assert.deepEqual(personResource.updateFields,['organizationUnitId','positionId']);
+  assert.equal(personResource.fields.find((f:{key:string})=>f.key==='name').label,'姓名');
   const search=await app.inject({url:'/api/admin/data/organizations?q=missing',headers});assert.deepEqual(search.json().records,[]);
   assert.equal((await app.inject({url:'/api/admin/data/organizations?status=wrong',headers})).statusCode,400);
   assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/organizations/${id}`,headers,payload:{name:'新名称'}})).statusCode,200);
   const service=createAdminDataService(client,{audit:async()=>{throw Error('audit failed');}});
   await assert.rejects(service.create(account,'positions',{name:'回滚岗位'}));
   assert.equal((await db.query('SELECT id FROM platform_positions')).rows.length,0);
+  assert.ok(resources.json().resources.every((r:{columns:string[]})=>r.columns.every(k=>!['code','assetCode','dictionaryKey'].includes(k))));
+  const position=(await app.inject({method:'POST',url:'/api/admin/data/positions',headers,payload:{name:'检修工'}})).json();
+  const person=(await app.inject({method:'POST',url:'/api/admin/data/people',headers,payload:{employeeNo:'TEST-001',name:'测试员工',organizationUnitId:id,positionId:position.id}})).json();
+  assert.equal((await app.inject({url:'/api/admin/data/people?status=active',headers})).statusCode,200);
+  for(const payload of [{name:'不能更名'},{phone:'123'},{employmentStatus:'departed'}])assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/people/${person.id}`,headers,payload})).statusCode,400);
+  assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/positions/${position.id}`,headers,payload:{description:'维护说明',status:'inactive'}})).json().status,'inactive');
+  assert.equal((await app.inject({url:'/api/admin/data/positions',headers})).json().records[0].description,'维护说明');
+  assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/positions/${position.id}`,headers,payload:{status:'active'}})).json().status,'active');
+  const newPosition=(await app.inject({method:'POST',url:'/api/admin/data/positions',headers,payload:{name:'工班长'}})).json();
+  assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/people/${person.id}`,headers,payload:{organizationUnitId:another.json().id,positionId:newPosition.id}})).statusCode,200);
+  const listed=(await app.inject({url:'/api/admin/data/people',headers})).json().records[0];assert.equal(listed.organizationUnitName,'公司');assert.equal(listed.positionName,'工班长');assert.equal(listed.employeeNo,'TEST-001');
+  assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/people/${person.id}`,headers,payload:{organizationUnitId:'00000000-0000-4000-8000-000000000099'}})).statusCode,400);
+  await db.query("UPDATE platform_positions SET status='inactive' WHERE id=$1",[position.id]);
+  assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/people/${person.id}`,headers,payload:{positionId:position.id}})).statusCode,400);
   const audit=await app.inject({url:'/api/admin/audit',headers});assert.equal(audit.statusCode,200);assert.ok(audit.json().entries.some((row:{action:string;actorId:string})=>row.action==='data.organizations.update'&&row.actorId===account.id));
   await app.inject({method:'POST',url:'/api/admin/auth/logout',headers});assert.equal((await app.inject({url:'/api/admin/apps',headers})).statusCode,401);
  }finally{await app.close();await db.close();}
@@ -100,4 +118,32 @@ test('migration management validates admin session, origin, pagination and evide
   assert.equal((await app.inject({method:'POST',url:writePath+'/reconcile',headers,payload:{...writePayload,status:'completed'}})).statusCode,400);
   const blocked=await app.inject({method:'POST',url:writePath+'/reconcile',headers,payload:writePayload});assert.equal(blocked.statusCode,409);assert.equal(blocked.json().error,'STORAGE_WRITE_RECONCILIATION_REQUIRED');
  }finally{await app.close();await db.close();}
+});
+
+test('directory status updates persist for every enabled directory and retain descriptions',async()=>{
+ const db=new PGlite();
+ const client={query:async(sql:string,args?:readonly unknown[])=>args?db.query(sql,[...args]):(await db.exec(sql)).at(-1)!};
+ try{
+  const {initializePlatformDatabase}=await import('../src/setup/schema.ts');await initializePlatformDatabase(client);
+  const service=createAdminDataService(client,{audit:async()=>{}});
+  const actor={id:'10000000-0000-4000-8000-000000000001',username:'test',displayName:'Test'};
+  const org=await service.create(actor,'organizations',{name:'测试组织',unitType:'company'});
+  const sys=await service.create(actor,'asset-systems',{name:'测试系统'});
+  const cat=await service.create(actor,'asset-categories',{name:'测试分类',systemId:sys.id});
+  const entries=[
+   ['organizations',org],['asset-systems',sys],['asset-categories',cat],
+   ['positions',await service.create(actor,'positions',{name:'测试岗位'})],
+   ['lines',await service.create(actor,'lines',{name:'测试线路'})],
+   ['locations',await service.create(actor,'locations',{name:'测试位置',locationType:'station'})],
+   ['asset-types',await service.create(actor,'asset-types',{name:'测试类型',systemId:sys.id,categoryId:cat.id})]
+  ] as const;
+  for(const [key,record]of entries){
+   const details=['positions','asset-systems','asset-categories','asset-types'].includes(key)?{description:'可维护说明'}:{shortName:'简称'};
+   await service.update(actor,key,record.id,{...details,status:'inactive'});
+   const row=(await service.list(actor,key)).find((r:{id:string})=>r.id===record.id) as unknown as Record<string,unknown>;
+   assert.equal(row.status,'inactive',key);for(const [field,value] of Object.entries(details))assert.equal(row[field],value,key);
+   await service.update(actor,key,record.id,{status:'active'});
+   assert.equal(((await service.list(actor,key))[0] as unknown as Record<string,unknown>).status,'active',key);
+  }
+ }finally{await db.close();}
 });

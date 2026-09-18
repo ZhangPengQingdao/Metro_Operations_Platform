@@ -39,7 +39,7 @@ export interface AppLifecycleHostOptions {
     options(installation: AppInstallation): Omit<AppExtensionRuntimeOptions, 'handle' | 'drainGateway'> };
   /** Separately approved platform external adapter. Never constructed from an app URL by this host. */
   external?: { check(installation: AppInstallation, signal: AbortSignal): Promise<void>; stop(installation: AppInstallation): Promise<void> };
-  api?: Pick<HostedAppApiOptions, 'contextResolver' | 'authorize'>;
+  api?: Pick<HostedAppApiOptions, 'contextResolver' | 'authorize' | 'businessAuthorization'>;
   healthWaitMs?: number;
 }
 export interface AppLifecycleRequest { revision: number; action: AppLifecycleAction; targetManifest?: unknown }
@@ -82,7 +82,7 @@ export class AppLifecycleHost {
     if(!this.active||!this.api||!this.lease)fail('API_NOT_READY');
     const lease=this.lease,api=this.api,installation=this.active,transport=this.bridge!.api;
     return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
-      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain());
+      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain(),{kind:'api',requestId:context.request.requestId,apiId:request.apiId});
   }
   /** Verified employee session callback is retained for every nested service authorization. */
   async invokeEmployeeApi(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1],signal?:AbortSignal){
@@ -104,7 +104,7 @@ export class AppLifecycleHost {
   }
   async status(context: PlatformManagementContext) {
     const installation=await this.options.registry.get(context,this.options.appId);
-    return { installation, owned:!!this.lease&&!this.lease.signal.aborted, serving:!!this.active&&this.active.revision===installation.revision&&installation.enabled };
+    return { installation, pendingWork:await this.workJournal.pending(installation.id), owned:!!this.lease&&!this.lease.signal.aborted, serving:!!this.active&&this.active.revision===installation.revision&&installation.enabled };
   }
   async admittedSnapshot(){
     const lease=this.lease,active=this.active;

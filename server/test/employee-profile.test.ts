@@ -52,5 +52,18 @@ test('employee self profile and password: identity fields protected, unverified 
  assert.equal((await patch({phone:'',wecomUserId:''})).statusCode,401);
  await assert.rejects(service.login({username:'employee',password:'employee-test-password'}),/EMPLOYEE_LOGIN_FAILED/);
  assert.ok((await service.login({username:'employee',password:'replacement-password'})).token);
+ const account=(await service.list(actor,{})).accounts[0];
+ const before=await service.login({username:'employee',password:'replacement-password'});
+ await service.update(actor,account.id,{phone:'13800000001',wecomUserId:'admin.worker',employmentStatus:'departed'});
+ assert.equal(await service.authenticate(before.token),null);
+ let saved=(await service.list(actor,{})).accounts[0];
+ assert.equal(saved.phone,'13800000001');assert.equal(saved.wecomUserId,'admin.worker');assert.equal(saved.employmentStatus,'departed');
+ await service.update(actor,account.id,{employmentStatus:'active'});
+ assert.ok((await service.login({username:'employee',password:'replacement-password'})).token);
+ await pg.query('UPDATE platform_external_identities SET verified_at=now()');
+ await service.update(actor,account.id,{wecomUserId:'changed.worker'});
+ assert.equal((await pg.query('SELECT verified_at FROM platform_external_identities')).rows[0].verified_at,null);
+ await service.update(actor,account.id,{phone:'',wecomUserId:''});
+ saved=(await service.list(actor,{})).accounts[0];assert.equal(saved.phone,null);assert.equal(saved.wecomUserId,null);
  }finally{await app.close();await pg.close();}
 });

@@ -1,3 +1,4 @@
+import {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {ConnectablePool,QueryableClient} from '../../core/database/index.js';
 import {createPostgresCoreTechnicalAuditRepository} from '../../core/observability/index.js';
 import {createPlatformActorContextResolver,type PlatformActorContextResolver} from '../../platform/context/index.js';
@@ -40,7 +41,16 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
 }
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){
- const {contextResolver}=createManagementContexts(pool);
- return {contextResolver,authorize:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>,permission:string)=>
-  context.actorType==='person'&&context.execution.type==='application'&&(await context.authorize(permission,{})).allowed};
+ const {contextResolver}=createManagementContexts(pool),business=new AppBusinessAuthorization(pool);
+ return {contextResolver,
+  businessAuthorization:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>)=>{
+   if(context.actorType!=='person'||context.execution.type!=='application')return undefined;
+   return await business.resolve(context.execution.appId,context.person.id)??undefined;
+  },
+  authorize:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>,permission:string)=>{
+   if(context.actorType!=='person'||context.execution.type!=='application')return false;
+   const rules=await business.resolve(context.execution.appId,context.person.id);
+   if(!rules)return (await context.authorize(permission,{})).allowed;
+   return permission.startsWith(`app.${context.execution.appId}.`)&&rules.grants.some(g=>g.permission===permission);
+  }};
 }

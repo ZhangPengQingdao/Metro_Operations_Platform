@@ -1,3 +1,5 @@
+import {AppBusinessAuthorization} from '../business-authorization/service.js';
+import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {createEmployeeRoleManagement} from './employee-roles.js';
 import {parsePolicy} from '../developer/publisher-policy.js';
 import {AppPackageError} from '../developer/package.js';
@@ -58,7 +60,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   });
   scoped.addHook('onResponse',async req=>{if(admitted.delete(req))uploads--;});
   scoped.setErrorHandler((error,_req,reply)=>{
-   if(error instanceof AdminIdentityError)return reply.code(error.statusCode).send({error:error.code});
+   if(error instanceof AdminIdentityError||error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AdminDataError)return reply.code(error.statusCode).send({error:error.code,message:error.message});
    if(error instanceof AppRegistryError){
     const clientErrors:Record<string,number>={STALE_REVISION:409,APP_NOT_FOUND:404,GRANT_NOT_FOUND:404,REGISTRY_ACCESS_DENIED:403,UNDECLARED_PERMISSION:400,PERMISSION_NOT_ACTIVE:400,INVALID_DATA_SCOPE:400,INVALID_GRANT_MODE:400,SERVICE_IDENTITY_MISMATCH:400,SERVICE_RELATIVE_SCOPE:400,UNEXPECTED_SERVICE_IDENTITY:400,INVALID_GRANT_INTERVAL:400,GRANT_LIMIT:409};
@@ -82,6 +84,9 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   async function withRoles<T>(req:FastifyRequest,work:(service:ReturnType<typeof createEmployeeRoleManagement>,context:PlatformAdministratorContext)=>Promise<T>){
    const context=await createAdministratorContext(req,options.identity),db=await options.pool.connect();try{return await work(createEmployeeRoleManagement(db),context);}finally{db.release();}
   }
+  const business=new AppBusinessAuthorization(options.pool);
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/owner',async req=>business.administratorState(await createAdministratorContext(req,options.identity),req.params.appId));
+  scoped.put<{Params:{appId:string}}>('/apps/:appId/owner',{bodyLimit:4096},async req=>business.setOwner(await createAdministratorContext(req,options.identity),req.params.appId,req.body));
   scoped.get<{Params:{appId:string}}>('/apps/:appId/employee-roles',async req=>withRoles(req,(s,c)=>s.list(c,req.params.appId)));
   scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.set(c,req.params.appId,req.body)));
   scoped.get<{Params:{personId:string}}>('/employee-roles/:personId',async req=>withRoles(req,(s,c)=>s.assignment(c,req.params.personId)));

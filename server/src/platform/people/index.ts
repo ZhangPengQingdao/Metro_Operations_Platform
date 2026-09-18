@@ -39,26 +39,42 @@ export class PeopleDirectoryService {
     this.createId = options.createId ?? randomUUID;
   }
 
-  async updateOrganizationUnitDetails(id: string, input: Partial<Pick<OrganizationUnit, 'name' | 'shortName'>>) {
-    const patch: Partial<Pick<OrganizationUnit, 'name' | 'shortName'>> = {};
+  async updateOrganizationUnitDetails(id: string, input: Partial<Pick<OrganizationUnit, 'name' | 'shortName' | 'status'>>) {
+    const patch: Partial<Pick<OrganizationUnit, 'name' | 'shortName' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.shortName !== undefined) patch.shortName = normalizeOptionalText(input.shortName, 100);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new PeopleDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new PeopleDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updateOrganizationUnitDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updatePositionDetails(id: string, input: Partial<Pick<Position, 'name' | 'description'>>) {
-    const patch: Partial<Pick<Position, 'name' | 'description'>> = {};
+  async updatePositionDetails(id: string, input: Partial<Pick<Position, 'name' | 'description' | 'status'>>) {
+    const patch: Partial<Pick<Position, 'name' | 'description' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 200);
     if (input.description !== undefined) patch.description = normalizeOptionalText(input.description, 1000);
+    if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new PeopleDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new PeopleDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updatePositionDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updatePersonDetails(id: string, input: Partial<Pick<Person, 'name' | 'phone'>>) {
-    const patch: Partial<Pick<Person, 'name' | 'phone'>> = {};
+  async updatePersonDetails(id: string, input: Partial<Pick<Person, 'name' | 'phone' | 'organizationUnitId' | 'positionId'>>) {
+    const patch: Partial<Pick<Person, 'name' | 'phone' | 'organizationUnitId' | 'positionId'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 100);
     if (input.phone !== undefined) patch.phone = normalizeOptionalText(input.phone, 50);
+    if (input.organizationUnitId !== undefined) {
+      const value = normalizeUuid(input.organizationUnitId, 'organization unit id');
+      const organization = await this.repository.findOrganizationUnitById(value);
+      if (!organization) throw new PeopleDirectoryError('ORGANIZATION_NOT_FOUND', '人员所属组织不存在');
+      if (organization.status !== 'active') throw new PeopleDirectoryError('ORGANIZATION_INACTIVE', '人员所属组织未启用');
+      patch.organizationUnitId = value;
+    }
+    if (input.positionId !== undefined) {
+      const value = normalizeUuid(input.positionId, 'position id');
+      const position = await this.repository.findPositionById(value);
+      if (!position) throw new PeopleDirectoryError('POSITION_NOT_FOUND', '人员岗位不存在');
+      if (position.status !== 'active') throw new PeopleDirectoryError('POSITION_INACTIVE', '人员岗位未启用');
+      patch.positionId = value;
+    }
     if (!Object.keys(patch).length) throw new PeopleDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
     return this.repository.updatePersonDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }

@@ -36,7 +36,7 @@ const schema = z.object({
     capabilities: list(z.object({ id, contractVersion }).strict()),
     applications: list(z.object({ id, version: range }).strict())
   }).strict(),
-  permissions: z.object({ requested: list(code), defined: list(z.object({ code, description }).strict()) }).strict(),
+  permissions: z.object({ requested: list(code), defined: list(z.object({ code, description, scopeKinds:z.array(z.enum(['self','workgroup','department','organizations','all'])).min(1).max(5).optional() }).strict()) }).strict(),
   ui: z.discriminatedUnion('mode', [none,
     z.object({ mode: z.literal('sandbox'), entryArtifactId: id }).strict(),
     z.object({ mode: z.literal('trusted'), entryArtifactId: id }).strict()]),
@@ -45,7 +45,7 @@ const schema = z.object({
     z.object({ mode: z.literal('managed'), migrations: list(z.object({ id, artifactId: id }).strict()) }).strict(),
     z.object({ mode: z.literal('external'), configurationRef: id }).strict()]),
   routes: list(z.object({ id, path: routePath, permission: code.optional() }).strict()),
-  api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional() }).strict()),
+  api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional(), businessPermission:code.optional(), businessEntry:z.literal(true).optional() }).strict()),
   navigation: list(z.object({ id, label, routeId: id, order: z.number().int().min(0).max(10000) }).strict()),
   events: z.object({ publish: list(event), subscribe: list(z.object({ event, handler: id }).strict()) }).strict(),
   tools: list(z.object({ name: id, contributionArtifactId: id, uiResourceId: id.optional() }).strict()),
@@ -99,6 +99,7 @@ function crossChecks(m: AppManifest): AppManifestIssue[] {
   if (m.events.publish.some((x) => !x.startsWith(prefix))) fail('events.publish', 'Published events must belong to this application');
   const permissions = new Set([...m.permissions.requested, ...m.permissions.defined.map((x) => x.code)]);
   if (m.routes.some((x) => x.permission && !permissions.has(x.permission))) fail('routes', 'Route permission must be declared');
+  if (m.api.some(x=>x.businessPermission&&(!m.permissions.defined.some(p=>p.code===x.businessPermission)||x.businessEntry))) fail('api','Business permission must be application-defined and not an entry');
   if (m.api.some((x) => x.permission && !permissions.has(x.permission))) fail('api', 'API permission must be declared');
   if (m.backend.mode === 'none' && m.api.length) fail('api', 'API declarations require a backend runtime');
   if (m.navigation.some((x) => !m.routes.some((r) => r.id === x.routeId))) fail('navigation', 'Navigation must reference a declared route');
