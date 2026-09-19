@@ -44,6 +44,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});
   scoped.post<{Params:{appId:string}}>('/apps/:appId/business-authorization',{bodyLimit:65536},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.change(req.params.appId,await ownerId(req),req.body);});
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-delegation',{bodyLimit:16384},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.delegate(req.params.appId,await ownerId(req),req.body);});
   scoped.get('/apps',async req=>{
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));

@@ -41,5 +41,5 @@ return this.read(async db=>{
   if(!access)throw new EmployeeIdentityError(403,'EMPLOYEE_APP_ACCESS_DENIED');return access;
  });}
  async candidates(personId:string){z.string().uuid().parse(personId);return this.read(db=>rows<{appId:string}>(db,`SELECT i.app_id AS "appId" FROM platform_employee_app_access a JOIN platform_app_installations i ON i.id=a.installation_id WHERE a.person_id=$1 AND a.enabled AND i.record->>'enabled'='true'
- UNION SELECT i.app_id AS "appId" FROM platform_app_business_members m JOIN platform_app_installations i ON i.id=m.installation_id JOIN platform_app_authorization b ON b.installation_id=i.id WHERE m.person_id=$1 AND b.mode='application' AND i.record->>'enabled'='true' ORDER BY "appId" LIMIT 500`,[personId]));}
+ UNION SELECT i.app_id AS "appId" FROM platform_app_business_members m JOIN platform_app_installations i ON i.id=m.installation_id JOIN platform_app_authorization b ON b.installation_id=i.id WHERE m.person_id=$1 AND b.mode='application' AND i.record->>'enabled'='true' UNION SELECT i.app_id AS "appId" FROM platform_app_delegated_members m JOIN platform_app_installations i ON i.id=m.installation_id JOIN platform_app_authorization b ON b.installation_id=i.id WHERE m.person_id=$1 AND b.mode='application' AND i.record->>'enabled'='true' ORDER BY "appId" LIMIT 500`,[personId]));}
 }

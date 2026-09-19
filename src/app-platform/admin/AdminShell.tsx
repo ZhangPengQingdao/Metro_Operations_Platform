@@ -1,5 +1,5 @@
 import {readThemePreference,saveThemePreference} from '../identity/theme';
-import {AiSettings} from './AiSettings';
+import {SettingsSections} from './SettingsSections';
 import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {NavLink, useLocation} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
@@ -17,8 +17,6 @@ const navigation = [
   {path: '/admin/data', label: '基础数据', icon: 'database' as PlatformIconName},
   {path: '/admin/accounts', label: '账号与权限', icon: 'users' as PlatformIconName},
   {path: '/admin/developer', label: '开发者中心', icon: 'terminal' as PlatformIconName},
-  {path: '/admin/updates', label: '系统更新', icon: 'database' as PlatformIconName},
-  {path: '/admin/audit', label: '操作记录', icon: 'clock' as PlatformIconName},
 ];
 const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',navigation:[
  ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['lines','线路'],['locations','车站与位置'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
@@ -39,7 +37,7 @@ export function AdminDialog({title, children, onClose, className}: {title: strin
 export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent}: AdminShellProps) {
   const {pathname} = useLocation();
   const base=mode==='admin'?'/admin':'/employee';
-  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'grid' as PlatformIconName}];
+  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -104,9 +102,9 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
     </aside>
     <div className="afc-admin-workspace"><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{children}</main></div>
     <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
-    {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => setPanel(null)}>
+    {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => setPanel(null)}>
       {panel === 'profile' && (profileContent ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}
-      {panel === 'settings' && (settingsContent ?? <AiSettings/>)}
+      {panel === 'settings' && (settingsContent ?? <SettingsSections/>)}
       {panel === 'notifications' && (notificationsContent ?? <p className="afc-muted">通知服务暂不可用。</p>)}
       {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => (()=>{const next=event.target.value as typeof theme;saveThemePreference(next);setTheme(next);})()}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
     </AdminDialog>}

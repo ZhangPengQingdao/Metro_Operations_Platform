@@ -41,6 +41,15 @@ test('application owner, role isolation, per-operation scopes, hierarchy and rev
   assert.deepEqual((await service.resolve(app.appId,owner))!.grants,[]);
   assert.equal(await service.resolve(secondApp.appId,member),null);
   assert.ok(await access.assert(app.appId,member));await assert.rejects(access.assert(app.appId,owner),/EMPLOYEE_APP_ACCESS_DENIED/);
+  state=await service.change(app.appId,owner,{action:'audience',revision:state.revision,audience:{all:false,personIds:[],organizationIds:[],departmentIds:[]}});
+  await assert.rejects(access.assert(app.appId,member),/EMPLOYEE_APP_ACCESS_DENIED/);
+  state=await service.change(app.appId,owner,{action:'audience',revision:state.revision,audience:{all:false,personIds:[],organizationIds:[],departmentIds:[dept]}});
+  assert.ok(await access.assert(app.appId,member));
+  state=await service.change(app.appId,owner,{action:'audience',revision:state.revision,audience:{all:false,personIds:[],organizationIds:[outside],departmentIds:[]}});
+  await assert.rejects(access.assert(app.appId,member),/EMPLOYEE_APP_ACCESS_DENIED/);
+  state=await service.change(app.appId,owner,{action:'audience',revision:state.revision,audience:{all:false,personIds:[member],organizationIds:[],departmentIds:[]}});
+  assert.ok(await access.assert(app.appId,member));
+  await assert.rejects(service.change(app.appId,owner,{action:'audience',revision:state.revision,audience:{all:false,personIds:[],organizationIds:[],departmentIds:[team]}}),/INVALID_ORGANIZATION/);
   const secondState=await service.snapshot(secondApp.appId,owner);
   await assert.rejects(service.change(secondApp.appId,owner,{action:'member',revision:secondState.revision,personId:member,roleId:role,enabled:true}),/APP_ROLE_NOT_FOUND/);
   await assert.rejects(service.change(app.appId,owner,{action:'role',revision:state.revision,name:'Escape',status:'active',rules:[{permission:'platform.authorization.manage',scope:'all',organizationIds:[]}]}),/APP_SCOPE_UNSUPPORTED/);
