@@ -180,3 +180,27 @@
 
 .afc-registration-review { margin-bottom:32px; }
 .afc-registration-review > h1 { margin-bottom:24px; }
+
+.afc-admin .afc-grant-list { display:grid; gap:12px; }
+.afc-admin .afc-grant-group-title { font-size:13px; font-weight:600; margin:20px 0 2px; }
+.afc-admin .afc-grant-group-desc { font-size:12px; margin:0 0 10px; }
+.afc-admin .afc-grant-card { background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:12px; padding:14px 16px; display:grid; gap:10px; }
+.afc-admin .afc-grant-card__head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.afc-admin .afc-grant-card__title { display:grid; gap:2px; min-width:0; }
+.afc-admin .afc-grant-card__title strong { font-weight:600; font-size:14px; }
+.afc-admin .afc-grant-card__title .afc-muted { font-size:12px; overflow-wrap:anywhere; }
+.afc-admin .afc-grant-card__meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.afc-admin .afc-grant-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px dashed var(--afc-border); padding-top:10px; font-size:13px; }
+.afc-admin .afc-grant-row__actions { display:flex; gap:8px; flex-wrap:wrap; }
+.afc-admin .afc-grant-confirm { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.afc-admin .afc-grant-panel { display:grid; gap:12px; border-top:1px solid var(--afc-border); padding-top:12px; }
+.afc-admin .afc-grant-panel__actions { display:flex; gap:8px; flex-wrap:wrap; }
+.afc-admin .afc-grant-scope { display:grid; gap:6px; font-size:13px; }
+.employee-app-management-actions{display:flex;gap:12px;margin:24px 0 32px;}
+.app-business-rule-chip{display:inline-flex;margin:2px 6px 2px 0;padding:5px 10px;border-radius:999px;background:var(--afc-surface-muted,#f4f4f4);font-size:13px;}
+.employee-app-management .afc-dialog__body{padding:0;}
+.employee-app-management .afc-profile-layout{min-height:500px;}
+.employee-app-management .afc-profile-content{padding:32px;}
+.employee-app-management .afc-profile-nav{padding:24px 16px;}
+.employee-app-management .afc-profile-nav button{width:100%;justify-content:flex-start;margin-bottom:6px;}
+@media (max-width:720px){.employee-app-management-actions{flex-wrap:wrap}.employee-app-management .afc-profile-content{padding:20px}}
