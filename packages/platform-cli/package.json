@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-cli",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Standalone signed application package tools for Metro Operations Platform",
   "type": "module",
   "engines": {
