@@ -198,3 +198,11 @@ class DownloadProgress(unittest.TestCase):
    github=u.Github('secret')
    with patch.object(github.opener,'open',return_value=io.BytesIO(b'12345')):
     with self.assertRaisesRegex(u.Failure,'DOWNLOAD_LIMIT'):github.fetch('https://api.github.com/repos/a/b',pathlib.Path(tmp)/'image',4)
+
+class PublicRelease(unittest.TestCase):
+ def test_empty_token_does_not_send_invalid_bearer_header(self):
+  import io
+  github=u.Github('')
+  with patch.object(github.opener,'open',return_value=io.BytesIO(b'{}')) as opened:
+   self.assertEqual(github.fetch('https://api.github.com/repos/a/b'),{})
+  self.assertIsNone(opened.call_args.args[0].get_header('Authorization'))

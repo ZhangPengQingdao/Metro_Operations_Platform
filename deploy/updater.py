@@ -39,7 +39,7 @@ class Github:
    target=urllib.parse.urlparse(url)
    require(target.scheme=='https' and not target.username and target.hostname in ['api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'],'INVALID_REDIRECT')
    headers={'User-Agent':'metro-platform-updater','Accept':'application/octet-stream' if destination else 'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
-   if target.hostname=='api.github.com':headers['Authorization']='Bearer '+self.token
+   if target.hostname=='api.github.com' and self.token:headers['Authorization']='Bearer '+self.token
    try:response=self.opener.open(urllib.request.Request(url,headers=headers),timeout=30)
    except urllib.error.HTTPError as e:
     if e.code in (301,302,303,307,308):url=urllib.parse.urljoin(url,e.headers['Location']);continue
