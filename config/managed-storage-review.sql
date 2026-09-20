@@ -15,12 +15,21 @@ WHERE left(n.nspname, 3) <> 'pg_' AND n.nspname <> 'information_schema' AND a.gr
 -- Proposed changes for DBA review ONLY (replace placeholders, retain original ACLs first):
 -- REVOKE CREATE, TEMPORARY ON DATABASE "<PLATFORM_DATABASE>" FROM PUBLIC;
 -- REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+--
+-- Option A: Dedicated least-privilege DDL administrator role (Recommended, non-superuser):
+-- CREATE ROLE "<STORAGE_ADMIN_ROLE>" NOLOGIN CREATEROLE NOSUPERUSER NOCREATEDB NOINHERIT NOREPLICATION NOBYPASSRLS;
+-- GRANT CREATE ON DATABASE "<PLATFORM_DATABASE>" TO "<STORAGE_ADMIN_ROLE>";
+-- GRANT pg_read_all_data TO "<STORAGE_ADMIN_ROLE>";
+-- Set its unique password privately with psql \password, then explicitly enable LOGIN:
+-- ALTER ROLE "<STORAGE_ADMIN_ROLE>" LOGIN;
+--
+-- Option B: Legacy superuser management role (for isolated local testing instances):
 -- CREATE ROLE "<STORAGE_ADMIN_ROLE>" NOLOGIN SUPERUSER;
--- Set its unique password privately with psql \password, then explicitly enable LOGIN.
+-- Set its unique password privately with psql \password, then explicitly enable LOGIN:
+-- ALTER ROLE "<STORAGE_ADMIN_ROLE>" LOGIN;
+--
 -- Do not grant this role to the ordinary API role. Do not elevate the API role.
--- The current executor needs superuser role management; it is not a least-privilege broker.
--- This affects the PostgreSQL cluster, not merely one database. Use an isolated instance
--- for local verification; production privilege confinement remains a separate task.
+-- The storage preflight accepts either option, preferring Option A for production environments.
 -- After preflight, public object/function/column/large-object ACLs may need separate review.
 -- Do not blanket-revoke unrelated privileges or automatically re-grant PUBLIC on rollback.
 -- Preserve application schemas, owner/runtime roles, leases and migration evidence.

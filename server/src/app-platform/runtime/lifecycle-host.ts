@@ -141,10 +141,11 @@ export class AppLifecycleHost {
         if(record.manifest.api.length&&!this.options.api)fail('API_NOT_CONFIGURED');
         if(contributions(record)&&!this.options.extensions)fail('EXTENSIONS_NOT_CONFIGURED');
         if(record.manifest.storage.mode==='managed'&&!this.options.storage)fail('STORAGE_NOT_CONFIGURED');
-        // A lost host secret requires explicit re-preparation and fresh service approvals.
+        // Under the runtime lease, renew only a stopped, drained installation; grants stay unchanged.
         if(hosted(record)&&(!this.credential||this.credential.identityId!==record.serviceIdentityId)) {
-          if(record.serviceIdentityId)fail('CREDENTIAL_PREPARATION_REQUIRED');
-          const issued=await this.options.registry.issueServiceCredential(context,record.appId,record.revision);
+          const issued=record.serviceIdentityId
+            ?await this.options.registry.renewServiceCredential(context,record.appId,record.revision)
+            :await this.options.registry.issueServiceCredential(context,record.appId,record.revision);
           record=issued.installation;this.credential={identityId:record.serviceIdentityId!,value:issued.credential};
         }
       }

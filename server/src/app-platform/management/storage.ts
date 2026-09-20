@@ -48,7 +48,8 @@ export function createStorageArtifactReader(options:{
 const tables=['platform_app_runtime_write_receipts','platform_app_runtime_write_reconciliations','platform_app_migration_attempts','platform_app_storage_leases','platform_app_migration_receipts',
  'platform_app_runtime_storage_leases','platform_app_runtime_storage_writes','platform_app_migration_reconciliations','platform_app_storage_restores','platform_app_storage_versions','platform_app_storage_migration_adoptions'];
 
-/** Pinned, distinct management identity. Current storage executor requires superuser role administration.
+/** Pinned, distinct management identity. Storage executor requires either superuser role administration
+ * or a dedicated least-privilege DDL administrator role (CREATEROLE + database CREATE, rolsuper=false).
  * It is explicitly opt-in and never changes the ordinary API role or database ACLs. */
 export async function createManagedStorageComposition(options:{
  apiDatabaseUrl:string;
@@ -71,9 +72,12 @@ export async function createManagedStorageComposition(options:{
    await client.connect();
    // Recheck identity on every fresh session, including recovery after configuration/role changes.
    const identity=await client.query(`SELECT session_user AS session_user,current_user AS current_user,current_database() AS database,
-    r.rolsuper FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`) as {rows:Record<string,unknown>[]};
+    r.rolsuper,r.rolcreaterole,has_database_privilege(current_user,current_database(),'CREATE') AS has_database_create
+    FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`) as {rows:Record<string,unknown>[]};
    const row=identity.rows[0];
-   if(identity.rows.length!==1||row.session_user!==admin.user||row.current_user!==admin.user||row.database!==admin.database||row.rolsuper!==true)
+   const isSuper=row?.rolsuper===true;
+   const isLeastPrivilegeAdmin=row?.rolsuper===false&&row?.rolcreaterole===true&&row?.has_database_create===true;
+   if(identity.rows.length!==1||row?.session_user!==admin.user||row?.current_user!==admin.user||row?.database!==admin.database||(!isSuper&&!isLeastPrivilegeAdmin))
     throw new AppStorageError('STORAGE_ADMIN_IDENTITY_REQUIRED');
    return client;
   }catch(error){

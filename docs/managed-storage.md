@@ -6,7 +6,7 @@
 
 普通 API 继续使用 `DATABASE_URL`，存储生命周期使用独立的 `MOP_APP_STORAGE_ADMIN_DATABASE_URL`。后者只在平台内部创建专用连接，不传给应用、浏览器或 Docker 后端。迁移另用短期 owner 凭据；原有 NOLOGIN、撤销与会话清理机制继续生效。
 
-现有存储执行器需要超级用户执行角色与凭据检查，因此本次装配显式要求存储管理角色为超级用户；普通 API 角色必须不是超级用户、没有 CREATEROLE、不是该管理角色成员。**独立连接不等于最小权限代理或进程隔离**：管理凭据仍在 API 进程中，超级用户权限覆盖 PostgreSQL 实例。生产使用前还需设计受限管理代理和部署隔离；本地验证采用独立的一次性 PostgreSQL 实例。
+存储生命周期执行器支持配置专用受限 DDL 管理角色（必须具备 `CREATEROLE` 和数据库 `CREATE` 权限，无需 `SUPERUSER`）；亦向前兼容已有测试环境的超级用户。普通 API 角色必须不是超级用户、没有 CREATEROLE、不是该管理角色成员。**独立连接不等于最小权限代理或进程隔离**：管理凭据仍在 API 进程中，生产使用推荐使用专用的非超级用户 DDL 角色以收敛风险，详见 [只读检查与调整草案](../config/managed-storage-review.sql)。本地验证可采用独立的一次性 PostgreSQL 实例。
 
 在应用管理 JSON 配置中设置 `"managedStorage": true`，在服务器私密环境配置中设置独立连接。配置模板只保留占位值：
 

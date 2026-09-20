@@ -60,16 +60,13 @@ try:
  run(*common,'probe.mjs')
  # Validate the installer's actual generated Caddy configuration, not a test-only proxy.
  import updater as installer
- from unittest.mock import patch
  installer.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':os.stat('/var/run/docker.sock').st_gid,'proxyMode':'external','httpPort':18080,'applications':True,'resourcePort':18081,'resourceDomain':'resources.example.net'})
  release=root/'release';release.mkdir()
  images={name:json.loads(run('docker','image','inspect',ref).stdout)[0]['Id'] for name,ref in [('api','mop-api:test'),('web','mop-web:test'),('database',postgres)]}
- original_command=installer.command
- def preloaded(args,*a,**kw):
-  if args[:2]==['docker','load']:return b''
-  return original_command(args,*a,**kw)
- # Images have already been built/pulled above. Signature/archive validation has separate tests.
- with patch.object(installer,'verify_archive'),patch.object(installer,'command',side_effect=preloaded):installer.Deployment(root).prepare(release,{'images':images})
+ archive=release/'images.tar'
+ run('docker','tag',postgres,'mop-database:test')
+ run('docker','save','-o',str(archive),'mop-api:test','mop-web:test','mop-database:test')
+ installer.Deployment(root).prepare(release,{'images':images,'artifact':{'bytes':archive.stat().st_size,'sha256':installer.file_hash(archive)}})
  caddy=release/'Caddyfile'
  web='mop-web-'+suffix;containers.append(web)
  run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-p','127.0.0.1::8081','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')

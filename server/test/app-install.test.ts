@@ -123,3 +123,18 @@ test('concurrent first-install requests bind at most one identity and execute on
  const result=await Promise.allSettled([f.installer.install(f.actor,input),f.installer.install(f.actor,{...input,requestId:'installation-request-two'})]);
  assert.equal(result.filter(r=>r.status==='fulfilled').length,1);assert.equal(f.executions,1);assert.equal((await f.installer.status(f.actor,f.manifest.id)).state,'installed');
 }));
+
+test('approved setup executes before runtime once; duplicate installation never regrants',async()=>fixture('sandbox',async f=>{
+ let approvals=0;
+ const installer=new AppInstaller({...f.options,beforeInstall:async(context,record)=>{approvals++;assert.equal((await f.registry.get(context,record.appId)).enabled,false);assert.equal(f.executions,0);}});
+ const input={directory:f.input,signatureFile:f.sig,requestId:'approved-platform-install'};
+ assert.equal((await installer.install(f.actor,input)).state,'installed');
+ await installer.install(f.actor,input);assert.equal(approvals,1);assert.equal(f.executions,1);
+}));
+test('platform approval failure leaves installation disabled and blocks automatic replay',async()=>fixture('sandbox',async f=>{
+ let approvals=0;const installer=new AppInstaller({...f.options,beforeInstall:async()=>{approvals++;throw Error('approval transaction unknown');}});
+ const input={directory:f.input,signatureFile:f.sig,requestId:'failed-platform-approval'};
+ await assert.rejects(installer.install(f.actor,input),/RECOVERY_REQUIRED/);
+ assert.equal((await f.registry.get(f.actor,f.manifest.id)).enabled,false);
+ assert.equal((await installer.install(f.actor,input)).state,'recovery_required');assert.equal(approvals,1);assert.equal(f.executions,0);
+}));

@@ -103,6 +103,28 @@ for(const kind of ['memory','postgres'] as const) {
       await assert.rejects(f.registry.authenticateServiceCredential(r.appId,rotated.credential),/INVALID_CREDENTIAL/);
     }finally{await s.close();}
   });
+  test(`${kind}: stopped credential renewal preserves grants and revocations, rejects running and unresolved operations`,async()=>{
+    const s=await store(kind);try{
+      const f=await setup(s.repository);let r=await f.registry.register(f.admin,manifest());
+      const original=await f.registry.issueServiceCredential(f.admin,r.appId,r.revision);r=original.installation;
+      r=await f.registry.approveGrant(f.admin,r.appId,r.revision,{mode:'service',permissionCode,scope:{kind:'all',targets:[]},serviceIdentityId:r.serviceIdentityId!});
+      const grants=structuredClone(r.grants);
+      await assert.rejects(f.registry.renewServiceCredential(f.application,r.appId,r.revision),/REGISTRY_ACCESS_DENIED/);
+      const renewed=await f.registry.renewServiceCredential(f.admin,r.appId,r.revision);r=renewed.installation;
+      assert.equal(r.serviceIdentityId,original.installation.serviceIdentityId);assert.deepEqual(r.grants,grants);
+      r=await f.registry.setEnabled(f.admin,r.appId,r.revision,true);
+      await assert.rejects(f.registry.authenticateServiceCredential(r.appId,original.credential),/INVALID_CREDENTIAL/);
+      await f.registry.authenticateServiceCredential(r.appId,renewed.credential);
+      await assert.rejects(f.registry.renewServiceCredential(f.admin,r.appId,r.revision),/DISABLE_REQUIRED/);
+      r=await f.registry.setEnabled(f.admin,r.appId,r.revision,false);
+      r=await f.registry.revokeGrant(f.admin,r.appId,r.revision,r.grants[0].grantId);
+      const revoked=structuredClone(r.grants);
+      r=(await f.registry.renewServiceCredential(f.admin,r.appId,r.revision)).installation;
+      assert.deepEqual(r.grants,revoked);
+      r=await f.registry.beginLifecycle(f.admin,r.appId,r.revision,'enable');
+      await assert.rejects(f.registry.renewServiceCredential(f.admin,r.appId,r.revision),/LIFECYCLE_BLOCKED/);
+    }finally{await s.close();}
+  });
   test(`${kind}: history failure rolls back register/state; competing revisions have one winner`,async()=>{
     const s=await store(kind);try{
       const f=await setup(s.repository),append=s.repository.appendHistory.bind(s.repository);

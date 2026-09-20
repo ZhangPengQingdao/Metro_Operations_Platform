@@ -159,6 +159,16 @@ export class AppRegistryService {
     });
     return { installation, credential: `${installation.id}.${installation.serviceIdentityId}.${secret}` };
   }
+  /** Host-only renewal after stopping: preserve identity/grants, invalidate the old secret. */
+  async renewServiceCredential(context: PlatformManagementContext, appId: string, revision: number) {
+    const secret=randomBytes(32).toString('base64url');
+    const installation=await this.change(context,appId,revision,'credential-issued','Renew stopped runtime credential',async record=>{
+      if(record.enabled)throw new AppRegistryError('DISABLE_REQUIRED');
+      if(!record.serviceIdentityId||!record.credentialDigest)throw new AppRegistryError('INVALID_CREDENTIAL');
+      record.credentialDigest=digest(secret);
+    });
+    return {installation,credential:`${installation.id}.${installation.serviceIdentityId}.${secret}`};
+  }
   revokeServiceCredential(context: PlatformManagementContext, appId: string, revision: number, reason?: string) {
     return this.change(context,appId,revision,'credential-revoked',reason,async (record) => {
       record.serviceIdentityId=null; record.credentialDigest=null; record.grants=record.grants.filter((g) => g.mode !== 'service');

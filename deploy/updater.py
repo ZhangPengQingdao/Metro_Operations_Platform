@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """MOP host updater. Python 3.12 stdlib + OpenSSL + Docker Compose, no web-process privileges."""
-import argparse,base64,fcntl,getpass,grp,hashlib,http.server,json,os,pathlib,platform,re,secrets,shutil,socketserver,subprocess,sys,threading,time,urllib.error,urllib.parse,urllib.request,uuid
+import argparse,io,base64,fcntl,getpass,grp,hashlib,http.server,json,os,pathlib,platform,re,secrets,shutil,socketserver,subprocess,sys,tarfile,tempfile,threading,time,urllib.error,urllib.parse,urllib.request,uuid
 REPO='ZhangPengQingdao/Metro_Operations_Platform'
 VERSION=re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')
 IMAGE=re.compile(r'^sha256:[a-f0-9]{64}$')
 RUNTIME_IMAGE='node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5'
-ACTIVE={'queued','downloading','verified','preflight','maintenance','backing_up','migrating','switching','health_check'}
+ACTIVE={'queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up','migrating','switching','health_check'}
 class Failure(Exception):pass
 def require(ok,code):
  if not ok:raise Failure(code)
@@ -33,7 +33,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,*args):return None
 class Github:
  def __init__(self,token):self.token=token;self.opener=urllib.request.build_opener(NoRedirect())
- def fetch(self,url,destination=None,limit=131072):
+ def fetch(self,url,destination=None,limit=131072,progress=None):
   initial=urllib.parse.urlparse(url);require(initial.scheme=='https' and initial.netloc=='api.github.com','INVALID_DOWNLOAD_ORIGIN')
   for _ in range(4):
    target=urllib.parse.urlparse(url)
@@ -54,6 +54,7 @@ class Github:
       total+=len(block);require(total<=limit and time.monotonic()-started<1800,'DOWNLOAD_LIMIT')
       if f:f.write(block)
       else:chunks.append(block)
+      if progress:progress(total)
     if f:f.flush();os.fsync(f.fileno());return
     return json.loads(b''.join(chunks))
    finally:
@@ -66,17 +67,17 @@ class Github:
   version(data['tag_name'].removeprefix('v'))
   require(data['tag_name'].startswith('v') and (not tag or data['tag_name']=='v'+tag),'INVALID_RELEASE')
   return data
- def asset(self,release,name,destination,limit):
+ def asset(self,release,name,destination,limit,progress=None):
   found=[a for a in release.get('assets',[]) if a.get('name')==name]
   require(len(found)==1 and type(found[0].get('id')) is int and 0<found[0].get('size',0)<=limit,'MISSING_RELEASE_ASSET')
-  self.fetch(f'https://api.github.com/repos/{REPO}/releases/assets/{found[0]["id"]}',destination,limit)
+  self.fetch(f'https://api.github.com/repos/{REPO}/releases/assets/{found[0]["id"]}',destination,limit,progress)
 def verify(directory,key,expected):
  directory=pathlib.Path(directory);version(expected)
  require((directory/'release.json').stat().st_size<=65536 and (directory/'release.sig').stat().st_size==64,'INVALID_MANIFEST_SIZE')
  command(['openssl','pkeyutl','-verify','-pubin','-inkey',str(key),'-rawin','-in',str(directory/'release.json'),'-sigfile',str(directory/'release.sig')],30)
  m=read(directory/'release.json')
  require(set(m)=={'format','version','architecture','repository','commit','minUpdater','upgradeFromMin','databaseMajor','images','artifact'},'INVALID_MANIFEST')
- require(m['format']==1 and m['version']==expected and m['architecture']=='linux/amd64' and m['repository']==REPO and m['minUpdater'] in (1,2) and m['databaseMajor']==17,'INCOMPATIBLE_RELEASE')
+ require(m['format']==1 and m['version']==expected and m['architecture']=='linux/amd64' and m['repository']==REPO and m['minUpdater'] in (1,2,3) and m['databaseMajor']==17,'INCOMPATIBLE_RELEASE')
  require(isinstance(m['commit'],str) and re.fullmatch('[a-f0-9]{40}',m['commit']),'INVALID_COMMIT');version(m['upgradeFromMin'])
  require(set(m['images'])=={'api','web','database'} and all(IMAGE.fullmatch(v) for v in m['images'].values()),'INVALID_IMAGES')
  a=m['artifact'];require(set(a)=={'name','sha256','bytes'} and a['name']=='images.tar' and re.fullmatch('[a-f0-9]{64}',a['sha256']) and type(a['bytes']) is int and 0<a['bytes']<=4*1024**3,'INVALID_ARTIFACT')
@@ -89,25 +90,101 @@ def file_hash(path):
 def verify_archive(directory,m):
  p=pathlib.Path(directory)/'images.tar';require(p.stat().st_size==m['artifact']['bytes'],'ARTIFACT_SIZE_MISMATCH')
  require(file_hash(p)==m['artifact']['sha256'],'ARTIFACT_HASH_MISMATCH')
+def archive_identities(path):
+ """Map config digests to authenticated OCI manifest/index aliases; never extract files."""
+ identities={}
+ with tarfile.open(path,'r:*') as archive:
+  def document(name,digest=None):
+   member=archive.getmember(name)
+   require(member.isfile() and member.size<=4*1024**2,'INVALID_IMAGE_METADATA')
+   with archive.extractfile(member) as source:data=source.read()
+   if digest:require('sha256:'+hashlib.sha256(data).hexdigest()==digest,'IMAGE_METADATA_HASH_MISMATCH')
+   return json.loads(data), 'sha256:'+hashlib.sha256(data).hexdigest()
+  entries,_=document('manifest.json')
+  for entry in entries:
+   config,digest=document(entry['Config'])
+   require(config.get('architecture')=='amd64' and config.get('os')=='linux','IMAGE_ARCHITECTURE_MISMATCH')
+   identities[digest]={digest}
+  def visit(descriptor,parents=(),depth=0):
+   require(depth<8,'INVALID_IMAGE_METADATA')
+   digest=descriptor['digest'];require(IMAGE.fullmatch(digest),'INVALID_IMAGE_METADATA')
+   data,_=document('blobs/sha256/'+digest[7:],digest)
+   if 'manifests' in data:
+    for child in data['manifests']:visit(child,(*parents,digest),depth+1)
+   elif 'config' in data:
+    config=data['config']['digest']
+    if config in identities:identities[config].update((*parents,digest))
+  # Older docker save archives can omit untagged images from index.json.
+  for member in archive.getmembers():
+   if member.isfile() and member.size<=4*1024**2 and re.fullmatch(r'blobs/sha256/[a-f0-9]{64}',member.name):
+    try:data,digest=document(member.name)
+    except (ValueError,UnicodeError):continue
+    if isinstance(data,dict) and data.get('schemaVersion')==2 and ('manifests' in data or isinstance(data.get('config'),dict) and 'digest' in data['config']):
+     require(digest=='sha256:'+member.name.rsplit('/',1)[1],'IMAGE_METADATA_HASH_MISMATCH');visit({'digest':digest})
+  if 'index.json' in archive.getnames():
+   index,_=document('index.json')
+   for descriptor in index['manifests']:visit(descriptor)
+ return identities
+
+def load_images(directory,m):
+ # Keep the signed archive intact. Give every image an explicit import name and OCI
+ # index entry in a temporary copy, including images omitted by older docker save.
+ identities=archive_identities(directory/'images.tar')
+ tags={config:'mop-import:'+config[7:] for config in identities}
+ with tarfile.open(directory/'images.tar','r:*') as source, tempfile.TemporaryDirectory(dir=directory) as temp:
+  entries=json.load(source.extractfile('manifest.json'));descriptors=[]
+  for entry in entries:
+   with source.extractfile(entry['Config']) as config_file:config='sha256:'+hashlib.sha256(config_file.read()).hexdigest()
+   entry['RepoTags']=[tags[config]]
+   for alias in sorted(identities[config]-{config}):
+    member=source.getmember('blobs/sha256/'+alias[7:])
+    data=json.load(source.extractfile(member))
+    if data.get('config',{}).get('digest')==config:
+     descriptors.append({'mediaType':data['mediaType'],'digest':alias,'size':member.size,'annotations':{'io.containerd.image.name':'docker.io/library/'+tags[config],'org.opencontainers.image.ref.name':tags[config]}});break
+  if 'index.json' in source.getnames():require(len(descriptors)==len(identities),'INCOMPLETE_OCI_ARCHIVE')
+  target=pathlib.Path(temp)/'images.tar'
+  with tarfile.open(target,'w') as output:
+   for member in source.getmembers():
+    if member.name in ('manifest.json','index.json'):continue
+    output.addfile(member,source.extractfile(member) if member.isfile() else None)
+   metadata={'manifest.json':entries}
+   if descriptors:metadata['index.json']={'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':descriptors}
+   for name,data in metadata.items():
+    encoded=json.dumps(data,separators=(',',':')).encode();member=tarfile.TarInfo(name);member.size=len(encoded);output.addfile(member,io.BytesIO(encoded))
+  command(['docker','load','-i',str(target)],1800)
+ return resolve_images(directory,m,identities)
+
+def resolve_images(directory,m,identities=None):
+ if identities is None:identities=archive_identities(directory/'images.tar')
+ resolved={}
+ for name,expected in m['images'].items():
+  matches=[aliases for aliases in identities.values() if expected in aliases]
+  require(len(matches)==1,'IMAGE_NOT_IN_SIGNED_ARCHIVE: '+name)
+  aliases=matches[0]
+  for candidate in [expected,*sorted(aliases-{expected})]:
+   try:info=json.loads(command(['docker','image','inspect',candidate]))[0]
+   except Failure:continue
+   require(info['Id'] in aliases and info['Architecture']=='amd64' and info['Os']=='linux','IMAGE_IDENTITY_MISMATCH: '+name)
+   resolved[name]=info['Id'];break
+  else:raise Failure('IMAGE_NOT_LOADED: '+name)
+ return resolved
+
 class Deployment:
  def __init__(self,root):self.root=pathlib.Path(root);self.config=read(self.root/'config.json')
  def compose(self,release,*args,output=None):
   return command(['docker','compose','--project-name','mop','--file',str(release/'compose.json'),*args],timeout=600,output=output)
  def prepare(self,directory,m):
-  verify_archive(directory,m);command(['docker','load','-i',str(directory/'images.tar')],1800)
-  for image in m['images'].values():
-   info=json.loads(command(['docker','image','inspect',image]))[0]
-   require(info['Id']==image and info['Architecture']=='amd64' and info['Os']=='linux','IMAGE_IDENTITY_MISMATCH')
+  verify_archive(directory,m);images=load_images(directory,m)
   root=str(self.root);gid=str(self.config['socketGid'])
-  api={'image':m['images']['api'],'restart':'unless-stopped','read_only':True,'tmpfs':['/tmp:size=64m'],'cap_drop':['ALL'],'security_opt':['no-new-privileges:true'],
+  api={'image':images['api'],'restart':'unless-stopped','read_only':True,'tmpfs':['/tmp:size=64m'],'cap_drop':['ALL'],'security_opt':['no-new-privileges:true'],
    'group_add':[gid],'environment':{'MOP_UPDATER_SOCKET':'/run/mop-updater/control.sock'},
    'volumes':[root+'/secrets/api.json:/run/secrets/api.json:ro','/run/mop-updater:/run/mop-updater:ro'],
    'networks':['internal','edge'],'stop_grace_period':'60s',
    'healthcheck':{'test':['CMD','node','-e',"fetch('http://127.0.0.1:3101/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],'interval':'5s','timeout':'3s','retries':12}}
-  db={'image':m['images']['database'],'restart':'unless-stopped','environment':{'POSTGRES_PASSWORD_FILE':'/run/secrets/postgres','POSTGRES_INITDB_ARGS':'--auth-host=scram-sha-256'},
+  db={'image':images['database'],'restart':'unless-stopped','environment':{'POSTGRES_PASSWORD_FILE':'/run/secrets/postgres','POSTGRES_INITDB_ARGS':'--auth-host=scram-sha-256'},
    'volumes':[root+'/database:/var/lib/postgresql/data',root+'/secrets/postgres:/run/secrets/postgres:ro'],'networks':['internal'],
    'healthcheck':{'test':['CMD-SHELL','pg_isready -U postgres'],'interval':'5s','timeout':'3s','retries':20}}
-  web={'image':m['images']['web'],'restart':'unless-stopped','environment':{'MOP_DOMAIN':self.config['domain']},'ports':['80:80','443:443'],
+  web={'image':images['web'],'restart':'unless-stopped','environment':{'MOP_DOMAIN':self.config['domain']},'ports':['80:80','443:443'],
    'volumes':[root+'/caddy:/data'],'networks':['internal','edge']}
   if self.config.get('proxyMode')=='external':
    web['ports']=[f"127.0.0.1:{self.config['httpPort']}:80"]
@@ -135,7 +212,7 @@ class Deployment:
   for filename,args in [('database.dump',['pg_dump','-U','postgres','-Fc','metro_operations_platform']),('roles.sql',['pg_dumpall','-U','postgres','--roles-only'])]:
    with (folder/filename).open('wb') as out:self.compose(current,'exec','-T','database',*args,output=out);out.flush();os.fsync(out.fileno())
   # Verify custom dump structure. Roles, credentials, proxy and application artifacts are separate.
-  command(['docker','run','--rm','--network','none','-v',str(folder)+':/backup:ro',read(current/'release.json')['images']['database'],'pg_restore','--list','/backup/database.dump'])
+  command(['docker','run','--rm','--network','none','-v',str(folder)+':/backup:ro',read(current/'compose.json')['services']['database']['image'],'pg_restore','--list','/backup/database.dump'])
   command(['tar','-czf',str(folder/'configuration.tar.gz'),'-C',str(self.root),'secrets','config.json','current.json',*(['apps'] if self.config.get('applications') else [])])
   atomic(folder/'complete.json',{'taskId':task,'version':read(current/'release.json')['version']})
  def healthy(self,directory):
@@ -167,6 +244,9 @@ class Updater:
   with self.guard:
    self.task={**self.task,'phase':phase,'updatedAt':int(time.time()),'error':error};atomic(self.path,self.task);atomic(self.root/'requests'/self.task['id'],self.task)
    with (self.root/'audit.jsonl').open('a') as f:f.write(json.dumps(self.task)+'\n');f.flush();os.fsync(f.fileno())
+ def progress(self,received,total):
+  with self.guard:
+   self.task={**self.task,'download':{'receivedBytes':received,'totalBytes':total},'updatedAt':int(time.time())}
  def status(self):
   with self.guard:return {'configured':True,'currentVersion':read(self.root/'current.json')['version'],'task':self.task}
  def check(self):
@@ -194,11 +274,15 @@ class Updater:
     m=verify(directory,self.root/'release-public.pem',v)
     require(version(self.task['fromVersion'])>=version(m['upgradeFromMin']),'UNSUPPORTED_UPGRADE_PATH')
     require(shutil.disk_usage(self.root).free>m['artifact']['bytes']*3+1024**3,'DISK_SPACE_REQUIRED')
-    self.github.asset(release,'images.tar',directory/'images.tar',m['artifact']['bytes']);verify_archive(directory,m)
-    self.phase('verified');self.deployment.prepare(directory,m);self.phase('downloaded');return
+    total=m['artifact']['bytes'];self.progress(0,total)
+    self.github.asset(release,'images.tar',directory/'images.tar',total,lambda received:self.progress(received,total))
+    self.phase('verifying');verify_archive(directory,m)
+    self.phase('loading');self.deployment.prepare(directory,m);self.phase('downloaded');return
    self.phase('preflight');m=verify(directory,self.root/'release-public.pem',v);verify_archive(directory,m)
-   current=self.root/'releases'/self.task['fromVersion'];old=verify(current,self.root/'release-public.pem',self.task['fromVersion'])
-   require(m['images']['database']==old['images']['database'],'DATABASE_IMAGE_CHANGE_REQUIRES_MANUAL_UPGRADE')
+   current=self.root/'releases'/self.task['fromVersion'];old=verify(current,self.root/'release-public.pem',self.task['fromVersion']);verify_archive(current,old)
+   new_ids=archive_identities(directory/'images.tar');old_ids=archive_identities(current/'images.tar')
+   database_id=lambda ids,manifest: {config for config,aliases in ids.items() if manifest['images']['database'] in aliases}
+   require(database_id(new_ids,m)==database_id(old_ids,old) and len(database_id(new_ids,m))==1,'DATABASE_IMAGE_CHANGE_REQUIRES_MANUAL_UPGRADE')
    require(version(self.task['fromVersion'])>=version(m['upgradeFromMin']),'UNSUPPORTED_UPGRADE_PATH')
    self.deployment.prepare(directory,m)
    self.deployment.compose(current,'run','--rm','--no-deps','api','probe.mjs')
@@ -220,7 +304,7 @@ class Updater:
   stage=self.task.get('recoveryOriginPhase',self.task.get('failedPhase'));require(mode in ('restart-current','resume-target'),'INVALID_RECOVERY_MODE')
   directory=self.root/'releases'/(self.task['fromVersion'] if mode=='restart-current' else self.task['version'])
   m=verify(directory,self.root/'release-public.pem',directory.name);verify_archive(directory,m)
-  if mode=='restart-current':require(stage in ('queued','downloading','verified','preflight','maintenance','backing_up'),'DATABASE_MAY_HAVE_MIGRATED')
+  if mode=='restart-current':require(stage in ('queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up'),'DATABASE_MAY_HAVE_MIGRATED')
   else:
    require(stage in ('migrating','switching','health_check'),'NO_MIGRATION_TO_RESUME')
    require((self.root/'backups'/task_id/'complete.json').exists(),'VERIFIED_BACKUP_REQUIRED')

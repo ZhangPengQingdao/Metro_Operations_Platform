@@ -27,7 +27,7 @@ export const APP_VERSION_SQL=`CREATE TABLE IF NOT EXISTS platform_app_versions (
 export const APP_VERSION_MIGRATIONS:readonly MigrationDefinition[]=[{id:'app-signed-versions-expand',title:'Retain signed version packages and uncertain upgrades',ownerTaskId:'PLATFORM-L4-013',phase:'expand',layer:'L4',dataRows:[],migrationRows:['MIG-053'],sourceTables:[],targetTables:['platform_app_versions'],dependsOn:['app-install-requests-expand'],recoveryNotes:'Preserve signed bundles and pending upgrades. No automatic retry or deletion.',async run({client}){await client.query(APP_VERSION_SQL);return {applied:true};}}];
 const pending=(record:AppVersionRecord)=>!['updated','recovered'].includes(record.state);
 export class AppVersionService {
- constructor(private readonly options:{registry:AppRegistryService;journal:AppVersionJournal;installJournal:InstallJournal;artifactRoot:string;loadPublisherPolicy():Promise<unknown>;approve(context:PlatformManagementContext,manifest:InstallRecord['prepared']['manifest']):Promise<boolean>;getHost(appId:string):Promise<Pick<AppLifecycleHost,'execute'|'recover'|'status'>>}){}
+ constructor(private readonly options:{afterUpdate?(context:PlatformManagementContext,appId:string):Promise<void>;registry:AppRegistryService;journal:AppVersionJournal;installJournal:InstallJournal;artifactRoot:string;loadPublisherPolicy():Promise<unknown>;approve(context:PlatformManagementContext,manifest:InstallRecord['prepared']['manifest']):Promise<boolean>;getHost(appId:string):Promise<Pick<AppLifecycleHost,'execute'|'recover'|'status'>>}){}
  async status(context:PlatformManagementContext,appId:string){await assertInstallAdmin(context);return {versions:(await this.options.journal.list(appId)).map(({prepared,...record})=>({...record,version:prepared.manifest.version}))};}
  async assertActivationAllowed(context:PlatformManagementContext,appId:string){await assertInstallAdmin(context);if((await this.options.journal.list(appId)).some(pending))throw new InstallError('VERSION_RECOVERY_REQUIRED');}
  private async change(record:AppVersionRecord,state:AppVersionRecord['state']){return runAtomicOperation([this.options.journal],async()=>{const next={...record,state,revision:record.revision+1,updatedAt:new Date().toISOString()};await this.options.journal.save(next,record.revision);return next;});}
@@ -60,6 +60,7 @@ export class AppVersionService {
    if(verified.policySha256!==prepared.publisherPolicySha256||verified.manifestSha256!==prepared.signatureManifestSha256||!await this.options.approve(context,manifest))throw new InstallError('INSTALL_ADMISSION_CHANGED');
    const host=await this.options.getHost(input.appId);const result=await host.execute(context,{revision:input.revision,action:input.action??'upgrade',targetManifest:manifest});
    if(result.enabled||result.id!==current.id||!isDeepStrictEqual(result.manifest,manifest)||result.lifecycle?.status!=='completed')throw new InstallError('VERSION_UNCONFIRMED');
+   await this.options.afterUpdate?.(context,input.appId);
    return this.public(await this.change(running,'updated'));
   }catch{try{await this.change(running,'recovery_required');}catch{throw new InstallError('VERSION_OUTCOME_UNKNOWN');}throw new InstallError('VERSION_RECOVERY_REQUIRED');}
  }

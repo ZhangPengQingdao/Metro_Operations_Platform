@@ -36,7 +36,7 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 创建请求完整收到 Docker 400 并核对容器不存在时，可记录明确拒绝并恢复到停用；超时、断连、核对失败及结果未知继续阻断，不自动重放，也不凭稍后查不到容器就清除历史。
 
-管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get/list` 与 `platform.assets.get`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
+管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get/list` 与 `platform.assets.get/list`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
 
 员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，平台验证实时员工身份、应用使用授权与业务权限。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件、外联和 trusted UI 仍拒绝。物料的实际 Docker 托管全链路尚待验收。
 
@@ -75,7 +75,7 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 
 物料：工班长角色授予 read/outbound/manage，检修工角色授予 read/outbound；三个完整权限码为 `app.materials.read`、`app.materials.outbound`、`app.materials.manage`。应用委托授权分别授予这三个权限。当前自定义 API 不支持通用资源范围推断，使用完整操作授权；物料代码强制可信员工组织隔离，出库纠错还强制本人。
 
-服务身份单独授予 `platform.app_data.read`、`platform.app_data.write`、`platform.people.read`（范围全部，应用只访问自己的数据及所需工班成员）。在停用状态先「准备服务身份」，再批准服务授权，凭据不返回浏览器。委任物资管理员在物料应用内部「设置」完成，仅工班长可用；不改变平台员工角色。
+服务身份单独授予 `platform.app_data.read`、`platform.app_data.write`、`platform.people.read`（范围全部，应用只访问自己的数据及所需工班成员）。批准服务授权时由平台自动准备缺失身份，凭据不返回浏览器。停用后重新启用时，若内存凭据丢失，平台在独占运行锁及未完成调用检查后自动换发凭据，保留身份与原授权，不补回已撤销权限。委任物资管理员在物料应用内部「设置」完成，仅工班长可用；不改变平台员工角色。
 
 ## 公开 L2 界面组件（0.5.0）
 

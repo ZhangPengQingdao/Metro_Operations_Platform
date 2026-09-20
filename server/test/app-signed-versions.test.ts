@@ -30,10 +30,11 @@ test('signed upgrades bind version bytes, reject tampering and keep unknown work
  await installs.insert({appId:'sample',requestId:'first-install-0001',installationId:initial.id,revision:1,state:'installed',prepared,actorId:ctx.administrator.id,updatedAt:new Date().toISOString()});
  const read=createVersionedArtifactReader(installs,journal);let calls=0,fail=false;
  const host={status:async()=>({installation:await registry.get(ctx,'sample'),owned:false,serving:false}),recover:async()=>registry.get(ctx,'sample'),execute:async(_context:unknown,input:{revision:number;action:unknown;targetManifest?:unknown})=>{calls++;if(fail)throw Error('lost response');const target=input.targetManifest as AppManifest;assert.deepEqual(await read(target,'entry',target.artifacts[0].bytes),target.version==='1.1.0'?two.bytes:three.bytes);const started=await registry.beginLifecycle(ctx,'sample',input.revision,'upgrade',target);return registry.settleLifecycle(ctx,'sample',started.revision,started.lifecycle!.operationId,'completed');}};
- const service=new AppVersionService({registry,journal,installJournal:installs,artifactRoot:join(root,'versions'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:async()=>host});
+ let approvals=0;
+ const service=new AppVersionService({afterUpdate:async(context,appId)=>{approvals++;assert.equal((await registry.get(context,appId)).enabled,false);},registry,journal,installJournal:installs,artifactRoot:join(root,'versions'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:async()=>host});
  const input={...two,appId:'sample',revision:initial.revision,requestId:'upgrade-request-0001'};
  const done=await service.update(ctx,input);assert.equal(done.state,'updated');assert.equal((await registry.get(ctx,'sample')).enabled,false);
- assert.deepEqual(await service.update(ctx,input),done);assert.equal(calls,1);
+ assert.deepEqual(await service.update(ctx,input),done);assert.equal(calls,1);assert.equal(approvals,1);
  const current=await registry.get(ctx,'sample');
  await writeFile(join(three.directory,'entry.js'),'tampered');await assert.rejects(service.update(ctx,{...three,appId:'sample',revision:current.revision,requestId:'upgrade-tampered-01'}));assert.equal(calls,1);await writeFile(join(three.directory,'entry.js'),three.bytes);
  fail=true;await assert.rejects(service.update(ctx,{...three,appId:'sample',revision:current.revision,requestId:'upgrade-unknown-01'}),/RECOVERY_REQUIRED/);assert.equal(calls,2);

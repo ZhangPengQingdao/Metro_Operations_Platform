@@ -1,0 +1,6 @@
+import type {MigrationDefinition} from '../../core/migrations/index.js';
+export const appMembershipMigration:MigrationDefinition={id:'app-single-role-membership-expand',title:'Default member role and exclusive role assignments',ownerTaskId:'PLATFORM-L4-022',phase:'expand',layer:'L4',dataRows:[],migrationRows:['MIG-074'],sourceTables:[],targetTables:['platform_app_authorization','platform_app_member_roles'],dependsOn:['app-audience-delegation-expand'],recoveryNotes:'Existing permissions remain unchanged until the owner explicitly saves the new membership configuration. Conflicting legacy assignments block activation.',async run({client}){await client.query(`
+ ALTER TABLE platform_app_authorization ADD COLUMN default_role_id uuid;
+ ALTER TABLE platform_app_authorization ADD CONSTRAINT app_default_role_fk FOREIGN KEY(installation_id,default_role_id) REFERENCES platform_app_business_roles(installation_id,id);
+ CREATE TABLE platform_app_member_roles(installation_id uuid NOT NULL,person_id uuid NOT NULL REFERENCES platform_people(id),role_id uuid NOT NULL,PRIMARY KEY(installation_id,person_id),FOREIGN KEY(installation_id,role_id) REFERENCES platform_app_business_roles(installation_id,id));
+ `);}};

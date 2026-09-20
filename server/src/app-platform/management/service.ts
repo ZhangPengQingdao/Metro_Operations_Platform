@@ -1,3 +1,4 @@
+import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from './platform-grants.js';
 import {previewVerifiedPackage} from './preview.js';
 import {AppApprovalStore} from './approvals.js';
 import {AppMigrationLedger} from '../storage/migration-ledger.js';
@@ -62,8 +63,19 @@ export async function createAppManagement(configFile:string,origin:string){
   return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&(await approvals.current()).approvedManifestDigests.includes(manifestApprovalDigest(manifest));
  };
  const loadPolicy=async()=>(await approvals.current()).policy;
- const installer=new AppInstaller({registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
- const versions=new AppVersionService({registry,journal:versionJournal,installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:appId=>runtime.getHost(appId)});
+ async function applyApprovedCapabilities(context:PlatformManagementContext,appId:string){
+  const record=await registry.get(context,appId),digest=manifestApprovalDigest(record.manifest);
+  const approval=await approvals.current();
+  // Older approvals never acquire new grants implicitly. This runs only once per install/update attempt.
+  if(!approval.approvedManifestDigests.includes(digest)||!approval.capabilityApprovalDigests?.includes(digest))return;
+  if(!requestedPlatformCapabilities(record.manifest).length)return;
+  if(record.manifest.backend.mode!=='none'&&!record.serviceIdentityId)await (await runtime.getHost(appId)).prepareCredential(context,record.revision);
+  const fresh=await approvals.current();
+  if(fresh.revision!==approval.revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
+  await approveInstalledPlatformGrants(registry,context,appId);
+ }
+ const installer=new AppInstaller({beforeInstall:(context,record)=>applyApprovedCapabilities(context,record.appId),registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
+ const versions=new AppVersionService({afterUpdate:applyApprovedCapabilities,registry,journal:versionJournal,installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:appId=>runtime.getHost(appId)});
  async function assertRuntimeApproval(context:PlatformManagementContext|undefined,appId:string){
   const current=context?await registry.get(context,appId):await registry.runtimeSnapshot(appId),binding=await installJournal.get(appId);
   if(!binding||!['installed','recovered'].includes(binding.state))throw new AppManagementError('INSTALL_RECOVERY_REQUIRED');
@@ -91,11 +103,12 @@ export async function createAppManagement(configFile:string,origin:string){
   approvalPolicy:(context:PlatformManagementContext)=>approvals.get(context),
   savePublisherPolicy:(context:PlatformManagementContext,revision:number,keys:Parameters<AppApprovalStore['save']>[2]['keys'])=>queue.run(()=>approvals.save(context,revision,{keys})),
   previewPackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>queue.run(()=>preview(context,input)),
-  approvePackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string},revision:number,digest:string)=>queue.run(async()=>{
+  approvePackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string},revision:number,digest:string,platformCapabilities=false)=>queue.run(async()=>{
    const result=await preview(context,input);
    if(result.digest!==digest||result.policyRevision!==revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
    if(!result.supported||!result.compatible)throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
-   return approvals.save(context,revision,{approval:{digest,approved:true}});
+   if(platformCapabilities)requestedPlatformCapabilities(result.manifest);
+   return approvals.save(context,revision,{approval:{digest,approved:true,platformCapabilities}});
   }),
   revokeApproval:(context:PlatformManagementContext,revision:number,digest:string)=>queue.run(()=>approvals.save(context,revision,{approval:{digest,approved:false}})),
   async employeeApps(resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){

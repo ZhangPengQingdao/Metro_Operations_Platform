@@ -60,3 +60,4 @@ export { SearchField } from './SearchField';
 export {DataList,TableActions,ListPagination,type DataListProps,type ListPaginationProps} from './DataList';
 
 export {OrganizationPicker,organizationPath,type OrganizationOption,type OrganizationPickerProps} from './OrganizationPicker';
+export {OrganizationPeoplePicker,type OrganizationPeoplePickerProps,type PickerOrganization,type PickerPerson} from './OrganizationPeoplePicker';

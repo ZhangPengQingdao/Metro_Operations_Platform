@@ -8,6 +8,8 @@ import { validateAppDirectory } from '../developer/package.js';
 import { verifyAppWithPublisherPolicy } from '../developer/publisher-policy.js';
 import { InstallError, type InstallJournal, type InstallRecord, type InstallState } from './journal.js';
 export interface AppInstallerOptions {
+ /** Configure explicitly approved platform grants while the installation is still disabled. */
+ beforeInstall?(context:PlatformManagementContext,record:InstallRecord):Promise<void>;
  registry:AppRegistryService; journal:InstallJournal; artifactRoot:string;
  loadPublisherPolicy():Promise<unknown>;
  /** Native platform policy: separately approve UI trust, network/runtime and resources. No grants implied. */
@@ -50,6 +52,7 @@ export class AppInstaller {
    const verified=await verifyAppWithPublisherPolicy(input.directory,input.signatureFile,this.options.loadPublisherPolicy);
    if(verified.manifestSha256!==prepared.signatureManifestSha256||verified.policySha256!==prepared.publisherPolicySha256||!await this.options.approve(context,prepared.manifest))throw new InstallError('INSTALL_ADMISSION_CHANGED');
    const host=await this.options.getHost(running);
+   await this.options.beforeInstall?.(context,running);
    const current=await this.options.registry.get(context,record.appId);
    if(current.id!==record.installationId)throw new InstallError('INSTALL_IDENTITY_CHANGED');
    const installed=await host.execute(context,{revision:current.revision,action:'install'});

@@ -1,3 +1,4 @@
+import {registerAppSubmissionRoutes} from './app-platform/submissions/routes.js';
 import {registerRegistrationRoutes} from './platform/employee-identity/registration.js';
 import {AppBusinessAuthorization} from './app-platform/business-authorization/service.js';
 import {registerUnifiedLogin} from './platform/employee-identity/unified-login.js';
@@ -34,6 +35,7 @@ export async function buildApp(){
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
  registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
  const employeeIdentity=new EmployeeIdentityService(pool);
+ registerAppSubmissionRoutes(app,{pool,origin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
  await registerRegistrationRoutes(app,{origin,pool,resolveAdmin:resolveContext});
  registerUnifiedLogin(app,{origin,pool,admin:identity,employee:employeeIdentity});
  registerEmployeeRoutes(app,{origin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});

@@ -182,8 +182,14 @@ test('lifecycle recovery after definitive create rejection stays disabled withou
   host=new AppLifecycleHost({...f.options,registry:p.registry,gateway:new AppGateway({registry:p.registry,contextResolver:p.resolver,operations:[]}),readArtifact:async()=>source,
    docker:{socketPath:'/unused.sock',runtimeImage:`node@sha256:${'a'.repeat(64)}`,approval:{imageId:`sha256:${'b'.repeat(64)}`,config:{}},executor,journal}});
   let r=await p.registry.register(p.admin,m);
-  await assert.rejects(host.execute(p.admin,{revision:r.revision,action:'install'}));
-  r=await p.registry.get(p.admin,m.id);assert.equal(r.enabled,false);assert.equal((await journal.latest(r.id))!.status,'rejected');
+  // Simulate a fresh host after the previously approved credential was lost from memory.
+  r=(await p.registry.issueServiceCredential(p.admin,r.appId,r.revision)).installation;
+  r=await p.registry.approveGrant(p.admin,r.appId,r.revision,{mode:'service',permissionCode,scope:{kind:'all',targets:[]},serviceIdentityId:r.serviceIdentityId!});
+  const identity=r.serviceIdentityId,grants=structuredClone(r.grants);
+  await assert.rejects(host.execute(p.admin,{revision:r.revision,action:'install'}),/LIFECYCLE_RECOVERY_REQUIRED/);
+  r=await p.registry.get(p.admin,m.id);
+  assert.equal(r.serviceIdentityId,identity);assert.deepEqual(r.grants,grants);
+  assert.equal(creates,1);assert.equal(r.enabled,false);assert.equal((await journal.latest(r.id))!.status,'rejected');
   r=await host.recover(p.admin,r.revision);assert.equal(r.enabled,false);assert.equal(r.lifecycle!.status,'cancelled');assert.equal(creates,1);
  }finally{await host?.close();await db.close();await f.close();}
 });

@@ -145,7 +145,7 @@
 .afc-profile-layout { display:grid; grid-template-columns:164px minmax(0,1fr); gap:0; min-height:440px; }
 .afc-profile-nav { display:flex; flex-direction:column; gap:6px; border-right:1px solid var(--afc-border); padding:70px 12px 24px; }
 .afc-profile-nav .afc-button { justify-content:flex-start; white-space:nowrap; padding-inline:12px; border-radius:10px; min-height:42px; }
-.afc-profile-nav [aria-current="page"] { background:var(--afc-hover); color:var(--afc-ink); }
+.afc-profile-nav .afc-button[aria-current="page"] { background:var(--afc-color-primary-soft); color:var(--afc-color-ink); }
 .afc-profile-content { min-width:0; padding:22px 24px 24px; background:var(--afc-page); }
 .afc-profile-section-title { font-size:16px; font-weight:600; min-height:24px; margin:0 40px 26px 0; }
 .afc-profile-content .afc-details { grid-template-columns:64px minmax(0,1fr); gap:12px; }
@@ -160,6 +160,9 @@
  .afc-profile-layout { grid-template-columns:minmax(0,1fr); }
  .afc-profile-nav { flex-direction:row; border-right:0; border-bottom:1px solid var(--afc-border); padding:66px 14px 12px; }
  .afc-profile-content { padding:20px 14px; }
+ .afc-sidebar-dialog .afc-profile-nav { overflow-x:auto; }
+ .afc-sidebar-dialog .afc-profile-nav .afc-button { flex-shrink:0; }
+ .afc-sidebar-dialog .afc-profile-layout { grid-template-rows:auto minmax(0,1fr); }
 }
 
 .app-business-role-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
@@ -204,3 +207,41 @@
 .employee-app-management .afc-profile-nav{padding:24px 16px;}
 .employee-app-management .afc-profile-nav button{width:100%;justify-content:flex-start;margin-bottom:6px;}
 @media (max-width:720px){.employee-app-management-actions{flex-wrap:wrap}.employee-app-management .afc-profile-content{padding:20px}}
+.app-choice-list{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto;}
+.app-choice-list>label{display:flex;flex-direction:row;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;cursor:pointer;}
+.app-choice-list>label:hover{background:var(--afc-hover);}
+.app-choice-list input{width:16px;height:16px;flex:none;accent-color:currentColor;}
+.app-business-rule-chip{background:var(--afc-hover);}
+.employee-app-management .afc-dialog:not(.afc-sidebar-dialog) .afc-dialog__body{padding:24px;}
+
+.employee-app-management .afc-profile-content h2{font-size:18px;margin:0 40px 24px 0;}
+.employee-app-management .admin-actions:has([aria-pressed]){flex-wrap:wrap;}
+.employee-app-management [aria-pressed="true"]{background:var(--afc-hover);}
+.afc-admin .admin-form .app-choice-list>label{display:flex;flex-direction:row;align-items:center;gap:12px;}
+.employee-app-management .afc-profile-content>.admin-actions{margin:0 40px 20px 0;}
+.employee-app-management .afc-profile-content .admin-heading{padding-right:44px;}
+
+.app-members-all{display:flex;align-items:center;gap:10px;margin:16px 0;}
+.app-role-content h2{font-size:18px;margin:0 44px 24px 0;}
+.app-role-content .admin-heading{padding-right:40px;}
+.app-role-content .admin-actions{margin-bottom:20px;flex-wrap:wrap;}
+.app-role-content .afc-people-picker{grid-template-columns:160px minmax(0,1fr);gap:16px;}
+@media(max-width:640px){.app-role-content .afc-people-picker{grid-template-columns:1fr}}
+.app-role-content .admin-actions>.afc-select-wrap{width:180px;flex:0 0 180px;}
+
+/* Platform updates: keep status, progress and actions readable on narrow screens. */
+.system-updates{max-width:960px;}
+.system-update-heading,.system-update-available{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.afc-admin .system-update-heading h2{margin:0;}
+.system-update-version{font-size:30px;font-weight:600;margin:8px 0;}
+.system-update-available{border-top:1px solid var(--afc-border);margin-top:20px;padding-top:20px;}
+.system-update-progress{margin-top:24px;}
+.system-update-progress>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.system-update-progress progress{display:block;width:100%;height:12px;margin-top:12px;accent-color:var(--afc-ink);border:0;border-radius:999px;overflow:hidden;}
+.system-update-progress progress::-webkit-progress-bar{background:var(--afc-sidebar);border-radius:999px;}
+.system-update-progress progress::-webkit-progress-value{background:var(--afc-ink);border-radius:999px;}
+.system-update-progress progress::-moz-progress-bar{background:var(--afc-ink);border-radius:999px;}
+.system-update-error{margin-top:20px;padding:16px;border:1px solid var(--afc-border);border-radius:10px;background:var(--afc-sidebar);overflow-wrap:anywhere;}
+.system-update-task{font-size:12px;margin-top:24px;overflow-wrap:anywhere;}
+.system-updates .admin-actions{align-items:center;}
+@media(max-width:560px){.system-update-heading,.system-update-available{align-items:flex-start;}.system-update-available>.afc-button{width:100%;}}

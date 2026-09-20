@@ -44,11 +44,11 @@ test('storage URL contract pins endpoint and TLS without ambient connection para
 });
 
 function preflight(){
- const state={ends:0,connections:0,admin:true,apiSuper:false,apiCreate:false,membership:false,missing:false,unsafe:false,connectFail:false,closeFail:false};
+ const state={ends:0,connections:0,admin:true,adminCreate:false,adminDbCreate:false,apiSuper:false,apiCreate:false,membership:false,missing:false,unsafe:false,connectFail:false,closeFail:false};
  const queries:string[]=[];
  const client={connect:async()=>{state.connections++;if(state.connectFail)throw Error('private connection secret');},end:async()=>{state.ends++;if(state.closeFail)throw Error('private close secret');},on:()=>{},
   query:async(sql:string)=>{queries.push(sql);
-   if(sql.includes('r.rolsuper'))return {rows:[{session_user:'storage',current_user:'storage',database:'isolated',rolsuper:state.admin}]};
+   if(sql.includes('r.rolsuper'))return {rows:[{session_user:'storage',current_user:'storage',database:'isolated',rolsuper:state.admin,rolcreaterole:state.adminCreate,has_database_create:state.adminDbCreate}]};
    if(sql.includes('unnest'))return {rows:state.missing?[{name:'missing'}]:[]};
    if(sql.includes('pg_database'))return {rows:state.unsafe?[{}]:[]};
    return {rows:[]};
@@ -62,6 +62,15 @@ function preflight(){
 test('storage preflight is read-only and closes its distinct management session',async()=>{
  const f=preflight();assert.ok(await f.run());assert.equal(f.state.ends,1);
  assert.ok(f.queries.length>5);assert.ok(f.queries.every(sql=>sql.startsWith('SELECT')));
+});
+
+test('storage preflight admits least-privilege non-superuser DDL role',async()=>{
+ const f=preflight();
+ f.state.admin=false;
+ f.state.adminCreate=true;
+ f.state.adminDbCreate=true;
+ assert.ok(await f.run());
+ assert.equal(f.state.ends,1);
 });
 
 test('storage preflight fails closed on identity, migrations and ACL prerequisites',async()=>{

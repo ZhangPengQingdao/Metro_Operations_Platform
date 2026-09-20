@@ -12,10 +12,10 @@ const SECTIONS:{id:Section;label:string;icon:ReactNode}[]=[
 ];
 export function PublisherPolicyDialog({onClose}:{onClose:()=>void}){
  const [section,setSection]=useState<Section>('keys');
- const [data,setData]=useState<Policy|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[serial,setSerial]=useState(0);
+ const [data,setData]=useState<Policy|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [formOpen,setFormOpen]=useState(false);
  const [publisher,setPublisher]=useState(''),[keyId,setKeyId]=useState(''),[pem,setPem]=useState(''),[apps,setApps]=useState(''),[until,setUntil]=useState('');
- useEffect(()=>{const c=new AbortController();setData(null);adminRequest<Policy>('/publisher-policy',{signal:c.signal}).then(v=>{if(!c.signal.aborted)setData(v);}).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[serial]);
+ useEffect(()=>{const c=new AbortController();setData(null);adminRequest<Policy>('/publisher-policy',{signal:c.signal}).then(v=>{if(!c.signal.aborted)setData(v);}).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[]);
  async function save(keys:Key[]):Promise<boolean>{if(!data||busy)return false;setBusy(true);setError('');try{setData(await adminRequest<Policy>('/publisher-policy',{method:'PUT',body:{revision:data.revision,keys}}));setPem('');return true;}catch(e){setData(null);setError(e instanceof Error?e.message:'操作未确认，请刷新核对');return false;}finally{setBusy(false);}}
  async function revoke(digest:string){if(!data||busy)return;setBusy(true);setError('');try{setData(await adminRequest<Policy>('/version-approval/revoke',{method:'POST',body:{revision:data.revision,digest}}));}catch(e){setData(null);setError(e instanceof Error?e.message:'操作未确认');}finally{setBusy(false);}}
  async function submit(event:React.FormEvent){event.preventDefault();if(!data)return;
@@ -32,7 +32,7 @@ export function PublisherPolicyDialog({onClose}:{onClose:()=>void}){
     {error&&<p role="alert" className="afc-error">{error}</p>}
     <div hidden={section!=='keys'}>
      <div className="app-toolbar-actions" style={{marginBottom:12}}>
-      <Button size="sm" variant="secondary" disabled={busy} onClick={()=>{setError('');setSerial(v=>v+1);}}>刷新</Button>
+
       <Button size="sm" variant="secondary" leadingIcon={<Plus size={16}/>} disabled={busy} onClick={()=>setFormOpen(value=>!value)}>{formOpen?'收起表单':'新增公钥'}</Button>
      </div>
      {data&&<DataList><thead><tr><th>发布者 / 密钥</th><th>应用范围</th><th>有效期</th><th>操作</th></tr></thead><tbody>{data.policy.keys.map((k,i)=><tr key={`${k.publisherId}/${k.keyId}`}><td>{k.publisherId} / {k.keyId}{k.revoked?'（已撤销）':''}</td><td>{k.appIds.join('、')}</td><td>{k.validUntil}</td><td><TableActionButton icon={k.revoked?<ShieldCheck size={18}/>:<ShieldSlash size={18}/>} disabled={busy} onClick={()=>void save(data.policy.keys.map((v,index)=>index===i?{...v,revoked:!v.revoked}:v))}>{k.revoked?'恢复信任':'撤销信任'}</TableActionButton></td></tr>)}</tbody></DataList>}

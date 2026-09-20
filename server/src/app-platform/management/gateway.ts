@@ -11,6 +11,7 @@ import type {AppGatewayOperation} from '../gateway/model.js';
 import {AppGateway} from '../gateway/gateway.js';
 import {createPeopleDirectoryOperation} from '../gateway/people-directory.js';
 import {createLocationListReader} from '../gateway/location-list.js';
+import {createAssetListReader} from '../gateway/asset-list.js';
 import {createDirectoryGatewayOperations} from '../gateway/directory.js';
 
 /** Runtime requests never borrow the lifecycle manager's transaction session. */
@@ -37,7 +38,7 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
  const {contextResolver,authenticateServiceCredential}=createManagementContexts(pool);
  return new AppGateway({registry:{authenticateServiceCredential},contextResolver,
   auditRepository:createPostgresCoreTechnicalAuditRepository(pool),
-  operations:[createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations]});
+  operations:[createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations]});
 }
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){

@@ -15,3 +15,4 @@ export * from './lifecycle-host.js';
 export * from './lifecycle-management.js';
 export * from './work-journal.js';
 export * from './lifecycle-routes.js';
+export * from './docker-broker.js';

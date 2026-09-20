@@ -14,7 +14,7 @@ export function AiSettings(){
    if(action==='test'){const next=await adminRequest<{latency_ms:number}>('/ai/test',{method:'POST',body});setStatus(`连接正常 · ${next.latency_ms} ms`);}
   }catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy('');}
  }
- return <section><div className="admin-heading"><h2>大模型接入</h2><span className="admin-status">OpenAI 兼容</span></div><form autoComplete="off" className="admin-form" onSubmit={e=>{e.preventDefault();void run('save');}}>
+ return <section><form autoComplete="off" className="admin-form" onSubmit={e=>{e.preventDefault();void run('save');}}>
   <label>服务地址<Input required name="ai-provider-endpoint" autoComplete="off" type="url" placeholder="https://api.example.com/v1" maxLength={500} value={endpoint} onChange={e=>{setEndpoint(e.target.value);setModels([]);setStatus('');}} disabled={!!busy}/></label>
   <label>API Key<Input name="ai-provider-key" type="password" autoComplete="new-password" placeholder={config?.external.has_api_key?'已保存 · 留空保留':'请输入 API Key'} value={apiKey} onChange={e=>setKey(e.target.value)} disabled={!!busy}/></label>
   <label>模型<Input required list="admin-ai-models" placeholder="模型 ID" value={model} onChange={e=>setModel(e.target.value)} disabled={!!busy}/><datalist id="admin-ai-models">{models.map(id=><option value={id} key={id}/>)}</datalist></label>

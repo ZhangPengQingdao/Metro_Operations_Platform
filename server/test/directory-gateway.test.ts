@@ -38,3 +38,44 @@ test('directory parameters reject scope spoofing and missing records before exec
  const [operation]=createDirectoryGatewayOperations({locations:{findLocationById:async()=>null},assets:{findAssetById:async()=>null}});
  await assert.rejects(operation.resolveResources({} as PlatformActorContext,{id:one}),/ACCESS_DENIED/);
 });
+
+test('platform.assets.list validates params, checks scopes, paginates and rejects unauthorized row targets',async()=>{
+ const listAssets=async(p:{afterId?:string;pageSize:number;organizationUnitId?:string})=>{
+  const all=[
+   {id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,lifecycleState:'active',organizationUnitId:p.organizationUnitId??one},
+   {id:'52000000-0000-4000-8000-000000000005',displayName:'Asset 2',assetCode:'A2',locationId:two,typeId,lifecycleState:'active',organizationUnitId:p.organizationUnitId??one}
+  ];
+  return all.filter(r=>!p.afterId||r.id>p.afterId).slice(0,p.pageSize+1);
+ };
+ const operations=createDirectoryGatewayOperations({
+  locations:{findLocationById:async id=>({id,code:'station',name:'Station',organizationUnitId:null,locationType:'station',status:'active'} as unknown as Location)},
+  assets:{findAssetById:async()=>null},
+  listAssets
+ });
+ const authorize=async(_permission:string,resource?:{targets?:readonly {id:string}[]})=>({
+  allowed:!resource?.targets?.some(t=>t.id===two)
+ });
+ const contextResolver={resolve:async()=>({actorType:'person',person:{id:one},execution:{type:'application',appId:'reader'},authorize})} as unknown as Pick<PlatformActorContextResolver,'resolve'>;
+ const gateway=new AppGateway({registry:{authenticateServiceCredential:async()=>{throw Error('not used');}},contextResolver,operations});
+
+ // 1. Param validation
+ for(const invalid of [{pageSize:0},{pageSize:51},{afterId:'not-a-uuid'},{search:'a'.repeat(101)},{lifecycleState:'invalid'},{unknown:true}]) {
+  await assert.rejects(gateway.invokeDelegated('reader',{source:'session',userId:one},{version:'1.0',operation:'platform.assets.list',params:invalid}),/INVALID_PARAMS/);
+ }
+
+ // 2. Keyset pagination with page size 1
+ const page1=await gateway.invokeDelegated('reader',{source:'session',userId:one},{version:'1.0',operation:'platform.assets.list',params:{pageSize:1}});
+ assert.equal((page1.result as {rows:unknown[]}).rows.length,1);
+ assert.equal((page1.result as {nextCursor:string}).nextCursor,assetId);
+
+ // 3. Next page returns second asset, which has locationId=two (unauthorized target) -> ACCESS_DENIED
+ await assert.rejects(gateway.invokeDelegated('reader',{source:'session',userId:one},{version:'1.0',operation:'platform.assets.list',params:{pageSize:1,afterId:assetId}}),/ACCESS_DENIED/);
+
+ // 4. Provider returning mismatched organizationUnitId throws INVALID_RESULT (502)
+ const badProviderOps=createDirectoryGatewayOperations({
+  locations:{findLocationById:async()=>null},assets:{findAssetById:async()=>null},
+  listAssets:async()=>[{id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,lifecycleState:'active',organizationUnitId:two}]
+ });
+ const badGateway=new AppGateway({registry:{authenticateServiceCredential:async()=>{throw Error('not used');}},contextResolver:{resolve:async()=>({actorType:'person',person:{id:one},execution:{type:'application',appId:'reader'},authorize:async()=>({allowed:true})})} as unknown as Pick<PlatformActorContextResolver,'resolve'>,operations:badProviderOps});
+ await assert.rejects(badGateway.invokeDelegated('reader',{source:'session',userId:one},{version:'1.0',operation:'platform.assets.list',params:{organizationUnitId:one}}),/INVALID_RESULT/);
+});

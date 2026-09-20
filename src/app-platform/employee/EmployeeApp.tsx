@@ -1,4 +1,4 @@
-import {BusinessAuthorization} from './BusinessAuthorization';
+import {ManagedApplications,type ManagedApplication} from './ManagedApplications';
 import {ProfileSections} from '../identity/ProfileSections';
 import {createEmployeeApiBridge,type EmployeeApiRoute} from './api-bridge';
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
@@ -28,8 +28,8 @@ function EmployeeApplication({account,path,onNavigation}:{account:Account;path:s
  const operations=useMemo(()=>{
   const invoke=async(endpoint:string,body:unknown,signal:AbortSignal)=>{try{const response=await employeeRequest<{result:SandboxJson}>(`/apps/${appId}/${endpoint}`,{method:'POST',body,signal,admissionKey:current?.admissionKey});return response.result;}catch(e){if(e instanceof EmployeeRequestError&&(e.status===401||e.status===403)){setCurrent(null);setError(e.message);}throw e;}};
   const routes=createEmployeeApiBridge(current?.api??[],(request,signal)=>invoke('api',request,signal));
-  for(const operation of ['platform.locations.get','platform.assets.get','platform.locations.list'])routes.set(operation,{
-   validate:(params:SandboxJson)=>operation==='platform.locations.list'||!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===1&&typeof (params as {id?:unknown}).id==='string',
+  for(const operation of ['platform.locations.get','platform.assets.get','platform.locations.list','platform.assets.list'])routes.set(operation,{
+   validate:(params:SandboxJson)=>operation==='platform.locations.list'||operation==='platform.assets.list'||!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===1&&typeof (params as {id?:unknown}).id==='string',
    authorize:async()=>true,
    execute:(params,signal)=>invoke('gateway',{version:'1.0',operation,params},signal),
   });
@@ -39,7 +39,7 @@ function EmployeeApplication({account,path,onNavigation}:{account:Account;path:s
  return <section className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled title={current.name}/>:<p role="status">正在加载应用…</p>}</section>;
 }
 export default function EmployeeApp(){
- const [owned,setOwned]=useState<{appId:string;name:string}[]>([]);
+ const [owned,setOwned]=useState<ManagedApplication[]>([]);
  const [menus,setMenus]=useState<Record<string,string[]>>({});
  const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
  const {pathname}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
@@ -52,7 +52,7 @@ export default function EmployeeApp(){
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={<EmployeeProfile/>} notificationsContent={<EmployeeMessages/>}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
- {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<BusinessAuthorization key={pathname} appId={pathname.split('/')[3]!}/>:pathname==='/employee/apps'?<><div className="admin-heading"><h1>应用管理</h1></div><div className="employee-app-list">{owned.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/apps/${app.appId}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><strong>{app.name}</strong><span aria-hidden>→</span></Link>)}</div>{!owned.length&&<p className="afc-empty">暂无负责的应用</p>}</>:pathname.startsWith('/employee/app/')?<EmployeeApplication key={`${account.id}:${pathname}`} account={account} path={pathname} onNavigation={onNavigation}/>:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
+ {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname.startsWith('/employee/app/')?<EmployeeApplication key={`${account.id}:${pathname}`} account={account} path={pathname} onNavigation={onNavigation}/>:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
  </AdminShell>;
 }
 function EmployeeProfile(){

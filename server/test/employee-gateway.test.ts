@@ -31,8 +31,14 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   for(const [id,code]of [[place,'station-one'],[otherPlace,'station-two']])await pg.query("INSERT INTO platform_locations(id,code,name,location_type,status,created_at,updated_at) VALUES($1,$2,$2,'station','active',now(),now())",[id,code]);
   const people=createPostgresPeopleDirectoryRepository(db),authorization=createAuthorizationService(createPostgresAuthorizationRepository(db),{findPerson:id=>people.findPersonById(id)});
   const registry=new AppRegistryService(new PostgresAppRegistryRepository(db),{authorization,host:()=>({platformVersion:'0.1.0',capabilities:[],applications:[]})});
-  const manifest:AppManifest={manifestVersion:'1.0',id:'directory-reader',version:'1.0.0',name:'Reader',description:'Test',publisherId:'test',compatibility:{platform:{minInclusive:'0.0.1',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:['platform.locations.read'],defined:[]},ui:{mode:'none'},backend:{mode:'none'},storage:{mode:'none'},routes:[],api:[],navigation:[],events:{publish:[],subscribe:[]},tools:[],jobs:[],resources:[],artifacts:[],network:{frontendOrigins:[],backendOrigins:[]}};
+  const manifest:AppManifest={manifestVersion:'1.0',id:'directory-reader',version:'1.0.0',name:'Reader',description:'Test',publisherId:'test',compatibility:{platform:{minInclusive:'0.0.1',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:['platform.locations.read','platform.assets.read'],defined:[]},ui:{mode:'none'},backend:{mode:'none'},storage:{mode:'none'},routes:[],api:[],navigation:[],events:{publish:[],subscribe:[]},tools:[],jobs:[],resources:[],artifacts:[],network:{frontendOrigins:[],backendOrigins:[]}};
   let installation=await registry.register(actor,manifest);installation=await registry.setEnabled(actor,manifest.id,installation.revision,true);
+  const assetSys='51000000-0000-4000-8000-000000000010',assetCat='51000000-0000-4000-8000-000000000011',assetTyp='51000000-0000-4000-8000-000000000012',assetOne='51000000-0000-4000-8000-000000000013',assetTwo='51000000-0000-4000-8000-000000000014';
+  await pg.query("INSERT INTO platform_asset_systems(id,code,name,status,created_at,updated_at) VALUES($1,'sys','Sys','active',now(),now())",[assetSys]);
+  await pg.query("INSERT INTO platform_asset_categories(id,system_id,code,name,status,created_at,updated_at) VALUES($1,$2,'cat','Cat','active',now(),now())",[assetCat,assetSys]);
+  await pg.query("INSERT INTO platform_asset_types(id,system_id,category_id,code,name,status,created_at,updated_at) VALUES($1,$2,$3,'typ','Typ','active',now(),now())",[assetTyp,assetSys,assetCat]);
+  await pg.query("INSERT INTO platform_assets(id,system_id,category_id,type_id,location_id,display_name,asset_code,lifecycle_state,data_quality_status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'Device 1','D1','active','verified',now(),now())",[assetOne,assetSys,assetCat,assetTyp,place]);
+  await pg.query("INSERT INTO platform_assets(id,system_id,category_id,type_id,location_id,display_name,asset_code,lifecycle_state,data_quality_status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'Device 2','D2','active','verified',now(),now())",[assetTwo,assetSys,assetCat,assetTyp,otherPlace]);
   const service=new EmployeeIdentityService(pool),account=await service.create(actor,{personId:person,username:'employee',password:'employee-test-password'});
   const access=new EmployeeAppAccess(pool);
   const denied={...actor,authorize:async(code:string)=>({...await actor.authorize(code,{}),allowed:false})};
@@ -101,6 +107,17 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   assert.equal((await call({...listRequest,params:{organizationUnitId:otherPlace}})).statusCode,403);
   assert.equal((await call(listRequest)).statusCode,403);
   await pg.query('UPDATE platform_locations SET organization_unit_id=NULL WHERE id=$1',[place]);
+
+  const assetPerm=(await authorization.listPermissions()).find(p=>p.code==='platform.assets.read')!;
+  installation=await registry.approveGrant(actor,manifest.id,installation.revision,{mode:'delegated_user',permissionCode:assetPerm.code,scope:{kind:'all',targets:[]}});
+  await authorization.grantRolePermission({roleId:AUTHORIZATION_ROLE_SEEDS[2].id,permissionId:assetPerm.id,scope:{kind:'all',targets:[]}});
+  const assetListReq={version:'1.0',operation:'platform.assets.list',params:{pageSize:1}};
+  const assetPage1=await call(assetListReq);assert.equal(assetPage1.statusCode,200,assetPage1.body);
+  assert.equal(assetPage1.json().result.rows.length,1);assert.equal(assetPage1.json().result.nextCursor,assetOne);
+  const assetPage2=await call({...assetListReq,params:{pageSize:1,afterId:assetOne}});
+  assert.equal(assetPage2.json().result.rows[0].id,assetTwo);assert.equal(assetPage2.json().result.nextCursor,null);
+  assert.deepEqual(Object.keys(assetPage1.json().result.rows[0]).sort(),['assetCode','displayName','id','lifecycleState','locationId','organizationUnitId','typeId']);
+  assert.deepEqual((await call({...assetListReq,params:{search:'Device 1'}})).json().result.rows.map((r:{id:string})=>r.id),[assetOne]);
 
 
   await authorization.grantRolePermission({roleId:AUTHORIZATION_ROLE_SEEDS[2].id,permissionId:permission.id,scope:{kind:'explicit',targets:[{type:'location',id:place}]}});

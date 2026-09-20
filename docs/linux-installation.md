@@ -80,7 +80,7 @@ sudo systemctl start mop-updater
 
 resume-target 使用平台迁移账本与原子数据库迁移，只执行尚未提交的迁移，并再次核对未完成应用工作。无法验证时继续阻断；不会恢复数据库备份或回退已迁移结构。恢复失败会保留原任务及恢复记录。数据库手工还原、主版本升级、磁盘损坏和跨服务器灾难恢复必须按另行审核的恢复流程执行。
 
-新安装的主机更新器协议为 v2（兼容 v1 清单）；本版网页不自动更新宿主 Python 更新器。未来需要协议升级的包会因 minUpdater 不匹配而拒绝，需要人工更新受信安装器后再继续。
+新安装的主机更新器协议为 v3（兼容 v1/v2 清单）；本版网页不自动更新宿主 Python 更新器。未来需要协议升级的包会因 minUpdater 不匹配而拒绝，需要人工更新受信安装器后再继续。
 
 ## 验证与限制
 
@@ -89,3 +89,20 @@ resume-target 使用平台迁移账本与原子数据库迁移，只执行尚未
 发布密钥 Secret、正式 Release 和真实目标服务器不是源码可自动产生的外部验收结果；完成对应配置和发布前，安装器不会伪造可下载版本。
 
 参考：[Docker Ubuntu 官方安装](https://docs.docker.com/engine/install/ubuntu/)、[GitHub Release 完整性](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/verify-release-integrity)。
+
+## 0.7.2 更新器兼容修复（协议 v3）
+
+Docker 经典存储使用配置摘要作为镜像 ID；containerd 存储可能使用 OCI manifest/index 摘要。旧更新器直接用发行机 ID 查询导入后的镜像，在 Docker 29 containerd 主机上可能出现 `docker image inspect sha256:... No such image`。按裸 ID 导出的旧归档还可能在 OCI 索引中遗漏无标签镜像，不能靠跳过检查或随意改 ID 解决。
+
+新更新器先验签与核对完整归档哈希，再从归档验证配置与 OCI 摘要关系，在临时副本中为所有镜像补齐导入标签和索引，最后核对本机实际镜像 ID、OS 和架构。原始签名资产保持不变，Compose 使用经过核对的本机 ID。数据库是否变化比较归档中的配置摘要，不受 Docker 存储类型影响。发布器为三个镜像分别打发行标签并核对归档身份，清单要求协议 v3，旧更新器会拒绝安装。
+
+管理端显示真实已下载字节、总大小和百分比；文件下载完成后另外显示校验和镜像导入阶段。旧宿主不提供进度字段时显示不定进度条。下载失败不会进入维护或执行数据库迁移；具体以 `task.json` 的 action、phase、failedPhase 为准。
+
+**已有部署需要先人工升级宿主更新器**，仅更新前端/API 无法替换宿主 Python 脚本。使用经审核的 0.7.2 或更新版本仓库副本：
+
+1. 读取 `status`，确认没有运行中的任务；若为 `recovery_required`，先按失败恢复流程核对，不覆盖任务记录。
+2. 备份 `/opt/metro-platform/updater/updater.py`，停止 `mop-updater.service`，将可信仓库的 `deploy/updater.py` 安装到原路径，权限保持 root 所有且普通用户不可写，再启动服务。
+3. 核对服务日志和状态；对于下载阶段已明确失败的任务，可在管理端重新下载目标版本。保留原发行包、公钥、数据库和历史任务，不修改已发布资产、不重跑首次安装器。
+4. 下载就绪后，由管理员确认备份并安装。宿主更新器升级不等于授权执行数据库迁移。
+
+导入临时副本需要额外约一个镜像包大小的磁盘空间。初次安装器当前仍限定 Ubuntu 24.04；本修复定位的是 Docker 镜像兼容性，不代表已完成 Ubuntu 22.04 全套安装与恢复验收。

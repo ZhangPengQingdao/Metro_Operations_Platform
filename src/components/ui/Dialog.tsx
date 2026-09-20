@@ -15,6 +15,7 @@ export interface DialogProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   closeLabel?: string;
   className?: string;
+  closeOnBackdropClick?: boolean;
 }
 
 export function Dialog({
@@ -28,7 +29,8 @@ export function Dialog({
   footer,
   size = 'md',
   closeLabel = '关闭弹窗',
-  className
+  className,
+  closeOnBackdropClick = true
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -57,6 +59,8 @@ export function Dialog({
       }}
       onClose={onClose}
       onClick={(event) => {
+        if (!closeOnBackdropClick) return;
+        if (event.target !== event.currentTarget) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         const clickedInside = event.clientX >= bounds.left
           && event.clientX <= bounds.right

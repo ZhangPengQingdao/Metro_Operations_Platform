@@ -111,6 +111,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.get<{Params:{appId:string}}>('/apps/:appId/history',async req=>withRegistry(req,(service,context)=>service.listHistory(context,req.params.appId)));
   scoped.post<{Params:{appId:string}}>('/apps/:appId/grants',{bodyLimit:16384},async req=>{
    const body=z.object({revision:z.number().int().positive(),permissionCode:z.string(),mode:z.enum(['delegated_user','service']),serviceIdentityId:z.string().uuid().optional(),scope:z.object({kind:z.enum(['self','organization','organization_tree','responsibility','explicit','all']),targets:z.array(z.object({type:z.enum(['organization','location','asset_type','asset','responsibility_scope']),id:z.string()})).max(128)}).strict()}).strict().parse(req.body);
+   if(!body.permissionCode.startsWith('platform.'))throw new AdminIdentityError(400,'BUSINESS_PERMISSION_MANAGED_BY_APP_OWNER');
    return withRegistry(req,(service,context)=>service.approveGrant(context,req.params.appId,body.revision!,{permissionCode:body.permissionCode!,mode:body.mode!,serviceIdentityId:body.serviceIdentityId,scope:{kind:body.scope!.kind!,targets:body.scope!.targets!.map(t=>({type:t.type!,id:t.id!}))}}));
   });
   scoped.delete<{Params:{appId:string;grantId:string}}>('/apps/:appId/grants/:grantId',{bodyLimit:1024},async req=>{
@@ -207,9 +208,9 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   });
   scoped.post('/install-approve',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
-   const body=z.object({revision:z.number().int().positive(),digest:z.string().regex(/^[a-f0-9]{64}$/),package:z.unknown()}).strict().parse(req.body);
+   const body=z.object({revision:z.number().int().positive(),digest:z.string().regex(/^[a-f0-9]{64}$/),platformCapabilities:z.boolean().default(false),package:z.unknown()}).strict().parse(req.body);
    const context=await createAdministratorContext(req,options.identity);
-   return withInstallUpload(body.package,options.management.uploadRoot,input=>options.management!.approvePackage(context,input,body.revision,body.digest));
+   return withInstallUpload(body.package,options.management.uploadRoot,input=>options.management!.approvePackage(context,input,body.revision,body.digest,body.platformCapabilities));
   });
   scoped.post('/version-approval/revoke',async req=>{
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');

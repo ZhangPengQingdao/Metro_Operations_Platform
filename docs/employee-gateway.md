@@ -45,10 +45,11 @@ Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，
 | `platform.locations.get` | `platform.locations.read` | id、code、name、locationType、status、organizationUnitId |
 | `platform.locations.list` | `platform.locations.read` | organizationUnitId、rows、nextCursor；rows 为位置白名单字段 |
 | `platform.assets.get` | `platform.assets.read` | id、displayName、assetCode、locationId、typeId、lifecycleState、organizationUnitId |
+| `platform.assets.list` | `platform.assets.read` | organizationUnitId、rows、nextCursor；rows 为设备白名单字段 |
 
 按 ID 查询只接受 `{id}`。不存在或无权访问的对象均拒绝；不提供目录批量导出。位置按真实位置/组织授权，设备按真实设备/位置/类型及位置所属组织授权。执行前、执行后和返回快照均做范围检查，防止数据变化导致越权返回。
 
-位置列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, status?}`。页大小默认 20、最多 50；search 为名称和编码的字面子串（最多 100 字符），status 仅 active/inactive。数据库按 UUID 升序有界读取，用返回的 nextCursor 续页；不返回总数。未指定组织时必须具有完整目录授权；指定组织时对该组织做授权并限制 SQL 查询范围，返回每行再次检查真实范围。组织参数是待验证资源，不是授权声明。范围不足时连空页也拒绝；逐对象授权仍用 get 查询。游标不要求记录仍存在，删除游标记录不会回到第一页。
+位置列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, status?}`。设备列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, lifecycleState?, locationId?, typeId?}`。页大小默认 20、最多 50；search 为名称和编码的字面子串（最多 100 字符），status 仅 active/inactive，lifecycleState 为 planned/active/suspended/retired。数据库按 UUID 升序有界读取，用返回的 nextCursor 续页；不返回总数。未指定组织时必须具有完整目录授权；指定组织时对该组织做授权并限制 SQL 查询范围，返回每行再次检查真实范围。组织参数是待验证资源，不是授权声明。范围不足时连空页也拒绝；逐对象授权仍用 get 查询。游标不要求记录仍存在，删除游标记录不会回到第一页。
 
 管理员还需在应用授权页面分配“员工使用范围”；安装或授予目录权限不会自动允许所有员工打开应用。授权使用比较并更新版本，防止管理员覆盖其他人的变更；审计记录应用安装 ID 和员工 ID。
 

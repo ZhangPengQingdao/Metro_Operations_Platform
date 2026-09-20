@@ -15,7 +15,7 @@ test('publisher trust and exact version approval retain history, use CAS, deny i
   const keys=generateKeyPairSync('ed25519'),key={publisherId:'publisher',keyId:'publisher-key',publicKeyPem:keys.publicKey.export({format:'pem',type:'spki'}).toString(),appIds:['inventory'],revoked:false,validFrom:'2020-01-01T00:00:00Z',validUntil:'2099-01-01T00:00:00Z'};
   const store=new AppApprovalStore(pool),digest='a'.repeat(64);
   await store.initialize(async()=>({policyVersion:'1.0',revision:99,keys:[key]}),[digest]);
-  const first=await store.get(context);assert.equal(first.revision,1);assert.equal(first.policy.revision,1);
+  const first=await store.get(context);assert.equal(first.revision,1);assert.equal(first.policy.revision,1);assert.deepEqual(first.capabilityApprovalDigests,[]);
   await store.save(context,1,{approval:{digest,approved:false}});
   await store.initialize(async()=>{throw Error('must not reload seed');},[digest]);assert.deepEqual((await store.current()).approvedManifestDigests,[]);
   await assert.rejects(store.save(context,1,{approval:{digest,approved:true}}),/APPROVAL_STALE_REVISION/);
@@ -29,8 +29,12 @@ test('publisher trust and exact version approval retain history, use CAS, deny i
   assert.equal((await store.current()).revision,3);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM platform_app_approval_history')).rows[0].n,3);
   assert.equal((await db.query("SELECT count(*)::int AS n FROM platform_admin_audit WHERE action LIKE 'app.%'")).rows[0].n,2);
+  await store.save(context,3,{approval:{digest,approved:true,platformCapabilities:true}});
+  assert.deepEqual((await store.current()).capabilityApprovalDigests,[digest]);
+  await store.save(context,4,{approval:{digest,approved:false}});
+  assert.deepEqual((await store.current()).capabilityApprovalDigests,[]);
   // A failed audit cannot leave a committed policy change.
   await db.exec("CREATE FUNCTION public.fail_policy_audit() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'audit unavailable'; END$$; CREATE TRIGGER fail_policy_audit BEFORE INSERT ON platform_admin_audit FOR EACH ROW EXECUTE FUNCTION public.fail_policy_audit()");
-  await assert.rejects(store.save(context,3,{approval:{digest,approved:true}}));assert.equal((await store.current()).revision,3);
+  await assert.rejects(store.save(context,5,{approval:{digest,approved:true,platformCapabilities:true}}));assert.equal((await store.current()).revision,5);
  }finally{await db.close();}
 });
