@@ -137,11 +137,11 @@
 .afc-dialog .admin-form + .admin-form { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--afc-border); }
 
 
-.afc-profile-dialog .afc-dialog__header { position:absolute; inset:0 0 auto; padding:22px 16px 0 20px; pointer-events:none; z-index:1; }
-.afc-profile-dialog .afc-dialog__header button { pointer-events:auto; }
-.afc-profile-dialog .afc-dialog__heading h2 { font-size:16px; color:var(--afc-muted); }
-.afc-profile-dialog .afc-dialog__body { padding:0; }
-.afc-profile-dialog .afc-dialog__body:last-child { padding-bottom:0; }
+.afc-profile-dialog > .afc-dialog__header { position:absolute; inset:0 0 auto; padding:22px 16px 0 20px; pointer-events:none; z-index:1; }
+.afc-profile-dialog > .afc-dialog__header button { pointer-events:auto; }
+.afc-profile-dialog > .afc-dialog__header .afc-dialog__heading h2 { font-size:16px; color:var(--afc-muted); }
+.afc-profile-dialog > .afc-dialog__body { padding:0; }
+.afc-profile-dialog > .afc-dialog__body:last-child { padding-bottom:0; }
 .afc-profile-layout { display:grid; grid-template-columns:164px minmax(0,1fr); gap:0; min-height:440px; }
 .afc-profile-nav { display:flex; flex-direction:column; gap:6px; border-right:1px solid var(--afc-border); padding:70px 12px 24px; }
 .afc-profile-nav .afc-button { justify-content:flex-start; white-space:nowrap; padding-inline:12px; border-radius:10px; min-height:42px; }
@@ -152,7 +152,7 @@
 .afc-profile-actions { display:flex; justify-content:flex-end; padding-top:8px; }
 /* 侧边栏弹窗（发布者与审批、应用授权）：固定高度，切换页签尺寸不变；左导航不滚，右内容独立滚动。 */
 .afc-sidebar-dialog { height:min(600px,86vh); }
-.afc-sidebar-dialog .afc-dialog__body { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+.afc-sidebar-dialog > .afc-dialog__body { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
 .afc-sidebar-dialog .afc-profile-layout { flex:1 1 auto; min-height:0; }
 .afc-sidebar-dialog .afc-profile-nav { overflow:hidden; flex:0 0 auto; }
 .afc-sidebar-dialog .afc-profile-content { overflow-y:auto; min-height:0; }
