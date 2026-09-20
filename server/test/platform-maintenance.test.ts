@@ -36,3 +36,12 @@ test('lost stop acknowledgement is durable and never automatically replayed',asy
 test('enabled but unowned app blocks rather than silently starting on restoration',async()=>{const f=await fixture();try{
  f.serving.clear();await assert.rejects(f.maintenance.prepare(f.task,f.actor),/NOT_SERVING/);assert.equal(f.changes.length,0);
 }finally{await f.close();}});
+
+test('failed snapshot collection belongs to the new task and can be cancelled without lifecycle changes',async()=>{const f=await fixture();try{
+ await f.maintenance.prepare(f.task,f.actor);await f.maintenance.restore(f.task);
+ const next=randomUUID();f.adapter.list=async()=>{throw Error('database unavailable');};
+ await assert.rejects(f.maintenance.prepare(next,f.actor),/database unavailable/);
+ assert.equal(f.maintenance.status()?.taskId,next);assert.equal(f.gated(),true);
+ const restarted=new PlatformMaintenance(f.adapter,f.path);await restarted.initialize();await restarted.restore(next);
+ assert.equal(f.gated(),false);assert.deepEqual(f.changes,['disable:running','enable:running']);
+}finally{await f.close();}});

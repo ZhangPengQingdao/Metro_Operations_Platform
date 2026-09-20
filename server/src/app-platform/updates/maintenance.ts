@@ -34,10 +34,11 @@ export class PlatformMaintenance {
   if(this.active){if(this.snapshot?.taskId!==taskId||this.snapshot.actorId!==actorId)throw Error('MAINTENANCE_TASK_CONFLICT');return this.status();}
   this.busy=true;this.adapter.gate(true);
   try{
+   this.snapshot={format:1,taskId,actorId,phase:'draining',applications:[]};await this.persist();
    const records=await this.adapter.list();
    const applications:MaintenanceEntry[]=[];
    for(const record of records){const status=await this.adapter.status(record.appId);applications.push({appId:record.appId,installationId:record.id,version:record.manifest.version,revision:record.revision,enabled:record.enabled,serving:status.serving,phase:'unchanged'});}
-   this.snapshot={format:1,taskId,actorId,phase:'draining',applications};await this.persist();
+   this.snapshot.applications=applications;await this.persist();
    for(const entry of applications){
     if(!entry.enabled)continue;
     if(!entry.serving)throw Error('ENABLED_APPLICATION_NOT_SERVING: '+entry.appId);

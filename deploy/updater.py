@@ -342,8 +342,10 @@ class Updater:
     for name,limit in [('release.json',65536),('release.sig',64)]:self.github.asset(release,name,directory/name,limit)
     m=verify(directory,self.root/'release-public.pem',v)
     require(version(self.task['fromVersion'])>=version(m['upgradeFromMin']),'UNSUPPORTED_UPGRADE_PATH')
-    require(shutil.disk_usage(self.root).free>m['artifact']['bytes']*3+1024**3,'DISK_SPACE_REQUIRED')
-    if m['format']==2 and self.deployment.config.get('imageTransport','registry')!='archive':
+    layered=m['format']==2 and self.deployment.config.get('imageTransport','registry')!='archive'
+    # Registry transport writes layers directly to Docker; no tar download/extraction reserve.
+    require(shutil.disk_usage(self.root).free>(1024**3 if layered else m['artifact']['bytes']*3+1024**3),'DISK_SPACE_REQUIRED')
+    if layered:
      def report(name,state,done,total):
       with self.guard:self.task={**self.task,'pull':{'image':name,'state':state,'completed':done,'total':total}}
      registry_images(m,report);self.phase('loading');self.deployment.prepare(directory,m);self.phase('downloaded');return

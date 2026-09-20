@@ -258,3 +258,20 @@ class MaintenanceUpdate(unittest.TestCase):
    updater=u.Updater(root,github=object(),deployment=Deployment());updater.task={'id':str(uuid.uuid4()),'version':'0.9.0','fromVersion':'0.8.0','phase':'queued'}
    with patch.object(u,'verify',return_value={'format':2,'images':{'database':'same'},'upgradeFromMin':'0.2.0'}),patch.object(u,'verify_local_release'):updater.work('install','0.9.0')
    self.assertEqual(updater.task['phase'],'recovery_required');self.assertEqual(updater.task['failedPhase'],'draining');self.assertEqual(calls,[])
+
+class LayeredDownload(unittest.TestCase):
+ def test_cached_download_does_not_require_full_archive_space(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);u.atomic(root/'current.json',{'version':'0.8.0'});assets=[]
+   class Github:
+    def release(self,*args):return {}
+    def asset(self,_release,name,*args):assets.append(name)
+   class Deployment:
+    config={}
+    def prepare(self,*args):pass
+   updater=u.Updater(root,github=Github(),deployment=Deployment());updater.task={'id':str(uuid.uuid4()),'version':'0.9.0','fromVersion':'0.8.0','phase':'queued'}
+   manifest={'format':2,'upgradeFromMin':'0.2.0','artifact':{'bytes':900*1024**2}}
+   with patch.object(u,'verify',return_value=manifest),patch.object(u,'registry_images') as pull,patch.object(u.shutil,'disk_usage',return_value=type('Space',(),{'free':2*1024**3})()):
+    updater.work('download','0.9.0')
+   self.assertEqual(updater.task['phase'],'downloaded');pull.assert_called_once()
+   self.assertEqual(assets,['release.json','release.sig'])
