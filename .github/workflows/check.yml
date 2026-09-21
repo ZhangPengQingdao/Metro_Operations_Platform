@@ -33,4 +33,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build --target api -f deploy/Dockerfile -t mop-api:test .
       - run: docker build --target web -f deploy/Dockerfile -t mop-web:test .
-      - run: python3 tests/deployment/docker_smoke.py
+      - run: sudo python3 tests/deployment/docker_smoke.py
