@@ -233,3 +233,18 @@ test('employee ingress lookup does not create runtime hosts and closes with comp
   await runtime.close();assert.equal(runtime.findHost('tool-lending'),undefined);
  }finally{await runtime.close();await f.close();}
 });
+
+test('planned maintenance pauses and restores a real lifecycle host across host recreation',async()=>{
+ const {PlatformMaintenance}=await import('../src/app-platform/updates/maintenance.js');
+ const f=await hostFixture();let blocked=false;let host=new AppLifecycleHost({...f.options,maintenanceBlocked:()=>blocked});
+ try{
+  let record=await f.registry.register(f.admin,manifest());record=await host.execute(f.admin,{revision:record.revision,action:'install'});
+  const task='00000000-0000-4000-8000-000000000011',actor='00000000-0000-4000-8000-000000000012';
+  const adapter={list:async()=>[await f.registry.get(f.admin,record.appId)],status:()=>host.status(f.admin),gate:(value:boolean)=>{blocked=value;},drain:()=>host.drainForMaintenance(),change:(_appId:string,revision:number,action:'enable'|'disable')=>host.execute(f.admin,{revision,action})};
+  const path=join(f.options.artifactRoot,'maintenance.json');const maintenance=new PlatformMaintenance(adapter,path);await maintenance.initialize();
+  await maintenance.prepare(task,actor);assert.equal((await host.status(f.admin)).serving,false);assert.equal(blocked,true);
+  await host.close();host=new AppLifecycleHost({...f.options,maintenanceBlocked:()=>blocked});
+  const restarted=new PlatformMaintenance(adapter,path);await restarted.initialize();await restarted.restore(task);
+  assert.equal((await host.status(f.admin)).serving,true);assert.equal(blocked,false);await host.close();
+ }finally{await f.close();}
+});

@@ -41,6 +41,7 @@ export interface AppLifecycleHostOptions {
   external?: { check(installation: AppInstallation, signal: AbortSignal): Promise<void>; stop(installation: AppInstallation): Promise<void> };
   api?: Pick<HostedAppApiOptions, 'contextResolver' | 'authorize' | 'businessAuthorization'>;
   healthWaitMs?: number;
+  maintenanceBlocked?:()=>boolean;
 }
 export interface AppLifecycleRequest { revision: number; action: AppLifecycleAction; targetManifest?: unknown }
 function fail(code: string): never { throw new AppLifecycleHostError(code); }
@@ -53,6 +54,7 @@ function contributions(record: AppInstallation) { const m=record.manifest; retur
 export class AppLifecycleHost {
   private lease?: AppRuntimeLease;
   private busy = false;
+  private apiCalls = 0;
   private credential?: { identityId: string; value: string };
   private bridge?: AppStdioGatewaySession;
   private extensions?: AppExtensionRuntimeSession;
@@ -66,6 +68,7 @@ export class AppLifecycleHost {
     this.workJournal=new AppRuntimeWorkJournal(options.connectLease);
     this.gatedGateway={
       invokeService:async(...args)=>{
+        if(this.options.maintenanceBlocked?.()&&this.apiCalls===0)throw new GatewayError('ACCESS_DENIED',503);
         if(!this.active||!this.lease||this.lease.signal.aborted)throw new GatewayError('ACCESS_DENIED',403);
         await this.lease.assertHeld();
         if(!this.active)throw new GatewayError('ACCESS_DENIED',403);
@@ -79,10 +82,13 @@ export class AppLifecycleHost {
     if (!Number.isInteger(wait)||wait<1||wait>60_000) fail('INVALID_HEALTH_WAIT');
   }
   async invokeApi(context: PlatformActorContext, request: Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1], signal?: AbortSignal, assertAdmission?:()=>Promise<void>) {
+    if(this.options.maintenanceBlocked?.())fail('PLATFORM_MAINTENANCE');
     if(!this.active||!this.api||!this.lease)fail('API_NOT_READY');
     const lease=this.lease,api=this.api,installation=this.active,transport=this.bridge!.api;
-    return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
-      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain(),{kind:'api',requestId:context.request.requestId,apiId:request.apiId});
+    this.apiCalls++;
+    try{return await this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
+      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain(),{kind:'api',requestId:context.request.requestId,apiId:request.apiId});}
+    finally{this.apiCalls--;}
   }
   /** Verified employee session callback is retained for every nested service authorization. */
   async invokeEmployeeApi(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:Parameters<ReturnType<typeof createHostedAppApi>['invoke']>[1],signal?:AbortSignal){
@@ -97,6 +103,7 @@ export class AppLifecycleHost {
   }
   /** Employee ingress uses the same durable work boundary as backend service requests. */
   async invokeDelegated(resolveIdentity:Parameters<AppGateway['invokeDelegatedFromSession']>[1],request:unknown,signal?:AbortSignal){
+    if(this.options.maintenanceBlocked?.())throw new GatewayError('ACCESS_DENIED',503);
     if(!this.active||!this.lease||this.lease.signal.aborted)throw new GatewayError('ACCESS_DENIED',403);
     const installation=this.active,lease=this.lease;
     return this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)throw new GatewayError('ACCESS_DENIED',403);},
@@ -261,6 +268,7 @@ export class AppLifecycleHost {
       const predicted={...structuredClone(record),enabled:true,revision:record.revision+1};
       const lease=this.lease!;
       const handle=ext.registry.activate(predicted,ext.mappings,work=>this.workJournal.track(record.id,async()=>{
+        if(this.options.maintenanceBlocked?.())fail('PLATFORM_MAINTENANCE');
         await lease.assertHeld();if(!this.active||this.active.revision!==predicted.revision)fail('RUNTIME_NOT_ACTIVE');
       },work,()=>this.options.gateway.drain(record.appId)));
       try {this.extensions=await startAppExtensionRuntime({...ext.options(predicted),handle,deferActivation:true,drainGateway:()=>this.options.gateway.drain(record.appId)});}
@@ -331,6 +339,16 @@ export class AppLifecycleHost {
       if(current.lifecycle?.operationId===record.lifecycle?.operationId&&['running','failed'].includes(current.lifecycle!.status))
         await this.options.registry.settleLifecycle(context,current.appId,current.revision,current.lifecycle!.operationId,'failed');
     } catch { /* Existing durable pending state remains the recovery blocker. */ }
+  }
+  async drainForMaintenance(){
+    const deadline=Date.now()+60_000;
+    while(true){
+      const record=await this.options.registry.runtimeSnapshot(this.options.appId);
+      const pending=await this.workJournal.pending(record.id);
+      if(!pending.records.length&&!pending.hasMore&&this.apiCalls===0)return;
+      if(Date.now()>=deadline)fail('RUNTIME_WORK_PENDING');
+      await new Promise(resolve=>setTimeout(resolve,250));
+    }
   }
   /** Process shutdown closes ingress without claiming the container stopped or settling registry state. */
   async close() {

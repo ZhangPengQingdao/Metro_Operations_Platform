@@ -1,3 +1,4 @@
+import {startMaintenanceControl} from './app-platform/updates/control.js';
 import {registerAppSubmissionRoutes} from './app-platform/submissions/routes.js';
 import {registerRegistrationRoutes} from './platform/employee-identity/registration.js';
 import {AppBusinessAuthorization} from './app-platform/business-authorization/service.js';
@@ -32,6 +33,13 @@ export async function buildApp(){
  const file=process.env.MOP_APP_MANAGEMENT_CONFIG;
  const management=file?await createAppManagement(file,origin):undefined;
  if(management)app.addHook('onClose',async()=>management.close());
+ app.addHook('onRequest',async(request,reply)=>{
+  if(management?.maintenanceActive()&&!['/api/health/live','/api/health/ready','/api/admin/updates/status'].includes(request.url.split('?')[0]))return reply.code(503).send({error:'PLATFORM_MAINTENANCE',message:'平台正在更新维护，请稍后重试。'});
+ });
+ if(process.env.MOP_MAINTENANCE_SOCKET&&management){
+  const control=await startMaintenanceControl({socketPath:process.env.MOP_MAINTENANCE_SOCKET,pool,status:management.maintenanceStatus,prepare:management.prepareMaintenance,restore:management.restoreMaintenance});
+  app.addHook('onClose',async()=>control.close());
+ }
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
  registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
  const employeeIdentity=new EmployeeIdentityService(pool);

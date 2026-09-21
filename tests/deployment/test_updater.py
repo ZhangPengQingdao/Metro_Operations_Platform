@@ -19,7 +19,7 @@ class Fixture(unittest.TestCase):
   self.assertEqual(u.verify(self.folder,self.public,'0.3.0'),self.m);u.verify_archive(self.folder,self.m)
   (self.folder/'images.tar').write_bytes(b'other')
   with self.assertRaises(u.Failure):u.verify_archive(self.folder,self.m)
-  for key,value in [('repository','evil/repo'),('architecture','linux/arm64'),('minUpdater',4)]:
+  for key,value in [('repository','evil/repo'),('architecture','linux/arm64'),('minUpdater',5)]:
    original=self.m[key];self.m[key]=value;self.sign()
    with self.assertRaises(u.Failure):u.verify(self.folder,self.public,'0.3.0')
    self.m[key]=original
@@ -206,3 +206,72 @@ class PublicRelease(unittest.TestCase):
   with patch.object(github.opener,'open',return_value=io.BytesIO(b'{}')) as opened:
    self.assertEqual(github.fetch('https://api.github.com/repos/a/b'),{})
   self.assertIsNone(opened.call_args.args[0].get_header('Authorization'))
+
+class RegistryRelease(unittest.TestCase):
+ setUp=Fixture.setUp
+ tearDown=Fixture.tearDown
+ sign=Fixture.sign
+ def test_signed_registry_refs_are_fixed_and_repository_scoped(self):
+  self.m.update(format=2,minUpdater=4,registry={name:'ghcr.io/zhangpengqingdao/metro-operations-platform-'+name+'@sha256:'+'c'*64 for name in ['api','web','database']})
+  self.sign();self.assertEqual(u.verify(self.folder,self.public,'0.3.0'),self.m)
+  for ref in ['evil.example/api@sha256:'+'c'*64,'ghcr.io/zhangpengqingdao/metro-operations-platform-api:latest']:
+   self.m['registry']['api']=ref;self.sign()
+   with self.assertRaises(u.Failure):u.verify(self.folder,self.public,'0.3.0')
+ def test_existing_digest_is_reused_and_only_missing_image_is_pulled(self):
+  refs={name:'ghcr.io/zhangpengqingdao/metro-operations-platform-'+name+'@sha256:'+'c'*64 for name in ['api','web','database']}
+  pulled=[];events=[]
+  def command(args,*a,**kw):
+   if args[:2]==['docker','pull']:pulled.append(args[-1]);return b''
+   ref=args[-1]
+   if ref==refs['web'] and ref not in pulled:raise u.Failure('NOT_FOUND')
+   return json.dumps([{'Id':'sha256:'+'a'*64,'Architecture':'amd64','Os':'linux','RepoDigests':[ref]}]).encode()
+  with patch.object(u,'command',side_effect=command):u.registry_images({'registry':refs},lambda *args:events.append(args))
+  self.assertEqual(pulled,[refs['web']]);self.assertEqual(events[0][1],'cached');self.assertEqual(events[-1][2],3)
+ def test_wrong_registry_identity_is_rejected_after_pull(self):
+  with patch.object(u,'command',return_value=json.dumps([{'Id':'sha256:'+'a'*64,'Architecture':'amd64','Os':'linux','RepoDigests':[]}]).encode()):
+   with self.assertRaises(u.Failure):u.registry_images({'registry':{'api':'trusted@sha256:'+'c'*64}})
+
+class MaintenanceUpdate(unittest.TestCase):
+ def test_snapshot_pause_precedes_backup_and_restore_follows_health(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);u.atomic(root/'current.json',{'version':'0.8.0'});calls=[]
+   class Deployment:
+    def prepare(self,*args):calls.append('prepare')
+    def maintenance(self,action,*args):calls.append(action)
+    def compose(self,_directory,*args):calls.append(args)
+    def backup(self,*args):calls.append('backup')
+    def healthy(self,*args):calls.append('healthy')
+    def web_healthy(self):calls.append('web-healthy')
+   updater=u.Updater(root,github=object(),deployment=Deployment());updater.task={'id':str(uuid.uuid4()),'actorId':str(uuid.uuid4()),'version':'0.9.0','fromVersion':'0.8.0','phase':'queued'}
+   manifest={'format':2,'images':{'database':'sha256:'+'a'*64},'upgradeFromMin':'0.2.0'}
+   with patch.object(u,'verify',return_value=manifest),patch.object(u,'verify_local_release'):updater.work('install','0.9.0')
+   self.assertEqual(updater.task['phase'],'completed');self.assertLess(calls.index('prepare'),calls.index('backup'))
+   self.assertLess(calls.index('web-healthy'),calls.index('restore'));self.assertTrue(updater.task['applicationSnapshot'])
+ def test_failed_pause_never_stops_platform_or_backs_up(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);u.atomic(root/'current.json',{'version':'0.8.0'});calls=[]
+   class Deployment:
+    def prepare(self,*args):pass
+    def maintenance(self,*args):raise u.Failure('APPLICATION_MAINTENANCE_BLOCKED')
+    def compose(self,*args):calls.append(args)
+    def backup(self,*args):calls.append('backup')
+   updater=u.Updater(root,github=object(),deployment=Deployment());updater.task={'id':str(uuid.uuid4()),'version':'0.9.0','fromVersion':'0.8.0','phase':'queued'}
+   with patch.object(u,'verify',return_value={'format':2,'images':{'database':'same'},'upgradeFromMin':'0.2.0'}),patch.object(u,'verify_local_release'):updater.work('install','0.9.0')
+   self.assertEqual(updater.task['phase'],'recovery_required');self.assertEqual(updater.task['failedPhase'],'draining');self.assertEqual(calls,[])
+
+class LayeredDownload(unittest.TestCase):
+ def test_cached_download_does_not_require_full_archive_space(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=pathlib.Path(tmp);u.atomic(root/'current.json',{'version':'0.8.0'});assets=[]
+   class Github:
+    def release(self,*args):return {}
+    def asset(self,_release,name,*args):assets.append(name)
+   class Deployment:
+    config={}
+    def prepare(self,*args):pass
+   updater=u.Updater(root,github=Github(),deployment=Deployment());updater.task={'id':str(uuid.uuid4()),'version':'0.9.0','fromVersion':'0.8.0','phase':'queued'}
+   manifest={'format':2,'upgradeFromMin':'0.2.0','artifact':{'bytes':900*1024**2}}
+   with patch.object(u,'verify',return_value=manifest),patch.object(u,'registry_images') as pull,patch.object(u.shutil,'disk_usage',return_value=type('Space',(),{'free':2*1024**3})()):
+    updater.work('download','0.9.0')
+   self.assertEqual(updater.task['phase'],'downloaded');pull.assert_called_once()
+   self.assertEqual(assets,['release.json','release.sig'])

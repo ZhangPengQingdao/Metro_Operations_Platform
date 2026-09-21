@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """MOP host updater. Python 3.12 stdlib + OpenSSL + Docker Compose, no web-process privileges."""
+import http.client,socket
 import argparse,io,base64,fcntl,getpass,grp,hashlib,http.server,json,os,pathlib,platform,re,secrets,shutil,socketserver,subprocess,sys,tarfile,tempfile,threading,time,urllib.error,urllib.parse,urllib.request,uuid
 REPO='ZhangPengQingdao/Metro_Operations_Platform'
 VERSION=re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')
 IMAGE=re.compile(r'^sha256:[a-f0-9]{64}$')
 RUNTIME_IMAGE='node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5'
-ACTIVE={'queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up','migrating','switching','health_check'}
+ACTIVE={'queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up','migrating','switching','health_check','draining','restoring_apps'}
 class Failure(Exception):pass
 def require(ok,code):
  if not ok:raise Failure(code)
@@ -76,11 +77,15 @@ def verify(directory,key,expected):
  require((directory/'release.json').stat().st_size<=65536 and (directory/'release.sig').stat().st_size==64,'INVALID_MANIFEST_SIZE')
  command(['openssl','pkeyutl','-verify','-pubin','-inkey',str(key),'-rawin','-in',str(directory/'release.json'),'-sigfile',str(directory/'release.sig')],30)
  m=read(directory/'release.json')
- require(set(m)=={'format','version','architecture','repository','commit','minUpdater','upgradeFromMin','databaseMajor','images','artifact'},'INVALID_MANIFEST')
- require(m['format']==1 and m['version']==expected and m['architecture']=='linux/amd64' and m['repository']==REPO and m['minUpdater'] in (1,2,3) and m['databaseMajor']==17,'INCOMPATIBLE_RELEASE')
+ require(set(m)=={'format','version','architecture','repository','commit','minUpdater','upgradeFromMin','databaseMajor','images','artifact'}|({'registry'} if m.get('format')==2 else set()),'INVALID_MANIFEST')
+ require(m['format'] in (1,2) and m['version']==expected and m['architecture']=='linux/amd64' and m['repository']==REPO and m['minUpdater'] in (1,2,3,4) and m['databaseMajor']==17,'INCOMPATIBLE_RELEASE')
  require(isinstance(m['commit'],str) and re.fullmatch('[a-f0-9]{40}',m['commit']),'INVALID_COMMIT');version(m['upgradeFromMin'])
  require(set(m['images'])=={'api','web','database'} and all(IMAGE.fullmatch(v) for v in m['images'].values()),'INVALID_IMAGES')
  a=m['artifact'];require(set(a)=={'name','sha256','bytes'} and a['name']=='images.tar' and re.fullmatch('[a-f0-9]{64}',a['sha256']) and type(a['bytes']) is int and 0<a['bytes']<=4*1024**3,'INVALID_ARTIFACT')
+ if m['format']==2:
+  require(m['minUpdater']==4 and isinstance(m['registry'],dict) and set(m['registry'])=={'api','web','database'},'INVALID_REGISTRY_IMAGES')
+  for name,ref in m['registry'].items():
+   require(isinstance(ref,str) and re.fullmatch(r'ghcr\.io/zhangpengqingdao/metro-operations-platform-'+name+r'@sha256:[a-f0-9]{64}',ref),'INVALID_REGISTRY_IMAGE')
  return m
 def file_hash(path):
  h=hashlib.sha256()
@@ -169,12 +174,46 @@ def resolve_images(directory,m,identities=None):
   else:raise Failure('IMAGE_NOT_LOADED: '+name)
  return resolved
 
+def registry_images(m,progress=None):
+ resolved={}
+ for name,ref in m['registry'].items():
+  def inspect():
+   info=json.loads(command(['docker','image','inspect',ref]))[0]
+   require(info['Architecture']=='amd64' and info['Os']=='linux' and ref in info.get('RepoDigests',[]),'REGISTRY_IMAGE_IDENTITY_MISMATCH')
+   return info['Id']
+  try:resolved[name]=inspect();cached=True
+  except Failure:
+   if progress:progress(name,'pulling',len(resolved),3)
+   command(['docker','pull','--platform','linux/amd64',ref],1800)
+   resolved[name]=inspect();cached=False
+  if progress:progress(name,'cached' if cached else 'downloaded',len(resolved),3)
+ return resolved
+
+def database_identity(directory,m):
+ if m['format']==2:return m['images']['database']
+ identities=archive_identities(directory/'images.tar')
+ matches=[config for config,aliases in identities.items() if m['images']['database'] in aliases]
+ require(len(matches)==1,'DATABASE_IDENTITY_UNKNOWN');return matches[0]
+
+def verify_local_release(directory,m):
+ if m['format']==1 or (directory/'images.tar').exists():verify_archive(directory,m)
+ else:
+  for ref in m['registry'].values():
+   info=json.loads(command(['docker','image','inspect',ref]))[0]
+   require(ref in info.get('RepoDigests',[]) and info['Architecture']=='amd64' and info['Os']=='linux','REGISTRY_IMAGE_IDENTITY_MISMATCH')
+
+class MaintenanceConnection(http.client.HTTPConnection):
+ def __init__(self,path):super().__init__('localhost',timeout=660);self.path=path
+ def connect(self):
+  self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.settimeout(self.timeout);self.sock.connect(self.path)
+
 class Deployment:
  def __init__(self,root):self.root=pathlib.Path(root);self.config=read(self.root/'config.json')
  def compose(self,release,*args,output=None):
   return command(['docker','compose','--project-name','mop','--file',str(release/'compose.json'),*args],timeout=600,output=output)
  def prepare(self,directory,m):
-  verify_archive(directory,m);images=load_images(directory,m)
+  if m.get('format',1)==2 and self.config.get('imageTransport','registry')!='archive':images=registry_images(m)
+  else:verify_archive(directory,m);images=load_images(directory,m)
   root=str(self.root);gid=str(self.config['socketGid'])
   api={'image':images['api'],'restart':'unless-stopped','read_only':True,'tmpfs':['/tmp:size=64m'],'cap_drop':['ALL'],'security_opt':['no-new-privileges:true'],
    'group_add':[gid],'environment':{'MOP_UPDATER_SOCKET':'/run/mop-updater/control.sock'},
@@ -189,6 +228,10 @@ class Deployment:
   if self.config.get('proxyMode')=='external':
    web['ports']=[f"127.0.0.1:{self.config['httpPort']}:80"]
    web['environment']['MOP_DOMAIN']=':80'
+  if m.get('format',1)==2 and self.config.get('applications'):
+   maintenance=self.root/'maintenance';maintenance.mkdir(mode=0o700,exist_ok=True);os.chown(maintenance,1000,1000)
+   api['volumes'].append(str(maintenance)+':/run/mop-maintenance')
+   api['environment'].update({'MOP_MAINTENANCE_SOCKET':'/run/mop-maintenance/control.sock','MOP_MAINTENANCE_STATE':'/run/mop-maintenance/state.json'})
   if self.config.get('applications'):
    apps=root+'/apps'
    db['networks']=['internal','edge']
@@ -205,6 +248,19 @@ class Deployment:
    proxy_file=directory/'Caddyfile';proxy_file.write_text(proxy);proxy_file.chmod(0o644)
    web['volumes'].append(str(proxy_file)+':/etc/caddy/Caddyfile:ro')
   atomic(directory/'compose.json',{'services':{'database':db,'api':api,'web':web},'networks':{'internal':{'internal':True},'edge':{}}})
+ def maintenance(self,action,task):
+  if not self.config.get('applications'):return None
+  connection=MaintenanceConnection(str(self.root/'maintenance/control.sock'))
+  try:
+   connection.request('POST','/maintenance',json.dumps({'action':action,'taskId':task['id'],'actorId':task['actorId']}),{'Content-Type':'application/json'})
+   response=connection.getresponse();raw=response.read(1024*1024+1);require(len(raw)<=1024*1024,'MAINTENANCE_RESPONSE_LIMIT');result=json.loads(raw)
+   if result.get('snapshot'):atomic(self.root/'requests'/(task['id']+'-applications.json'),result['snapshot'])
+   require(response.status==200,'APPLICATION_MAINTENANCE_FAILED: '+str(result.get('error','UNKNOWN')))
+   require(result.get('protocol')==1 and result.get('snapshot',{}).get('taskId')==task['id'],'MAINTENANCE_TASK_MISMATCH')
+   require(result['snapshot']['phase']==('paused' if action=='prepare' else 'completed'),'APPLICATION_MAINTENANCE_BLOCKED')
+   return result['snapshot']
+  except (OSError,http.client.HTTPException,ValueError):raise Failure('APPLICATION_MAINTENANCE_UNCONFIRMED') from None
+  finally:connection.close()
  def backup(self,current,task):
   database_bytes=sum(p.stat().st_size for p in (self.root/'database').rglob('*') if p.is_file())
   require(shutil.disk_usage(self.root).free>database_bytes*2+1024**3,'BACKUP_SPACE_REQUIRED')
@@ -213,7 +269,7 @@ class Deployment:
    with (folder/filename).open('wb') as out:self.compose(current,'exec','-T','database',*args,output=out);out.flush();os.fsync(out.fileno())
   # Verify custom dump structure. Roles, credentials, proxy and application artifacts are separate.
   command(['docker','run','--rm','--network','none','-v',str(folder)+':/backup:ro',read(current/'compose.json')['services']['database']['image'],'pg_restore','--list','/backup/database.dump'])
-  command(['tar','-czf',str(folder/'configuration.tar.gz'),'-C',str(self.root),'secrets','config.json','current.json',*(['apps'] if self.config.get('applications') else [])])
+  command(['tar','-czf',str(folder/'configuration.tar.gz'),'-C',str(self.root),'secrets','config.json','current.json',*(['apps'] if self.config.get('applications') else []),*(['maintenance'] if (self.root/'maintenance').exists() else [])])
   atomic(folder/'complete.json',{'taskId':task,'version':read(current/'release.json')['version']})
  def healthy(self,directory):
   for _ in range(36):
@@ -248,7 +304,20 @@ class Updater:
   with self.guard:
    self.task={**self.task,'download':{'receivedBytes':received,'totalBytes':total},'updatedAt':int(time.time())}
  def status(self):
-  with self.guard:return {'configured':True,'currentVersion':read(self.root/'current.json')['version'],'task':self.task}
+  with self.guard:
+   current=read(self.root/'current.json')['version']
+   manifest=self.root/'releases'/current/'release.json'
+   automatic=manifest.exists() and read(manifest).get('format')==2
+   task=dict(self.task) if self.task else None
+   snapshot_path=self.root/'maintenance/state.json'
+   if task and task.get('applicationSnapshot') and snapshot_path.exists():
+    try:
+     require(snapshot_path.stat().st_size<=1024*1024,'MAINTENANCE_STATE_LIMIT');snapshot=read(snapshot_path)
+     if snapshot.get('taskId')==task['id']:
+      entries=snapshot['applications']
+      task['applications']={'phase':snapshot['phase'],'total':len(entries),'stopped':sum(e['phase']=='stopped' for e in entries),'restored':sum(e['phase']=='restored' for e in entries),'unchanged':sum(e['phase']=='unchanged' and not e['enabled'] for e in entries)}
+    except (Failure,OSError,ValueError,KeyError,TypeError):task['applications']={'phase':'unknown'}
+   return {'configured':True,'currentVersion':current,'automaticApplications':automatic,'task':task}
  def check(self):
   release=self.github.release();v=release['tag_name'][1:];current=read(self.root/'current.json')['version']
   return {'version':v,'available':version(v)>version(current),'url':f'https://github.com/{REPO}/releases/tag/v{v}'}
@@ -273,18 +342,26 @@ class Updater:
     for name,limit in [('release.json',65536),('release.sig',64)]:self.github.asset(release,name,directory/name,limit)
     m=verify(directory,self.root/'release-public.pem',v)
     require(version(self.task['fromVersion'])>=version(m['upgradeFromMin']),'UNSUPPORTED_UPGRADE_PATH')
-    require(shutil.disk_usage(self.root).free>m['artifact']['bytes']*3+1024**3,'DISK_SPACE_REQUIRED')
+    layered=m['format']==2 and self.deployment.config.get('imageTransport','registry')!='archive'
+    # Registry transport writes layers directly to Docker; no tar download/extraction reserve.
+    require(shutil.disk_usage(self.root).free>(1024**3 if layered else m['artifact']['bytes']*3+1024**3),'DISK_SPACE_REQUIRED')
+    if layered:
+     def report(name,state,done,total):
+      with self.guard:self.task={**self.task,'pull':{'image':name,'state':state,'completed':done,'total':total}}
+     registry_images(m,report);self.phase('loading');self.deployment.prepare(directory,m);self.phase('downloaded');return
     total=m['artifact']['bytes'];self.progress(0,total)
     self.github.asset(release,'images.tar',directory/'images.tar',total,lambda received:self.progress(received,total))
     self.phase('verifying');verify_archive(directory,m)
     self.phase('loading');self.deployment.prepare(directory,m);self.phase('downloaded');return
-   self.phase('preflight');m=verify(directory,self.root/'release-public.pem',v);verify_archive(directory,m)
-   current=self.root/'releases'/self.task['fromVersion'];old=verify(current,self.root/'release-public.pem',self.task['fromVersion']);verify_archive(current,old)
-   new_ids=archive_identities(directory/'images.tar');old_ids=archive_identities(current/'images.tar')
-   database_id=lambda ids,manifest: {config for config,aliases in ids.items() if manifest['images']['database'] in aliases}
-   require(database_id(new_ids,m)==database_id(old_ids,old) and len(database_id(new_ids,m))==1,'DATABASE_IMAGE_CHANGE_REQUIRES_MANUAL_UPGRADE')
+   self.phase('preflight');m=verify(directory,self.root/'release-public.pem',v);verify_local_release(directory,m)
+   current=self.root/'releases'/self.task['fromVersion'];old=verify(current,self.root/'release-public.pem',self.task['fromVersion']);verify_local_release(current,old)
+   require(old['format']!=2 or m['format']==2,'MAINTENANCE_PROTOCOL_DOWNGRADE')
+   require(database_identity(directory,m)==database_identity(current,old),'DATABASE_IMAGE_CHANGE_REQUIRES_MANUAL_UPGRADE')
    require(version(self.task['fromVersion'])>=version(m['upgradeFromMin']),'UNSUPPORTED_UPGRADE_PATH')
    self.deployment.prepare(directory,m)
+   if old['format']==2:
+    maintenance=True;self.task['applicationSnapshot']=True;self.phase('draining')
+    self.deployment.maintenance('prepare',self.task)
    self.deployment.compose(current,'run','--rm','--no-deps','api','probe.mjs')
    self.phase('maintenance');maintenance=True;self.deployment.compose(current,'stop','web','api')
    self.deployment.compose(current,'run','--rm','--no-deps','api','probe.mjs')
@@ -294,7 +371,10 @@ class Updater:
    self.phase('switching');self.deployment.compose(directory,'up','-d','--no-deps','api')
    self.phase('health_check');self.deployment.healthy(directory)
    atomic(self.root/'current.json',{'version':v})
-   self.deployment.compose(directory,'up','-d','--no-deps','web');self.deployment.web_healthy();self.phase('completed')
+   self.deployment.compose(directory,'up','-d','--no-deps','web');self.deployment.web_healthy()
+   if self.task.get('applicationSnapshot'):
+    self.phase('restoring_apps');self.deployment.maintenance('restore',self.task)
+   self.phase('completed')
   except Exception as e:
    code=str(e) if isinstance(e,Failure) else 'UPDATE_UNCONFIRMED'
    # Never revert a possibly migrated database, replay tasks, or silently restart after an unknown write.
@@ -303,15 +383,17 @@ class Updater:
   require(self.task and self.task['id']==task_id and self.task['phase']=='recovery_required','RECOVERY_TASK_MISMATCH')
   stage=self.task.get('recoveryOriginPhase',self.task.get('failedPhase'));require(mode in ('restart-current','resume-target'),'INVALID_RECOVERY_MODE')
   directory=self.root/'releases'/(self.task['fromVersion'] if mode=='restart-current' else self.task['version'])
-  m=verify(directory,self.root/'release-public.pem',directory.name);verify_archive(directory,m)
-  if mode=='restart-current':require(stage in ('queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up'),'DATABASE_MAY_HAVE_MIGRATED')
+  m=verify(directory,self.root/'release-public.pem',directory.name);verify_local_release(directory,m)
+  if mode=='restart-current':require(stage in ('queued','downloading','verifying','loading','verified','preflight','draining','maintenance','backing_up'),'DATABASE_MAY_HAVE_MIGRATED')
   else:
-   require(stage in ('migrating','switching','health_check'),'NO_MIGRATION_TO_RESUME')
+   require(stage in ('migrating','switching','health_check','restoring_apps'),'NO_MIGRATION_TO_RESUME')
    require((self.root/'backups'/task_id/'complete.json').exists(),'VERIFIED_BACKUP_REQUIRED')
   # Keep the original migration boundary across failures/restarts of recovery itself.
   self.task.setdefault('recoveryOriginPhase',stage)
   self.task['recoveryMode']=mode;self.task['recoveryBy']='local-root';self.phase('preflight')
   try:
+   if stage=='draining' and mode=='restart-current' and self.task.get('applicationSnapshot'):
+    self.deployment.maintenance('restore',self.task);self.phase('cancelled');return
    self.deployment.prepare(directory,m)
    self.deployment.compose(directory,'stop','web','api')
    self.deployment.compose(directory,'run','--rm','--no-deps','api','probe.mjs')
@@ -323,6 +405,8 @@ class Updater:
    self.phase('health_check');self.deployment.healthy(directory)
    atomic(self.root/'current.json',{'version':directory.name})
    self.deployment.compose(directory,'up','-d','--no-deps','web');self.deployment.web_healthy()
+   if self.task.get('applicationSnapshot'):
+    self.phase('restoring_apps');self.deployment.maintenance('restore',self.task)
    self.phase('completed' if mode=='resume-target' else 'cancelled')
   except Exception:
    self.task['failedPhase']=self.task['phase'];self.phase('recovery_required','RECOVERY_UNCONFIRMED');raise Failure('RECOVERY_UNCONFIRMED') from None
@@ -421,7 +505,8 @@ def install(root,v,key):
  github=Github((root/'secrets/github-token').read_text().strip());release=github.release(v)
  for name,limit in [('release.json',65536),('release.sig',64)]:github.asset(release,name,directory/name,limit)
  m=verify(directory,root/'release-public.pem',v)
- github.asset(release,'images.tar',directory/'images.tar',m['artifact']['bytes']);verify_archive(directory,m)
+ if m['format']==1 or config.get('imageTransport')=='archive':
+  github.asset(release,'images.tar',directory/'images.tar',m['artifact']['bytes']);verify_archive(directory,m)
  if config.get('applications'):
   # The trusted installer pins the runtime digest, independently of application packages.
   command(['docker','pull',RUNTIME_IMAGE],1800)
