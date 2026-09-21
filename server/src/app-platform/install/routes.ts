@@ -23,7 +23,7 @@ export async function registerAppInstallRoutes(app:FastifyInstance,options:AppIn
   const code=error instanceof InstallError||error instanceof AppPackageError?error.code:'INSTALL_OUTCOME_UNKNOWN';
   return reply.code(code==='INSTALL_ACCESS_DENIED'?403:code==='INSTALL_NOT_FOUND'?404:409).send({error:code});
  };
- app.post('/api/v1/app-installations',{bodyLimit:INSTALL_BODY_LIMIT,onRequest,onResponse:async request=>{if(admitted.delete(request))uploads--;}},async(request,reply)=>{
+ app.post('/api/v1/app-installations',{bodyLimit:INSTALL_BODY_LIMIT,onRequest,onRequestAbort:async request=>{if(admitted.delete(request))uploads--;},onResponse:async request=>{if(admitted.delete(request))uploads--;}},async(request,reply)=>{
   try{return await withInstallUpload(request.body,options.uploadRoot,input=>options.installer.install(contexts.get(request)!,input));}catch(error){return failure(error,reply);}
  });
  app.route<{Params:{appId:string}}>({method:['GET','POST'],url:'/api/v1/app-installations/:appId',bodyLimit:4096,onRequest,handler:async(request,reply)=>{

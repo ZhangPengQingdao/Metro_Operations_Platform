@@ -1,4 +1,5 @@
 import test from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -146,4 +147,32 @@ test('directory status updates persist for every enabled directory and retain de
    assert.equal(((await service.list(actor,key))[0] as unknown as Record<string,unknown>).status,'active',key);
   }
  }finally{await db.close();}
+});
+
+test('aborted admin uploads release capacity for subsequent packages', {timeout:15000}, async()=>{
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);
+ const client={query:(sql:string,values?:readonly unknown[])=>sql.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(sql,[...(values??[])]),release(){}};
+ const pool={connect:async()=>client};const identity=new AdminIdentityService(pool);
+ await identity.bootstrap({username:'upload.admin',displayName:'Admin',password:'Administrator-test-123'});
+ const app=Fastify();await app.register(cookie);
+ let received:()=>void=()=>{};let aborted:()=>void=()=>{};
+ app.addHook('preParsing',async(_req,_reply,payload)=>{received();return payload;});
+ app.addHook('onRequestAbort',async(_req)=>{aborted();});
+ registerAdminIdentityRoutes(app,{origin:'https://platform.example',service:identity});
+ await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool});
+ try{
+  const address=await app.listen({host:'127.0.0.1',port:0});
+  const login=await app.inject({method:'POST',url:'/api/admin/auth/login',headers:{origin:'https://platform.example'},payload:{username:'upload.admin',password:'Administrator-test-123'}});
+  const headers={cookie:String(login.headers['set-cookie']).split(';')[0],origin:'https://platform.example'};
+  for(let attempt=0;attempt<4;attempt++){
+   const admitted=new Promise<void>(resolve=>{received=resolve;});
+   const disconnected=new Promise<void>(resolve=>{aborted=resolve;});
+   const request=http.request(address+'/api/admin/install-preview',{method:'POST',headers:{...headers,'content-type':'application/json','content-length':'100000'}});
+   request.on('error',()=>{});request.write('{');
+   await admitted;request.destroy();await disconnected;
+   const next=await app.inject({method:'POST',url:'/api/admin/install-preview',headers,payload:{}});
+   assert.notEqual(next.statusCode,429,'aborted uploads must not exhaust the two upload slots');
+   assert.equal(next.json().error,'APP_INSTALL_NOT_CONFIGURED');
+  }
+ }finally{await app.close();await db.close();}
 });
