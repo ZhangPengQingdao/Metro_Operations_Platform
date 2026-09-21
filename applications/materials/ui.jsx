@@ -4,7 +4,11 @@ import {Button,Input,QuantityInput,Select,Field,PencilSimpleLine,Trash,Plus,Arro
 import {platformUiCss} from '@metro/platform-sdk/ui-styles';
 import {createAppSandboxClient,createAppApiClient} from '@metro/platform-sdk/app-sandbox';
 const script=document.currentScript,origin=script?.dataset.platformOrigin,route=decodeURIComponent(script?.dataset.appRoute??'/');
-const style=document.createElement('style');style.nonce=script?.nonce??'';style.textContent=platformUiCss+'\nbody{margin:0;background:var(--afc-color-canvas)}.materials{padding:16px 24px;color:var(--afc-color-ink)}.materials h2{font-size:18px;font-weight:600;margin:0 0 16px}.materials-actions{display:flex;gap:8px;align-items:center}.materials-form{display:grid;gap:16px}.materials-error{padding:12px;background:#fff1f2;color:#9f1239;border-radius:8px;margin-bottom:12px}.materials-muted{color:var(--afc-color-muted);font-size:13px}.materials td{white-space:nowrap}.materials .materials-note{white-space:normal;min-width:120px;max-width:240px}@media(max-width:640px){.materials{padding:12px}.materials-actions{flex-wrap:wrap}}';document.head.append(style);
+document.documentElement.classList.add('afc-theme-neutral');
+if(!document.documentElement.dataset.theme && typeof window!=='undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches){
+ document.documentElement.dataset.theme='dark';
+}
+const style=document.createElement('style');style.nonce=script?.nonce??'';style.textContent=platformUiCss+'\nbody{margin:0;background:var(--afc-color-canvas)}.materials{padding:16px 24px;color:var(--afc-color-ink)}.materials h2{font-size:18px;font-weight:600;margin:0 0 16px}.materials-actions{display:flex;gap:8px;align-items:center}.materials-form{display:grid;gap:16px}.materials-error{padding:12px;background:var(--afc-color-danger-soft,#fff1f2);color:var(--afc-color-danger,#9f1239);border-radius:8px;margin-bottom:12px}.materials-muted{color:var(--afc-color-muted);font-size:13px}.materials td{white-space:nowrap}.materials .materials-note{white-space:normal;min-width:120px;max-width:240px}@media(max-width:640px){.materials{padding:12px}.materials-actions{flex-wrap:wrap}}';document.head.append(style);
 if(!origin)throw Error('PLATFORM_ORIGIN_REQUIRED');
 const sandbox=createAppSandboxClient({appId:'materials',platformOrigin:origin,port:{parent:window.parent,send:(data,target)=>window.parent.postMessage(data,target),listen:listener=>{window.addEventListener('message',listener);return()=>window.removeEventListener('message',listener);}}});
 const api=createAppApiClient(sandbox);

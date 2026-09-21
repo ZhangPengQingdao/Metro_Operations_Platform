@@ -94,10 +94,11 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
     target.postMessage({version:'1.0',type:'init',appId,session},'*');
   };
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
+  const isDark=typeof document!=='undefined'&&(()=>{const preference=document.querySelector('.afc-admin')?.getAttribute('data-theme');return preference==='dark'||preference==='system'&&typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: dark)').matches;})();
   return <iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
     src={resource.mode==='isolated-origin'?resource.url:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0}} />;
+    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />;
 }
