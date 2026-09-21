@@ -102,8 +102,11 @@ class Fixture(unittest.TestCase):
   u.atomic(self.root/'config.json',{'domain':'ops.example.com','socketGid':999})
   deployment=u.Deployment(self.root)
   info=[{'Id':'sha256:'+'b'*64,'Architecture':'amd64','Os':'linux'}]
-  with patch.object(u,'load_images',return_value=self.m['images']):deployment.prepare(self.folder,self.m)
+  with patch.object(u.os,'chown') as owner,patch.object(u,'load_images',return_value=self.m['images']):deployment.prepare(self.folder,self.m)
   services=u.read(self.folder/'compose.json')['services']
+  self.assertEqual(services['api']['environment']['UPLOAD_DIR'],'/var/lib/mop/uploads')
+  self.assertIn(str(self.root)+'/uploads:/var/lib/mop/uploads',services['api']['volumes'])
+  owner.assert_called_once_with(self.root/'uploads',1000,1000)
   self.assertNotIn('ports',services['database']);self.assertNotIn('ports',services['api'])
   self.assertNotIn('privileged',services['api']);self.assertTrue(services['api']['read_only'])
   self.assertFalse(any('docker.sock' in v for v in services['api']['volumes']))
@@ -120,7 +123,7 @@ class ProxyDeployment(unittest.TestCase):
    manifest={'images':{name:'sha256:'+'a'*64 for name in ['api','web','database']}}
    real_stat=u.os.stat
    def stat(path,*a,**kw):return type('Stat',(),{'st_gid':100})() if str(path)=='/var/run/docker.sock' else real_stat(path,*a,**kw)
-   with patch.object(u,'load_images',return_value=manifest['images']),patch.object(u,'verify_archive'),patch.object(u.os,'stat',side_effect=stat):
+   with patch.object(u.os,'chown'),patch.object(u,'load_images',return_value=manifest['images']),patch.object(u,'verify_archive'),patch.object(u.os,'stat',side_effect=stat):
     u.Deployment(root).prepare(release,manifest)
    services=u.read(release/'compose.json')['services']
    self.assertEqual(services['web']['ports'],['127.0.0.1:18080:80','127.0.0.1:18081:8081'])

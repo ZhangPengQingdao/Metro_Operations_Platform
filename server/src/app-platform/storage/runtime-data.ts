@@ -143,7 +143,7 @@ export class AppRuntimeDataService{
    }else{
     const result=await statement(parsed as z.infer<typeof readInput>,!!mutation,false);
     const page=listing?result.slice(0,listing.pageSize):undefined;
-    output=jsonSnapshot(listing?{rows:page,nextCursor:result.length>listing.pageSize?page![page!.length-1].id:null}:{row:result[0]??null},65536);
+    output=jsonSnapshot(listing?{rows:page,nextCursor:result.length>listing.pageSize?(listing.order?{id:page![page!.length-1].id,value:String(page![page!.length-1][listing.order.column])}:page![page!.length-1].id):null}:{row:result[0]??null},65536);
    }
    await revalidate();check();commitSent=true;await runtime.query('COMMIT');transaction=false;
    if(intent)await admin.query("UPDATE public.platform_app_runtime_storage_writes SET status='completed',completed_at=clock_timestamp() WHERE installation_id=$1 AND request_id=$2 AND status='dispatched'",[plan.installationId,requestId]);

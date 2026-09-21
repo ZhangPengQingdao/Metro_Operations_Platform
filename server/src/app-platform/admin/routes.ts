@@ -71,6 +71,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(error instanceof AppPackageError)return reply.code(400).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'ADMIN_INVALID_INPUT'});
    const code=error instanceof Error&&'code' in error&&typeof error.code==='string'?error.code:'';
+   if(code==='APP_CAPABILITIES_NOT_SUPPORTED')return reply.code(409).send({error:code});
    return reply.code(503).send({error:/^[A-Z][A-Z_]{3,80}$/.test(code)?code:'ADMIN_SERVICE_UNAVAILABLE'});
   });
   async function withRegistry<T>(req:FastifyRequest,work:(service:AppRegistryService,context:PlatformAdministratorContext)=>Promise<T>) {

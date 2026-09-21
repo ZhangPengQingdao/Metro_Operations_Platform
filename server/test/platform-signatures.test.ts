@@ -517,3 +517,25 @@ async function seedDirectory(client: { query(text: string, values?: readonly unk
 }
 
 void PLATFORM_SIGNATURE_SQL;
+
+test('record association preserves existing signatures, permits later signing and own re-signing only',async()=>{
+ const h=memoryHarness(),execution={type:'application' as const,appId:SOURCE.appId};
+ const creator=h.actor(IDS.creator,ALL_PERMISSIONS,execution);creator.authorizeApplication=creator.authorize;
+ const input=createInput({signatureKey:'record:meeting',idempotencyKey:'record:meeting',expiresAt:null});
+ const created=await h.service.associateRecord(creator,input);
+ let detail=await h.service.getSignatureRequest(creator,created.request.id);
+ const first=detail.signers[0];
+ h.setNow('2026-09-20T15:00:00.000Z');
+ const self=h.actor(first.personId!,ALL_PERMISSIONS,execution);self.authorizeApplication=self.authorize;
+ await h.service.submitOwnSignature(self,{sessionId:created.session.id,signerId:first.id,evidence:{signatureUrl:'/first.png'}});
+ await assert.rejects(h.service.submitOwnSignature(h.actor(IDS.outsider,ALL_PERMISSIONS,execution),{sessionId:created.session.id,signerId:first.id,evidence:{signatureUrl:'/forged.png'}}),/只能提交本人签字/);
+ await h.service.submitOwnSignature(self,{sessionId:created.session.id,signerId:first.id,evidence:{signatureUrl:'/second.png'}});
+ detail=await h.service.getSignatureRequest(creator,created.request.id);
+ assert.equal(detail.evidence.length,1);assert.equal(detail.evidence[0].signatureUrl,'/second.png');
+ assert.ok(detail.operationHistory.some(row=>row.before?.signatureUrl==='/first.png'));
+ await h.service.associateRecord(creator,{...input,signers:[...input.signers,{personId:IDS.signerB,positions:[{page:0,x0:0,y0:0,x1:1,y1:1}]}]});
+ detail=await h.service.getSignatureRequest(creator,created.request.id);
+ assert.equal(detail.signers.find(s=>s.id===first.id)?.status,'signed');
+ assert.equal(detail.signers.find(s=>s.personId===IDS.signerB)?.status,'pending');
+ assert.equal(detail.session.expiresAt,null);assert.equal(detail.request.status,'dispatched');
+});

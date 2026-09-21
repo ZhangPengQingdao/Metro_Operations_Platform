@@ -121,7 +121,7 @@ export function startAppStdioGateway(options: AppStdioGatewayOptions): AppStdioG
         if(options.requireApiContext&&!frame.invocationId)throw new GatewayError('ACCESS_DENIED',403);
         const guard=frame.invocationId?api.admissionGuard(frame.invocationId):undefined;
         if(guard){try{await guard();}catch{throw new GatewayError('ACCESS_DENIED',403);}}
-        const response = await gateway.invokeService(appId, serviceCredential, frame.request, controller.signal,guard);
+        const response = await gateway.invokeService(appId, serviceCredential, frame.request, controller.signal,guard,frame.invocationId?api.employeeResolver(frame.invocationId):undefined);
         reply = { id, response };
       } catch (error) {
         const safe = error instanceof GatewayError ? error : new GatewayError('GATEWAY_FAILED', 500, 'unknown');

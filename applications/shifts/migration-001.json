@@ -1,0 +1,217 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "record_date",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "record_time",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "shift_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "host_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "people",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "module_snapshot",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "form_data",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "intent_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "record_order",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "search_text",
+          "type": "text",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "configs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "scope_key",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "config_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "updated_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "records",
+      "name": "record_intent",
+      "columns": [
+        "intent_id"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "records",
+      "name": "record_org_date",
+      "columns": [
+        "organization_id",
+        "record_date",
+        "id"
+      ],
+      "unique": false
+    },
+    {
+      "kind": "createIndex",
+      "table": "configs",
+      "name": "config_scope_type",
+      "columns": [
+        "scope_key",
+        "config_type"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createTable",
+      "table": "drafts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    }
+  ]
+}

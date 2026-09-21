@@ -4,16 +4,20 @@ export type GatewayJson = null | boolean | number | string | readonly GatewayJso
 export interface AppGatewayRequest { version: '1.0'; operation: string; params: GatewayJson }
 export interface AppGatewayResponse { version: '1.0'; requestId: string; traceId: string; result: GatewayJson }
 /** Platform composition only. Adapters must constrain all returned data to these targets. */
+export type GatewayActorContext = PlatformActorContext & {
+  /** Host-only identity bound to a live employee API call; never supplied by the application. */
+  employeeActor?: Extract<PlatformActorContext, {actorType: 'person'}>;
+};
 export interface AppGatewayOperation {
   name: string;
   permissionCode: string;
   mode: 'read' | 'write';
   validateParams(value: GatewayJson): boolean;
-  resolveResources(context: PlatformActorContext, params: GatewayJson): Promise<readonly AuthorizationResource[]>;
-  execute(context: PlatformActorContext, params: GatewayJson, signal: AbortSignal): Promise<unknown>;
+  resolveResources(context: GatewayActorContext, params: GatewayJson): Promise<readonly AuthorizationResource[]>;
+  execute(context: GatewayActorContext, params: GatewayJson, signal: AbortSignal): Promise<unknown>;
   validateResult(value: GatewayJson): boolean;
   /** Recheck the actual returned snapshot, even if its current database location has changed. */
-  resolveResultResources?(context: PlatformActorContext, result: GatewayJson): Promise<readonly AuthorizationResource[]>;
+  resolveResultResources?(context: GatewayActorContext, result: GatewayJson): Promise<readonly AuthorizationResource[]>;
 }
 const PUBLIC_CODES = new Set(['STORAGE_CONFLICT','STORAGE_TABLE_UNSUPPORTED','STORAGE_BUSY','STORAGE_REQUEST_ALREADY_RECORDED','STORAGE_WRITE_RECONCILIATION_REQUIRED','STORAGE_WRITE_UNCERTAIN','STORAGE_OPERATION_FAILED','STORAGE_CLEANUP_REQUIRED','STORAGE_RESULT_LIMIT','INVALID_PAYLOAD','PAYLOAD_TOO_LARGE','INVALID_REQUEST','RATE_LIMITED','BUSY','INVALID_CREDENTIAL','INVALID_IDENTITY','ABORTED','TIMEOUT','OPERATION_DENIED','INVALID_PARAMS','ACCESS_DENIED','INVALID_RESULT','GATEWAY_FAILED','AUDIT_FAILED','METHOD_NOT_ALLOWED','HEADERS_TOO_LARGE','INVALID_HEADERS','UNSUPPORTED_MEDIA_TYPE','INVALID_JSON']);
 export class GatewayError extends Error {
