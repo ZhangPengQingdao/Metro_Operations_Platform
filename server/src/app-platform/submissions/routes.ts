@@ -32,6 +32,8 @@ export function registerAppSubmissionRoutes(app:FastifyInstance,options:{pool:Co
    if(req.method==='POST'){if(uploads>=2)fail('SUBMISSION_BUSY',429);uploads++;admitted.add(req);}
   });
   scoped.addHook('onResponse',async req=>{if(admitted.delete(req))uploads--;});
+  // A disconnected upload has no response; release its slot exactly once.
+  scoped.addHook('onRequestAbort',async req=>{if(admitted.delete(req))uploads--;});
   scoped.setErrorHandler((error,_req,reply)=>{if(error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});if(error instanceof z.ZodError)return reply.code(400).send({error:'INVALID_SUBMISSION'});return reply.code(503).send({error:'SUBMISSION_NOT_CONFIRMED'});});
   scoped.get('/api/employee/app-submissions',async req=>read(async db=>({submissions:await rows(db,`SELECT ${summary} FROM platform_app_submissions WHERE person_id=$1 ORDER BY created_at DESC LIMIT 100`,[await submitter(req)])})));
   scoped.post('/api/employee/app-submissions',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{

@@ -59,6 +59,8 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    }
   });
   scoped.addHook('onResponse',async req=>{if(admitted.delete(req))uploads--;});
+  // A disconnected upload has no response; release its slot exactly once.
+  scoped.addHook('onRequestAbort',async req=>{if(admitted.delete(req))uploads--;});
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error instanceof AdminIdentityError||error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AdminDataError)return reply.code(error.statusCode).send({error:error.code,message:error.message});
