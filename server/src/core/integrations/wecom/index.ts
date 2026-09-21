@@ -215,7 +215,7 @@ export function buildWeComWebhookPayloads(
 export async function postTrustedWebhookPayload(
   url: string,
   payload: Record<string, unknown>,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number; signal?: AbortSignal } = {}
 ) {
   const provider = getTrustedWebhookProvider(url);
   let response: Response;
@@ -227,7 +227,7 @@ export async function postTrustedWebhookPayload(
       },
       body: JSON.stringify(payload),
       redirect: 'error',
-      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)]) : AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     });
   } catch (error) {
     const reason = error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : '网络请求失败';
@@ -276,6 +276,7 @@ export async function sendTrustedWebhookMessage(
     mentionedMobiles?: readonly string[];
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
+    signal?: AbortSignal;
   } = {}
 ) {
   const normalizedUrl = url.trim();

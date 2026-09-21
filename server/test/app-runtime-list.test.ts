@@ -34,3 +34,27 @@ test('storage list is read-authorized and never allows employee identity to open
  const employee={actorType:'person',execution:{type:'application',appId:'example'}} as Parameters<typeof op.execute>[0];
  await assert.rejects(op.execute(employee,{table:'entries'},new AbortController().signal),/ACCESS_DENIED/);assert.equal(connections,0);
 });
+
+test('date range and descending composite cursor keep ties and organization filters stable',async()=>{
+ const db=new PGlite();try{await db.exec('CREATE TABLE ledger(id uuid PRIMARY KEY,day date,org text)');
+ for(const [n,day,org] of [[1,'2026-09-19','a'],[2,'2026-09-20','a'],[3,'2026-09-20','a'],[4,'2026-09-21','b']])await db.query('INSERT INTO ledger VALUES($1,$2,$3)',[id(Number(n)),day,org]);
+ const schema=new Map([['id','uuid'],['day','date'],['org','text']]);
+ const base={table:'ledger',pageSize:1,filters:[{column:'org',value:'a'}],range:{column:'day',from:'2026-09-19',to:'2026-09-21'},order:{column:'day',direction:'desc'}};
+ const query=async(input:unknown)=>{const q=runtimeListQuery(runtimeListInput.parse(input),schema);return (await db.query<{id:string}>('SELECT * FROM ledger'+q.suffix,q.values)).rows.map(r=>r.id);};
+ assert.deepEqual(await query(base),[id(3),id(2)]);
+ assert.deepEqual(await query({...base,after:{value:'2026-09-20',id:id(3)}}),[id(2),id(1)]);
+ assert.deepEqual(await query({...base,after:{value:'2026-09-20',id:id(2)}}),[id(1)]);
+ assert.throws(()=>runtimeListQuery(runtimeListInput.parse({...base,order:{column:'missing',direction:'desc'}}),schema),/INVALID_PARAMS/);
+ assert.throws(()=>runtimeListQuery(runtimeListInput.parse({...base,afterId:id(1)}),schema),/INVALID_PARAMS/);
+ }finally{await db.close();}
+});
+
+test('JSON participant scope is applied before paging with bounded parameterized containment',async()=>{
+ const db=new PGlite();try{await db.exec('CREATE TABLE records(id uuid PRIMARY KEY,people jsonb)');
+ await db.query('INSERT INTO records VALUES($1,$2),($3,$4)',[id(1),JSON.stringify([{id:id(8)}]),id(2),JSON.stringify([{id:id(9)}])]);
+ const input=runtimeListInput.parse({table:'records',pageSize:1,anyOf:[[{column:'people',contains:[{id:id(9)}]}]]});
+ const q=runtimeListQuery(input,new Map([['id','uuid'],['people','jsonb']]));
+ assert.deepEqual((await db.query<{id:string}>('SELECT * FROM records'+q.suffix,q.values)).rows.map(r=>r.id),[id(2)]);
+ assert.throws(()=>runtimeListQuery(input,new Map([['people','text']])),/INVALID_PARAMS/);
+ }finally{await db.close();}
+});

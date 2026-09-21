@@ -31,9 +31,11 @@ export interface SignatureRepository extends AtomicParticipant {
   findSignerById(id: string): Promise<SignatureSigner | null>;
   listSigners(signatureRequestId: string): Promise<SignatureSigner[]>;
   updateSigner(record: SignatureSigner): Promise<SignatureSigner>;
+  addSigner(record: SignatureSigner): Promise<SignatureSigner>;
   listPositions(signatureRequestId: string): Promise<SignaturePosition[]>;
 
   addEvidence(record: SignatureEvidence): Promise<SignatureEvidence>;
+  replaceEvidence(record: SignatureEvidence): Promise<SignatureEvidence>;
   recordSignature(
     evidence: SignatureEvidence,
     signer: SignatureSigner
@@ -152,6 +154,7 @@ export function createMemorySignatureRepository(seed: {
     async listSigners(signatureRequestId) {
       return [...signers.values()].filter((entry) => entry.signatureRequestId === signatureRequestId).map(clone).sort(compareCreated);
     },
+    async addSigner(record) {assertUniqueId(signers,record.id);signers.set(record.id,clone(record));return clone(record);},
     async updateSigner(record) {
       requireExisting(signers, record.id, 'SIGNER_NOT_FOUND', '签字人不存在');
       signers.set(record.id, clone(record));
@@ -159,6 +162,10 @@ export function createMemorySignatureRepository(seed: {
     },
     async listPositions(signatureRequestId) {
       return [...positions.values()].filter((entry) => entry.signatureRequestId === signatureRequestId).map(clone).sort(comparePositions);
+    },
+    async replaceEvidence(record) {
+      requireExisting(evidence,record.id,'SIGNATURE_EVIDENCE_REQUIRED','签字证据不存在');
+      evidence.set(record.id,clone(record));return clone(record);
     },
     async addEvidence(record) {
       assertUniqueId(evidence, record.id);
@@ -269,6 +276,7 @@ export function createPostgresSignatureRepository(client: QueryableClient): Sign
     async listSigners(signatureRequestId) {
       return rows(await client.query('SELECT * FROM platform_signature_signers WHERE signature_request_id=$1 ORDER BY created_at,id', [signatureRequestId])).map(mapSigner);
     },
+    async addSigner(record) {await insertSigner(client,record);return record;},
     async updateSigner(record) {
       return mapSigner(requireRow(await client.query(
         `UPDATE platform_signature_signers
@@ -279,6 +287,9 @@ export function createPostgresSignatureRepository(client: QueryableClient): Sign
     },
     async listPositions(signatureRequestId) {
       return rows(await client.query('SELECT * FROM platform_signature_positions WHERE signature_request_id=$1 ORDER BY signer_id,page,id', [signatureRequestId])).map(mapPosition);
+    },
+    async replaceEvidence(record) {
+      return mapEvidence(requireRow(await client.query(`UPDATE platform_signature_evidence SET storage_ref=$2::jsonb,signature_url=$3,content_type=$4,sha256=$5,size_bytes=$6,width=$7,height=$8,client_metadata=$9::jsonb,signed_at=$10,submitted_by_person_id=$11 WHERE id=$1 RETURNING *`,[record.id,jsonOrNull(record.storageRef),record.signatureUrl,record.contentType,record.sha256,record.sizeBytes,record.width,record.height,JSON.stringify(record.clientMetadata),record.signedAt,record.submittedByPersonId])));
     },
     async addEvidence(record) {
       return insertEvidence(client, record);

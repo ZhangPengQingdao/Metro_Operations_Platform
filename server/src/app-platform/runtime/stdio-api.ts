@@ -1,3 +1,4 @@
+import type { PlatformPersonActorContext } from '../../platform/context/index.js';
 import { randomUUID } from 'node:crypto';
 import type { AppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
 import { jsonSnapshot, type GatewayJson } from '../gateway/model.js';
@@ -13,10 +14,10 @@ export interface AppStdioApiRequest { handler: string; method: string; path: str
 export function createAppStdioApiTransport(write: (value: unknown) => Promise<void>, close: () => void, timeoutMs = 10_000) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new AppStdioApiError('INVALID_OPTIONS');
   let active = true;
-  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void; admitted:boolean; assertAdmission?:()=>Promise<void> }>();
+  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void; admitted:boolean; assertAdmission?:()=>Promise<void>; resolveEmployee?:()=>Promise<PlatformPersonActorContext> }>();
   const disconnect = (): void => { active = false; for (const entry of pending.values()) entry.fail(); };
   return {
-    async invoke(request: AppStdioApiRequest, signal?: AbortSignal, assertAdmission?:()=>Promise<void>): Promise<GatewayJson> {
+    async invoke(request: AppStdioApiRequest, signal?: AbortSignal, assertAdmission?:()=>Promise<void>, resolveEmployee?:()=>Promise<PlatformPersonActorContext>): Promise<GatewayJson> {
       if (!active || signal?.aborted) throw new AppStdioApiError('CLOSED');
       if (pending.size >= 16) throw new AppStdioApiError('BUSY');
       const snapshot = jsonSnapshot(request, 60 * 1024);
@@ -27,7 +28,7 @@ export function createAppStdioApiTransport(write: (value: unknown) => Promise<vo
       const invalidate=()=>{const entry=pending.get(id);if(entry)entry.admitted=false;};
       const abort = () => {invalidate();reject(new AppStdioApiError('ABORTED', 'unknown'));};
       const timer = setTimeout(() => {invalidate();reject(new AppStdioApiError('TIMEOUT', 'unknown'));}, timeoutMs);
-      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled, admitted:true, assertAdmission });
+      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled, admitted:true, assertAdmission, resolveEmployee });
       signal?.addEventListener('abort', abort, { once: true });
       // Write failure may follow delivery. Keep the actual-work slot until a reply or verified stop.
       void write({ id, request: snapshot }).catch(() => { disconnect(); close(); });
@@ -41,6 +42,12 @@ export function createAppStdioApiTransport(write: (value: unknown) => Promise<vo
         const check=()=>{if(!active||!entry?.admitted||!entry.assertAdmission||pending.get(id)!==entry)throw new AppStdioApiError('ACCESS_DENIED');};
         check();await entry!.assertAdmission!();check();
       };
+    },
+    employeeResolver(id:string): (()=>Promise<PlatformPersonActorContext>) | undefined {
+      const entry=pending.get(id);
+      if(!entry?.resolveEmployee)return undefined;
+      const guard=this.admissionGuard(id);
+      return async()=>{await guard();const actor=await entry.resolveEmployee!();await guard();return actor;};
     },
     accept(value: unknown): void {
       try {

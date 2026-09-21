@@ -215,9 +215,10 @@ class Deployment:
   if m.get('format',1)==2 and self.config.get('imageTransport','registry')!='archive':images=registry_images(m)
   else:verify_archive(directory,m);images=load_images(directory,m)
   root=str(self.root);gid=str(self.config['socketGid'])
+  uploads=self.root/'uploads';uploads.mkdir(mode=0o700,exist_ok=True);os.chown(uploads,1000,1000)
   api={'image':images['api'],'restart':'unless-stopped','read_only':True,'tmpfs':['/tmp:size=64m'],'cap_drop':['ALL'],'security_opt':['no-new-privileges:true'],
-   'group_add':[gid],'environment':{'MOP_UPDATER_SOCKET':'/run/mop-updater/control.sock'},
-   'volumes':[root+'/secrets/api.json:/run/secrets/api.json:ro','/run/mop-updater:/run/mop-updater:ro'],
+   'group_add':[gid],'environment':{'MOP_UPDATER_SOCKET':'/run/mop-updater/control.sock','UPLOAD_DIR':'/var/lib/mop/uploads'},
+   'volumes':[root+'/uploads:/var/lib/mop/uploads',root+'/secrets/api.json:/run/secrets/api.json:ro','/run/mop-updater:/run/mop-updater:ro'],
    'networks':['internal','edge'],'stop_grace_period':'60s',
    'healthcheck':{'test':['CMD','node','-e',"fetch('http://127.0.0.1:3101/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"],'interval':'5s','timeout':'3s','retries':12}}
   db={'image':images['database'],'restart':'unless-stopped','environment':{'POSTGRES_PASSWORD_FILE':'/run/secrets/postgres','POSTGRES_INITDB_ARGS':'--auth-host=scram-sha-256'},
@@ -269,7 +270,7 @@ class Deployment:
    with (folder/filename).open('wb') as out:self.compose(current,'exec','-T','database',*args,output=out);out.flush();os.fsync(out.fileno())
   # Verify custom dump structure. Roles, credentials, proxy and application artifacts are separate.
   command(['docker','run','--rm','--network','none','-v',str(folder)+':/backup:ro',read(current/'compose.json')['services']['database']['image'],'pg_restore','--list','/backup/database.dump'])
-  command(['tar','-czf',str(folder/'configuration.tar.gz'),'-C',str(self.root),'secrets','config.json','current.json',*(['apps'] if self.config.get('applications') else []),*(['maintenance'] if (self.root/'maintenance').exists() else [])])
+  command(['tar','-czf',str(folder/'configuration.tar.gz'),'-C',str(self.root),'secrets','config.json','current.json',*(['apps'] if self.config.get('applications') else []),*(['maintenance'] if (self.root/'maintenance').exists() else []),*(['uploads'] if (self.root/'uploads').exists() else [])])
   atomic(folder/'complete.json',{'taskId':task,'version':read(current/'release.json')['version']})
  def healthy(self,directory):
   for _ in range(36):

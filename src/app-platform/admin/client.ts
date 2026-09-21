@@ -3,6 +3,6 @@ const messages:Record<string,string>={REGISTRATION_PERSON_EXISTS:'此工号已�
 export async function adminRequest<T>(path:string,options:{method?:string;body?:unknown;signal?:AbortSignal}={}):Promise<T>{
  const response=await fetch(`/api/admin${path}`,{method:options.method??'GET',credentials:'same-origin',signal:options.signal,headers:options.body===undefined?undefined:{'Content-Type':'application/json'},body:options.body===undefined?undefined:JSON.stringify(options.body)});
  const body:unknown=await response.json().catch(()=>null);
- if(!response.ok){if(response.status===401&&path!=='/auth/login')window.dispatchEvent(new Event('afc-admin-session-expired'));const value=body&&typeof body==='object'?body as {error?:unknown;message?:unknown}:{};const code=typeof value.error==='string'?value.error:'ADMIN_REQUEST_FAILED';throw new AdminRequestError(response.status,code,messages[code]??(typeof value.message==='string'?value.message:`操作未确认完成（${code}），请刷新核对状态后再操作。`));}
+ if(!response.ok){if(response.status===401&&path!=='/auth/login')window.dispatchEvent(new Event('afc-admin-session-expired'));const value=body&&typeof body==='object'?body as {error?:unknown;message?:unknown}:{};const code=typeof value.error==='string'?value.error:'ADMIN_REQUEST_FAILED';throw new AdminRequestError(response.status,code,(code==='APP_CAPABILITIES_NOT_SUPPORTED'?'当前平台尚不支持应用申请的能力，请先升级平台后重新预览安装。':messages[code])??(typeof value.message==='string'?value.message:`操作未确认完成（${code}），请刷新核对状态后再操作。`));}
  return body as T;
 }

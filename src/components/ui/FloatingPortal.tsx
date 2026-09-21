@@ -42,7 +42,11 @@ export function calculateFloatingPosition(
   const desiredTop = placement === 'top'
     ? anchor.top - gap - floating.height
     : anchor.bottom + gap;
-  const desiredLeft = (options.align ?? 'start') === 'end'
+  const shouldFlipToEnd = (options.align ?? 'start') === 'start'
+    && anchor.left + floating.width > options.viewportWidth - margin
+    && anchor.right - floating.width >= margin;
+  const effectiveAlign = shouldFlipToEnd ? 'end' : (options.align ?? 'start');
+  const desiredLeft = effectiveAlign === 'end'
     ? anchor.right - floating.width
     : anchor.left;
   const maxTop = Math.max(margin, options.viewportHeight - margin - floating.height);

@@ -103,12 +103,12 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           disabled
             ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
             : isOpen
-            ? 'border-emerald-600 ring-2 ring-emerald-600/15 shadow-sm'
-            : 'border-[#dce6e0] hover:border-emerald-500/70 text-[#17211d]'
+            ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-sm'
+            : 'border-neutral-300 hover:border-neutral-900 text-neutral-900'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <Clock size={16} className={isOpen ? 'text-emerald-600' : 'text-gray-400'} />
+          <Clock size={16} className={isOpen ? 'text-neutral-900' : 'text-gray-400'} />
           <span className={`truncate font-mono ${value ? 'text-[#17211d] font-semibold' : 'text-gray-400'}`}>
             {value || placeholder}
           </span>
@@ -133,12 +133,12 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         onDismiss={() => setIsOpen(false)}
         width={230}
         ariaLabel="时间选择器"
-        className="p-3 overflow-y-auto bg-white rounded-2xl border border-[#e2ebe6] shadow-2xl shadow-emerald-950/20 select-none animation-fade-in"
+        className="p-3 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
       >
           {/* 面板头部 */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#f0f5f2]">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100">
             <span className="text-xs font-bold text-[#17211d]">选择时间</span>
-            <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+            <span className="text-xs font-mono font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded-md">
               {value || `${pad(selectedHour)}:${pad(selectedMinute)}`}
             </span>
           </div>
@@ -160,8 +160,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     onClick={() => handleSelectHour(h)}
                     className={`w-full py-1 rounded-lg text-xs font-mono transition-colors text-center cursor-pointer ${
                       isSel
-                        ? 'bg-emerald-600 text-white font-bold shadow-sm'
-                        : 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-700'
+                        ? 'bg-neutral-900 text-white font-bold shadow-sm'
+                        : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900'
                     }`}
                   >
                     {pad(h)}
@@ -185,8 +185,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     onClick={() => handleSelectMinute(m)}
                     className={`w-full py-1 rounded-lg text-xs font-mono transition-colors text-center cursor-pointer ${
                       isSel
-                        ? 'bg-emerald-600 text-white font-bold shadow-sm'
-                        : 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-700'
+                        ? 'bg-neutral-900 text-white font-bold shadow-sm'
+                        : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900'
                     }`}
                   >
                     {pad(m)}
@@ -197,11 +197,11 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           </div>
 
           {/* 底部快捷操作 */}
-          <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-[#f0f5f2]">
+          <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-neutral-100">
             <button
               type="button"
               onClick={handleSelectNow}
-              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              className="text-[11px] font-semibold text-neutral-900 hover:text-neutral-700 transition-colors bg-transparent border-0 p-0 cursor-pointer"
             >
               此时
             </button>

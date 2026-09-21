@@ -88,11 +88,15 @@ export type AppDataMutation =
   | {action:'insert';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>}
   | {action:'update';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>;expected:Readonly<Record<string,AppGatewayJson>>}
   | {action:'delete';table:string;id:string;expected:Readonly<Record<string,AppGatewayJson>>};
+export type AppDataFilter = {column:string;value:string|number|boolean|null} | {column:string;contains:readonly Readonly<Record<string,string|number|boolean|null>>[]};
 export interface AppDataListOptions {
+  order?:{column:string;direction:'asc'|'desc'};
+  after?:{value:string;id:string};
+  range?:{column:string;from?:string;to?:string};
   afterId?:string;
   pageSize?:number;
-  filters?:readonly {column:string;value:string|number|boolean|null}[];
-  anyOf?:readonly (readonly {column:string;value:string|number|boolean|null}[])[];
+  filters?:readonly AppDataFilter[];
+  anyOf?:readonly (readonly AppDataFilter[])[];
   search?:{column:string;text:string};
 }
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */
@@ -109,4 +113,16 @@ export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGate
     },
     delete(table:string,id:string,requestId:string,signal?:AbortSignal){return gateway.invoke('platform.app_data.write',{table,id,requestId,action:'delete'},signal);},
   });
+}
+
+/** Backend clients use the host-bound employee identity; no personId is accepted for signing. */
+export function createPlatformSignaturesClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({
+  associate(params:{entityId:string;title:string;organizationUnitId:string;personIds:readonly string[]},signal?:AbortSignal){return gateway.invoke('platform.signatures.associate',params,signal);},
+  get(entityId:string,signal?:AbortSignal,evidencePersonId?:string){return gateway.invoke('platform.signatures.get',{entityId,...(evidencePersonId?{evidencePersonId}:{})},signal);},
+  sign(entityId:string,image:string,signal?:AbortSignal){return gateway.invoke('platform.signatures.sign',{entityId,image},signal);},
+ });
+}
+export function createPlatformWebhookClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({send(params:{url:string;message:string;messageType?:'text'|'markdown'},signal?:AbortSignal){return gateway.invoke('platform.webhook.send',params,signal);}});
 }

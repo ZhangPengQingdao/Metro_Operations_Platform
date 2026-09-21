@@ -145,12 +145,12 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           disabled
             ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
             : isOpen
-            ? 'border-emerald-600 ring-2 ring-emerald-600/15 shadow-sm'
-            : 'border-[#dce6e0] hover:border-emerald-500/70 text-[#17211d]'
+            ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-sm'
+            : 'border-neutral-300 hover:border-neutral-900 text-neutral-900'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <CalendarDots size={16} className={isOpen ? 'text-emerald-600' : 'text-gray-400'} />
+          <CalendarDots size={16} className={isOpen ? 'text-neutral-900' : 'text-gray-400'} />
           <span className={`truncate font-mono ${value ? 'text-[#17211d] font-semibold' : 'text-gray-400'}`}>
             {value || placeholder}
           </span>
@@ -175,10 +175,10 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         onDismiss={() => setIsOpen(false)}
         width={292}
         ariaLabel="日期选择器"
-        className="p-3.5 overflow-y-auto bg-white rounded-2xl border border-[#e2ebe6] shadow-2xl shadow-emerald-950/20 select-none animation-fade-in"
+        className="p-3.5 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
       >
           {/* 头部年份与月份切换 */}
-          <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-[#f0f5f2]">
+          <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-neutral-100">
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -227,7 +227,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             {['日', '一', '二', '三', '四', '五', '六'].map((day, idx) => (
               <span
                 key={day}
-                className={`text-[11px] font-semibold ${idx === 0 || idx === 6 ? 'text-emerald-750/80' : 'text-gray-400'}`}
+                className="text-[11px] font-semibold text-neutral-400"
               >
                 {day}
               </span>
@@ -237,18 +237,18 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           {/* 日期数字网格 (7x6) */}
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((item) => {
-              let btnClass = 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-700';
+              let btnClass = 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900';
 
               if (item.isSelected) {
-                btnClass = 'bg-emerald-600 text-white font-bold shadow-sm hover:bg-emerald-700';
+                btnClass = 'bg-neutral-900 text-white font-bold shadow-sm hover:bg-neutral-800';
               } else if (item.isToday) {
-                btnClass = 'border border-emerald-500 font-bold text-emerald-700 hover:bg-emerald-50';
+                btnClass = 'border border-neutral-900 font-bold text-neutral-900 hover:bg-neutral-100';
               } else if (!item.isCurrentMonth) {
-                btnClass = 'text-gray-300 hover:bg-gray-50 hover:text-gray-500';
+                btnClass = 'text-neutral-300 hover:bg-neutral-50 hover:text-neutral-500';
               }
 
               if (item.isDisabled) {
-                btnClass = 'text-gray-200 cursor-not-allowed opacity-40 hover:bg-transparent';
+                btnClass = 'text-neutral-200 cursor-not-allowed opacity-40 hover:bg-transparent';
               }
 
               return (
@@ -268,11 +268,11 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           </div>
 
           {/* 底部快捷操作栏 */}
-          <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-[#f0f5f2]">
+          <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-neutral-100">
             <button
               type="button"
               onClick={handleSelectToday}
-              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              className="text-[11px] font-semibold text-neutral-900 hover:text-neutral-700 transition-colors bg-transparent border-0 p-0 cursor-pointer"
             >
               今天
             </button>

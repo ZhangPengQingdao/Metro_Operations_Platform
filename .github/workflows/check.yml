@@ -22,6 +22,8 @@ jobs:
       - run: npm run build
       - run: npm --prefix server run build
       - run: npm test
+      - run: npm --prefix applications/shifts test
+      - run: npm --prefix applications/shifts run build
       - run: python3 -m unittest discover -s tests/deployment -v
       - run: bash -n deploy/install.sh
 

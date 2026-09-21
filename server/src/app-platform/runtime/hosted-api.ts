@@ -59,6 +59,7 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
       signal?.addEventListener('abort', onAbort, { once: true });
       const timer = setTimeout(() => abort('TIMEOUT'), timeoutMs);
       const work = Promise.resolve().then(async () => {
+        let employeeActor: Extract<PlatformActorContext,{actorType:'person'}>;
         async function check() {
           await assertAdmission?.();
           await current();
@@ -80,11 +81,12 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
           const serialized=JSON.stringify({permissions,businessAuthorization});
           if(permissionSnapshot!==undefined&&permissionSnapshot!==serialized)throw new AppStdioApiError('ACCESS_DENIED');
           permissionSnapshot=serialized;
+          employeeActor=actor;
           return parseAppBackendEmployeeContext({version:'1.0',personId,organizationUnitId,requestId:metadata.requestId,traceId:metadata.traceId,permissions,...(businessAuthorization?{businessAuthorization}:{})});
         }
         const employee = await check();
         dispatched = true;
-        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload, employee }, controller.signal,async()=>{await check();});
+        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload, employee }, controller.signal,async()=>{await check();},async()=>{await check();return employeeActor;});
         await check();
         return jsonSnapshot(result, 256 * 1024);
       }).catch(error => {

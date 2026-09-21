@@ -206,7 +206,7 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
                   type="button"
                   onClick={() => setCurrentStrokeColor('#0f172a')}
                   className={`w-5 h-5 rounded-full border ${
-                    currentStrokeColor === '#0f172a' ? 'ring-2 ring-emerald-500 scale-110' : 'opacity-60'
+                    currentStrokeColor === '#0f172a' ? 'ring-2 ring-neutral-900 scale-110' : 'opacity-60'
                   }`}
                   style={{ backgroundColor: '#0f172a' }}
                   title="碳黑墨汁"
@@ -215,16 +215,16 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
                   type="button"
                   onClick={() => setCurrentStrokeColor('#047857')}
                   className={`w-5 h-5 rounded-full border ${
-                    currentStrokeColor === '#047857' ? 'ring-2 ring-emerald-500 scale-110' : 'opacity-60'
+                    currentStrokeColor === '#047857' ? 'ring-2 ring-neutral-900 scale-110' : 'opacity-60'
                   }`}
                   style={{ backgroundColor: '#047857' }}
-                  title="运管松绿"
+                  title="运管深色"
                 />
                 <button
                   type="button"
                   onClick={() => setCurrentStrokeColor('#1e40af')}
                   className={`w-5 h-5 rounded-full border ${
-                    currentStrokeColor === '#1e40af' ? 'ring-2 ring-emerald-500 scale-110' : 'opacity-60'
+                    currentStrokeColor === '#1e40af' ? 'ring-2 ring-neutral-900 scale-110' : 'opacity-60'
                   }`}
                   style={{ backgroundColor: '#1e40af' }}
                   title="钢笔藏蓝"

@@ -1,3 +1,6 @@
+import {createOrganizationContextOperation} from '../gateway/organization-context.js';
+import {createWebhookOperation} from '../gateway/webhook.js';
+import {createSignatureGatewayOperations} from '../gateway/signatures.js';
 import {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {ConnectablePool,QueryableClient} from '../../core/database/index.js';
 import {createPostgresCoreTechnicalAuditRepository} from '../../core/observability/index.js';
@@ -38,7 +41,7 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
  const {contextResolver,authenticateServiceCredential}=createManagementContexts(pool);
  return new AppGateway({registry:{authenticateServiceCredential},contextResolver,
   auditRepository:createPostgresCoreTechnicalAuditRepository(pool),
-  operations:[createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations]});
+  operations:[createOrganizationContextOperation(createPostgresPeopleDirectoryRepository(pool)),createWebhookOperation(),...createSignatureGatewayOperations(pool),createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations]});
 }
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){

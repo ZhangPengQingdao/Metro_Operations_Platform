@@ -104,6 +104,31 @@ export class SignatureService {
     return { request: saved, session, publicToken };
   }
 
+  /** Keep a record's attendance list current without restarting signatures of unchanged people. */
+  async associateRecord(context:PlatformActorContext,input:CreateSignatureRequestInput):Promise<SignatureRequestCreation>{
+    return runAtomicOperation([this.repository,...(this.options.outbox?[this.options.outbox]:[])],async()=>{
+      const draft=await this.prepareDraft(context,input);
+      for(const signer of draft.signers)await this.requireAuthorized(context,SIGNATURE_PERMISSION_CODES.create,resourceForSigners([signer],draft.request.createdByPersonId));
+      const located=await this.repository.findRequestByKey(draft.request.sourceAppId,draft.request.signatureKey);
+      if(!located)return this.createSignatureRequestCommand(context,input);
+      const request=await this.requireRequest(located.id,'update'),session=await this.requireSession(request.id);
+      if(request.sourceEntityId!==draft.request.sourceEntityId||request.sourceEntityType!==draft.request.sourceEntityType||request.status==='cancelled')throw new SignatureError('SIGNATURE_KEY_CONFLICT','签字关联不匹配');
+      const old=await this.repository.listSigners(request.id),wanted=new Set(draft.signers.map(s=>s.personId));
+      const now=this.nowIso();
+      for(const signer of old)if(!wanted.has(signer.personId)&&signer.status!=='revoked')await this.repository.updateSigner({...signer,status:'revoked',revokedAt:now,updatedAt:now});
+      for(const signer of draft.signers){
+        const prior=old.find(s=>s.personId===signer.personId);
+        if(!prior)await this.repository.addSigner({...signer,signatureRequestId:request.id,sessionId:session.id});
+        else if(prior.status==='revoked')await this.repository.updateSigner({...prior,status:prior.signatureEvidenceId?'signed':'pending',revokedAt:null,updatedAt:now});
+      }
+      const complete=canCompleteSignature(await this.repository.listSigners(request.id));
+      const saved=await this.repository.updateRequest({...request,document:draft.request.document,status:complete?'completed':'dispatched',completedAt:complete?request.completedAt??now:null,updatedAt:now});
+      const savedSession=await this.repository.updateSession({...session,status:complete?'completed':'dispatched',completedAt:complete?session.completedAt??now:null,expiresAt:null,updatedAt:now});
+      await this.recordOperation(context,request.id,'status_changed',{personIds:old.filter(s=>s.status!=='revoked').map(s=>s.personId)},{personIds:[...wanted]},'Record attendance updated');
+      return {request:saved,session:savedSession,publicToken:null};
+    });
+  }
+
   async getSignatureRequest(context: PlatformActorContext, signatureRequestId: string): Promise<SignatureDetail> {
     return runAtomicOperation([this.repository], () => this.getSignatureRequestQuery(context, signatureRequestId));
   }
@@ -139,6 +164,28 @@ export class SignatureService {
 
   async submitSignature(context: PlatformActorContext, input: SubmitSignatureInput): Promise<SignatureDetail> {
     return runAtomicOperation([this.repository, ...(this.options.outbox ? [this.options.outbox] : [])], () => this.submitSignatureCommand(context, input));
+  }
+
+  /** Record-style applications may replace only their current person's own evidence. */
+  async submitOwnSignature(context:PlatformActorContext,input:SubmitSignatureInput):Promise<SignatureDetail>{
+    return runAtomicOperation([this.repository,...(this.options.outbox?[this.options.outbox]:[])],async()=>{
+      const located=await this.resolveSession(input);
+      const request=await this.requireRequest(located.signatureRequestId,'update');
+      const session=await this.requireSession(request.id);
+      const signer=await this.repository.findSignerById(uuid(input.signerId,'signer id'));
+      if(context.actorType!=='person'||!signer||signer.personId!==context.person.id||signer.signatureRequestId!==request.id||signer.sessionId!==session.id||!ownSourceExecution(context,request.sourceAppId))throw new SignatureError('SIGNATURE_PERMISSION_DENIED','只能提交本人签字');
+      if(signer.status!=='signed')return this.submitSignatureCommand(context,input);
+      if(request.status==='cancelled'||session.status==='cancelled'||session.expiresAt&&session.expiresAt<=this.nowIso())throw new SignatureError('SIGNATURE_CANCELLED','签字请求不可用');
+      if(!await applicationGrantAllows(context,SIGNATURE_PERMISSION_CODES.sign,resourceForSigners([signer],request.createdByPersonId)))throw new SignatureError('SIGNATURE_PERMISSION_DENIED','应用未获授权提交本人签字');
+      const previous=signer.signatureEvidenceId?await this.repository.findEvidenceById(signer.signatureEvidenceId):null;
+      if(!previous)throw new SignatureError('SIGNATURE_EVIDENCE_REQUIRED','签字证据不存在');
+      const now=this.nowIso();
+      const evidence=normalizeEvidence(input.evidence,{id:previous.id,signatureRequestId:request.id,signerId:signer.id,submittedByPersonId:context.person.id,signedAt:now,createdAt:previous.createdAt});
+      await this.repository.replaceEvidence(evidence);
+      await this.repository.updateSigner({...signer,signedAt:now,updatedAt:now});
+      await this.recordOperation(context,request.id,'signed',previous,evidence,input.note);
+      return this.detail(request);
+    });
   }
 
   private async submitSignatureCommand(context: PlatformActorContext, input: SubmitSignatureInput): Promise<SignatureDetail> {

@@ -45,6 +45,17 @@ test('FloatingPortal flips above and clamps horizontally inside the viewport', (
     left: 408,
     placement: 'bottom'
   });
+
+  // Automatically flips to end alignment when align: start would overflow the right viewport edge
+  assert.deepEqual(calculateFloatingPosition({ ...anchor, left: 500, right: 620 }, { width: 380, height: 200 }, {
+    viewportWidth: 800,
+    viewportHeight: 700,
+    align: 'start'
+  }), {
+    top: 148,
+    left: 240, // 620 - 380 = 240
+    placement: 'bottom'
+  });
 });
 
 test('pickers use one native top-layer portal without timer or in-container popover positioning', async () => {

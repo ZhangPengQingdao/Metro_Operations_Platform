@@ -16,7 +16,7 @@ export interface TagDropdownPickerProps {
   items: TagFilterItem[];
   selectedIds: string[];
   onChange: (selectedIds: string[]) => void;
-  title: string;
+  title?: string;
   buttonText?: string;
   buttonVariant?: 'primary' | 'secondary' | 'soft' | 'ghost' | 'outline';
   emptyText?: string;
@@ -31,13 +31,13 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
   items,
   selectedIds,
   onChange,
-  title,
+  title = '',
   buttonText,
   buttonVariant = 'primary',
   emptyText = '未选择项目',
   disabled = false,
   multiple = true,
-  align = 'left',
+  align = 'right',
   showTagsBelow = true,
   className = ''
 }) => {
@@ -87,18 +87,18 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
   };
 
   const btnStyle = {
-    primary: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm',
-    secondary: 'bg-[#edf4f0] text-gray-700 hover:bg-[#e2ece6]',
-    soft: 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100/80',
-    ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-    outline: 'border border-gray-300 text-gray-700 hover:border-emerald-600 hover:text-emerald-700'
+    primary: 'bg-neutral-900 text-white hover:bg-neutral-800 shadow-sm',
+    secondary: 'bg-neutral-100 text-neutral-800 hover:bg-neutral-200 border border-neutral-200/80',
+    soft: 'bg-neutral-100 text-neutral-800 hover:bg-neutral-200/80',
+    ghost: 'bg-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
+    outline: 'border border-neutral-300 text-neutral-700 hover:border-neutral-900 hover:text-neutral-900'
   }[buttonVariant];
 
   return (
-    <div className={`relative inline-block w-full space-y-2 ${className}`}>
+    <div className={`relative inline-block ${showTagsBelow || title ? 'w-full space-y-2' : ''} ${className}`}>
       {/* 头部触发按钮行 */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-[#17211d]">{title}</span>
+      <div className={`flex items-center ${title ? 'justify-between' : 'justify-start'}`}>
+        {title ? <span className="text-xs font-bold text-[#17211d]">{title}</span> : null}
         <button
           ref={triggerRef}
           type="button"
@@ -110,7 +110,7 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
-          <span>{buttonText || title}</span>
+          <span>{buttonText || title || '选择项目'}</span>
           {selectedIds.length > 0 && (
             <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[10px] bg-white/30 text-current font-bold">
               {selectedIds.length}
@@ -153,14 +153,14 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
         width={380}
         align={align === 'right' ? 'end' : 'start'}
         ariaLabel={title}
-        className="p-4 overflow-y-auto bg-white rounded-2xl border border-[#e2ebe6] shadow-2xl shadow-emerald-950/20 select-none animation-fade-in"
+        className="p-4 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
       >
           {/* 下拉窗头部 */}
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#edf3ef]">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-gray-900">{title}</span>
               {selectedIds.length > 0 && (
-                <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">
+                <span className="text-xs font-mono text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded-full font-bold">
                   已选 {selectedIds.length}
                 </span>
               )}
@@ -170,7 +170,7 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
                 <button
                   type="button"
                   onClick={() => onChange([])}
-                  className="text-xs font-semibold text-gray-500 hover:text-emerald-750 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                  className="text-xs font-semibold text-gray-500 hover:text-neutral-900 transition-colors bg-transparent border-0 p-0 cursor-pointer"
                 >
                   清除
                 </button>
@@ -213,7 +213,7 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
                               type="button"
                               onClick={() => handleSelectAllGroup(groupList)}
                               className={`text-[11px] font-semibold transition-colors bg-transparent border-0 p-0 cursor-pointer ${
-                                isAllSelected ? 'text-gray-400' : 'text-emerald-600 hover:text-emerald-800'
+                                isAllSelected ? 'text-gray-400' : 'text-neutral-900 hover:text-neutral-700'
                               }`}
                             >
                               全选
@@ -267,7 +267,7 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSelectAllGroup(groupedItems.ungrouped)}
-                            className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                            className="text-[11px] font-semibold text-neutral-900 hover:text-neutral-700 transition-colors bg-transparent border-0 p-0 cursor-pointer"
                           >
                             全选
                           </button>

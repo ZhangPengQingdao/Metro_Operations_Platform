@@ -40,6 +40,8 @@ try:
  management.write_text(json.dumps({'version':1,'artifactRoot':str(apps/'packages'),'runtimeRoot':str(apps/'runtime'),'uploadRoot':str(apps/'uploads'),'publisherPolicyFile':str(policy),'approvedManifestDigests':[],'managedStorage':True,'docker':{'socketPath':'/var/run/docker.sock','runtimeImage':RUNTIME_IMAGE,'approval':{'imageId':image['Id'],'config':image['Config']}}}));management.chmod(0o444)
  settings.update({'MOP_APP_MANAGEMENT_CONFIG':'/run/secrets/app-management.json','MOP_APP_STORAGE_ADMIN_DATABASE_URL':f'postgresql://postgres:{password}@127.0.0.1/metro_operations_platform','MOP_APP_RESOURCE_ORIGIN':'https://resources.example.net'})
  mounts=['--group-add',str(os.stat('/var/run/docker.sock').st_gid),'-v','/var/run/docker.sock:/var/run/docker.sock','-v',str(apps)+':'+str(apps),'-v',str(management)+':/run/secrets/app-management.json:ro']
+ uploads=root/'uploads';uploads.mkdir();uploads.chmod(0o777)
+ settings['UPLOAD_DIR']='/var/lib/mop/uploads';mounts+=['-v',str(uploads)+':/var/lib/mop/uploads']
  maintenance=root/'maintenance';maintenance.mkdir();maintenance.chmod(0o777)
  settings.update({'MOP_MAINTENANCE_SOCKET':'/run/mop-maintenance/control.sock','MOP_MAINTENANCE_STATE':'/run/mop-maintenance/state.json'})
  mounts+=['-v',str(maintenance)+':/run/mop-maintenance']
@@ -73,12 +75,14 @@ try:
   urllib.request.urlopen(urllib.request.Request(base+'/api/admin/auth/login',data=b'{}',headers={'Content-Type':'application/json','Origin':'https://ops.example.com'}))
   raise AssertionError('Maintenance did not block public ingress')
  except urllib.error.HTTPError as error:assert error.code==503
+ run('docker','exec',api,'node','-e',"require('fs').writeFileSync('/var/lib/mop/uploads/persistence-check','retained')")
  run('docker','restart',api)
  for _ in range(60):
   try:
    if urllib.request.urlopen(base+'/api/health/ready',timeout=2).status==200:break
   except Exception:time.sleep(1)
  else:raise RuntimeError('API did not restart during maintenance')
+ assert (uploads/'persistence-check').read_text()=='retained'
  assert maintenance_call('restore')['snapshot']['phase']=='completed'
  assert maintenance_call('restore')['snapshot']['phase']=='completed'
  with urllib.request.urlopen(req) as response:assert response.status==200

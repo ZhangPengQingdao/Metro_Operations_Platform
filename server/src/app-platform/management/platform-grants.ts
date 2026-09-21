@@ -4,7 +4,7 @@ import type {AppManifest} from '../manifest/index.js';
 import type {AppRegistryService} from '../registry/index.js';
 import {AppManagementError} from './ui.js';
 
-const supported=new Set(['platform.app_data.read','platform.app_data.write','platform.people.read','platform.locations.read','platform.assets.read']);
+const supported=new Set(['platform.app_data.read','platform.app_data.write','platform.people.read','platform.locations.read','platform.assets.read','platform.notifications.create','platform.signatures.create','platform.signatures.read','platform.signatures.sign']);
 export function requestedPlatformCapabilities(manifest:AppManifest){
  const defined=new Set(manifest.permissions.defined.map(p=>p.code));
  if(manifest.permissions.requested.some(code=>!code.startsWith('platform.')&&!defined.has(code)))throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');

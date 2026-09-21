@@ -95,3 +95,14 @@ test('business scope revision change invalidates an in-flight call even when per
  await assert.rejects(f.api.invoke(f.actor,f.request),error=>(error as any).code==='ACCESS_DENIED'&&(error as any).writeOutcome==='unknown');
  f.api.close();await f.api.drain();
 });
+
+test('host-bound employee resolver is never on the wire and expires with the invocation',async()=>{
+ let frame:any;let admitted=true;const actor={actorType:'person',person:{id:'trusted'},execution:{type:'application',appId:'demo'}} as any;
+ const transport=createAppStdioApiTransport(async value=>{frame=value;},()=>{});
+ const call=transport.invoke({handler:'sign',method:'POST',path:'/sign',payload:{personId:'forged'}},undefined,async()=>{if(!admitted)throw Error('revoked');},async()=>actor);
+ await tick();assert.ok(!JSON.stringify(frame).includes('trusted'));
+ const resolve=transport.employeeResolver(frame.id)!;assert.equal((await resolve()).person.id,'trusted');
+ admitted=false;await assert.rejects(resolve(),/revoked/);admitted=true;
+ transport.accept({id:frame.id,result:true});await call;await assert.rejects(resolve(),/ACCESS_DENIED/);
+ assert.equal(transport.employeeResolver(frame.id),undefined);transport.close();await transport.drain();
+});
