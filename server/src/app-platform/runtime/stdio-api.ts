@@ -14,7 +14,7 @@ export interface AppStdioApiRequest { handler: string; method: string; path: str
 export function createAppStdioApiTransport(write: (value: unknown) => Promise<void>, close: () => void, timeoutMs = 10_000) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new AppStdioApiError('INVALID_OPTIONS');
   let active = true;
-  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void; admitted:boolean; assertAdmission?:()=>Promise<void>; resolveEmployee?:()=>Promise<PlatformPersonActorContext> }>();
+  const pending = new Map<string, { finish(value: GatewayJson): void; fail(): void; actual: Promise<void>; settled(): void; admitted:boolean; requestId?:string; assertAdmission?:()=>Promise<void>; resolveEmployee?:()=>Promise<PlatformPersonActorContext> }>();
   const disconnect = (): void => { active = false; for (const entry of pending.values()) entry.fail(); };
   return {
     async invoke(request: AppStdioApiRequest, signal?: AbortSignal, assertAdmission?:()=>Promise<void>, resolveEmployee?:()=>Promise<PlatformPersonActorContext>): Promise<GatewayJson> {
@@ -28,7 +28,7 @@ export function createAppStdioApiTransport(write: (value: unknown) => Promise<vo
       const invalidate=()=>{const entry=pending.get(id);if(entry)entry.admitted=false;};
       const abort = () => {invalidate();reject(new AppStdioApiError('ABORTED', 'unknown'));};
       const timer = setTimeout(() => {invalidate();reject(new AppStdioApiError('TIMEOUT', 'unknown'));}, timeoutMs);
-      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled, admitted:true, assertAdmission, resolveEmployee });
+      pending.set(id, { finish: resolve, fail: () => reject(new AppStdioApiError('CLOSED', 'unknown')), actual, settled, admitted:true, requestId:request.employee?.requestId, assertAdmission, resolveEmployee });
       signal?.addEventListener('abort', abort, { once: true });
       // Write failure may follow delivery. Keep the actual-work slot until a reply or verified stop.
       void write({ id, request: snapshot }).catch(() => { disconnect(); close(); });
@@ -64,6 +64,10 @@ export function createAppStdioApiTransport(write: (value: unknown) => Promise<vo
       disconnect();
       for (const entry of pending.values()) entry.settled();
       pending.clear();
+    },
+    /** Wait only for this caller's actual reply; unrelated API calls cannot block delivery. */
+    async drainRequest(requestId:string):Promise<void> {
+      await Promise.all([...pending.values()].filter(entry=>entry.requestId===requestId).map(entry=>entry.actual));
     },
     async drain(): Promise<void> { await Promise.all([...pending.values()].map(entry => entry.actual)); },
   };

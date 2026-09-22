@@ -32,6 +32,7 @@ const hosted = (mode: 'trusted' | 'isolated') => z.object({
 }).strict();
 const schema = z.object({
   manifestVersion: z.literal('1.0'), id, version, name: label, description, publisherId: id,
+  icon: z.object({paths:z.array(z.string().min(1).max(2048).regex(/^[MmZzLlHhVvCcSsQqTtAa0-9.,+eE\s-]+$/)).min(1).max(16)}).strict().optional(),
   compatibility: z.object({ platform: range,
     capabilities: list(z.object({ id, contractVersion }).strict()),
     applications: list(z.object({ id, version: range }).strict())

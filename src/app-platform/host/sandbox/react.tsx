@@ -1,3 +1,4 @@
+import {readThemePreference} from '../../identity/theme';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation } from './bridge.js';
 
@@ -46,12 +47,11 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
   const active=useRef(false);
   const config=useRef({resource,operations});
   const [session]=useState(createSandboxSession);
-  const [initialHtml]=useState(()=>{
-    if(resource.mode!=='local-demo')return undefined;
-    const preference=typeof document!=='undefined'?document.querySelector('.afc-admin')?.getAttribute('data-theme'):'light';
-    const dark=preference==='dark'||preference==='system'&&typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: dark)').matches;
-    return themedSandboxHtml(resource.html,dark?'dark':'light');
+  const [initialTheme]=useState<'dark'|'light'>(()=>{
+    const preference=(typeof document!=='undefined'?document.querySelector('.afc-admin')?.getAttribute('data-theme'):undefined)??readThemePreference();
+    return preference==='dark'||preference==='system'&&typeof window!=='undefined'&&window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light';
   });
+  const [initialHtml]=useState(()=>resource.mode==='local-demo'?themedSandboxHtml(resource.html,initialTheme):undefined);
   const [failed,setFailed]=useState(false);
   const [modalOpen,setModalOpen]=useState(false);
   useEffect(()=>{
@@ -94,10 +94,10 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
     target.postMessage({version:'1.0',type:'init',appId,session},'*');
   };
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
-  const isDark=typeof document!=='undefined'&&(()=>{const preference=document.querySelector('.afc-admin')?.getAttribute('data-theme');return preference==='dark'||preference==='system'&&typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: dark)').matches;})();
+  const isDark=initialTheme==='dark';
   return <iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
-    src={resource.mode==='isolated-origin'?resource.url:undefined}
+    src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
     style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />;

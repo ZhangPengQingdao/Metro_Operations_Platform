@@ -1,3 +1,4 @@
+import {gzipSync} from 'node:zlib';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
@@ -8,5 +9,5 @@ const requestId=randomUUID();
 const value=await encodeInstallPackage(resolve(directory),resolve(signatureFile),requestId);
 const bytes=JSON.stringify(value);
 if(Buffer.byteLength(bytes)>INSTALL_BODY_LIMIT)throw Error('INSTALL_PACKAGE_TOO_LARGE');
-await writeFile(resolve(output),bytes,{flag:'wx',mode:0o600});
+await writeFile(resolve(output),output.endsWith('.gz')?gzipSync(bytes):bytes,{flag:'wx',mode:0o600});
 console.log(JSON.stringify({appId:value.manifest.id,version:value.manifest.version,requestId,output:resolve(output)}));

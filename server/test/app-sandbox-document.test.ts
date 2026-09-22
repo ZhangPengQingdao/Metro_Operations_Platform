@@ -1,3 +1,4 @@
+import {runInNewContext} from 'node:vm';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
@@ -20,5 +21,16 @@ test('sandbox builder rejects tampered/oversized/unencodable artifacts and origi
     assert.throws(()=>buildSandboxDocument({script:part('0'),platformOrigin}),/SANDBOX_INVALID_PLATFORM_ORIGIN/);
   }
   const html=buildSandboxDocument({script:part('const s="</script><img src=x>"'),style:part('/* </style><script> */'),platformOrigin:'http://127.0.0.1:5173'}).html;
-  assert.equal((html.match(/<script nonce=/g)||[]).length,1);assert.equal((html.match(/<\/script>/g)||[]).length,1);
+  assert.equal((html.match(/<script nonce=/g)||[]).length,2);assert.equal((html.match(/<\/script>/g)||[]).length,2);
+});
+
+test('production sandbox applies explicit host theme before CSS and app code, independently of system preference',()=>{
+ const html=buildSandboxDocument({script:part('appBoot()'),platformOrigin:'https://platform.example.com'}).html;
+ const boot=html.match(/<script nonce="[^"]+">([^<]+)<\/script>/)![1];
+ assert.ok(html.indexOf(boot)<html.indexOf('<style'));
+ for(const [hash,systemDark,expected] of [['#mop-theme=dark',false,'dark'],['#mop-theme=light',true,'light'],['',true,'dark'],['#mop-theme=invalid',false,'light']] as const){
+  const classes=new Set<string>(),dataset:Record<string,string>={};
+  runInNewContext(boot,{location:{hash},document:{documentElement:{dataset,classList:{add:(v:string)=>classes.add(v)}}},matchMedia:()=>({matches:systemDark})});
+  assert.equal(dataset.theme,expected);assert.ok(classes.has('afc-theme-neutral'));
+ }
 });

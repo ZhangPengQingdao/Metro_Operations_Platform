@@ -750,6 +750,7 @@ const labels = {
   INVALID_PERSON: '所选人员已变化，请重新选择',
   FORM_TOO_LARGE: '填写内容过长，请精简',
   CONFLICT: '记录已更新，请重新打开',
+  READ_FAILED: '读取失败，请重试；尚未提交任何更改',
   OPERATION_UNCONFIRMED: '操作结果未确认，请先核对记录'
 };
 
@@ -896,6 +897,7 @@ function RecordForm({ session, kind, initial, onSaved }) {
   const [notice, setNotice] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const requestId = useRef(crypto.randomUUID());
   const draftRevision = useRef(0);
@@ -913,24 +915,27 @@ function RecordForm({ session, kind, initial, onSaved }) {
         });
     }
     return () => { active = false; };
-  }, [form.organizationId]);
+  }, [form.organizationId, loadAttempt]);
 
   useEffect(() => {
     let active = true;
     setReady(false);
+    setError('');
     (async () => {
       try {
         const t = initial ? { modules: initial.module_snapshot } : await call('template', { kind, organizationId: form.organizationId });
-        const prior = !initial ? (await call('previous', { kind, organizationId: form.organizationId })).row : null;
         if (!active) return;
         setModules(t.modules);
+        const prior = !initial ? (await call('previous', { kind, organizationId: form.organizationId })).row : null;
+        if (!active) return;
         if (!initial) {
           setForm(f => ({
             ...f,
             ...(prior && kind === 'handover' ? { handoverIds: prior.handoverIds, shiftType: prior.shiftType === 'day' ? 'night' : 'day' } : {}),
             form: {
               ...initialModuleValues(t.modules),
-              ...(t.modules.some(m => m.id === 'other_matters' && m.enableCarryOver) ? prior?.form ?? {} : {})
+              ...(t.modules.some(m => m.id === 'other_matters' && m.enableCarryOver) ? prior?.form ?? {} : {}),
+              ...f.form
             }
           }));
         }
@@ -940,7 +945,7 @@ function RecordForm({ session, kind, initial, onSaved }) {
       }
     })();
     return () => { active = false; };
-  }, [form.organizationId]);
+  }, [form.organizationId, loadAttempt]);
 
   useEffect(() => {
     let active = true;
@@ -958,13 +963,13 @@ function RecordForm({ session, kind, initial, onSaved }) {
       }
     })();
     return () => { active = false; };
-  }, [form.organizationId]);
+  }, [form.organizationId, loadAttempt]);
 
   const patch = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   async function save(e) {
     e.preventDefault();
-    if (busy || uncertain) return;
+    if (busy || uncertain || !ready) return;
     setBusy(true);
     setError('');
     try {
@@ -1016,6 +1021,7 @@ function RecordForm({ session, kind, initial, onSaved }) {
 
   return (
     <form onSubmit={save} className="shifts-form">
+      {!ready && <div className="notice-banner" role="status">{error ? <>表单尚未加载完整。<Button type="button" onClick={() => setLoadAttempt(n => n + 1)}>重新加载</Button></> : '正在加载表单模块和上一班记录…'}</div>}
       {error && <div className="notice-banner error" role="alert">{error}</div>}
       {notice && <div className="notice-banner success" role="status">{notice}</div>}
 

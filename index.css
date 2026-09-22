@@ -603,7 +603,7 @@
         min-height: 108px;
         border: 1px solid var(--afc-color-line);
         border-radius: 20px;
-        background: #fff;
+        background: var(--afc-color-paper);
         padding: 12px 16px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, .04);
         display: grid;
@@ -831,7 +831,7 @@
 
     /* Drawer 抽屉 */
     .afc-drawer-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .45); backdrop-filter: blur(4px); display: flex; justify-content: flex-end; animation: afcFadeIn .2s ease; }
-    .afc-drawer { width: min(100vw, 480px); height: 100%; background: #fff; box-shadow: var(--afc-shadow-lg); display: flex; flex-direction: column; animation: afcDrawerSlideIn .25s cubic-bezier(0.16, 1, 0.3, 1); }
+    .afc-drawer { width: min(100vw, 480px); height: 100%; background: var(--afc-color-paper); box-shadow: var(--afc-shadow-lg); display: flex; flex-direction: column; animation: afcDrawerSlideIn .25s cubic-bezier(0.16, 1, 0.3, 1); }
     .afc-drawer__header { padding: 18px 20px; border-bottom: 1px solid var(--afc-color-line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .afc-drawer__title { margin: 0; font-size: 17px; font-weight: 700; color: var(--afc-color-ink); }
     .afc-drawer__body { flex: 1 1 auto; overflow-y: auto; padding: 20px; }
@@ -840,7 +840,7 @@
     @keyframes afcFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
     /* Card 卡片 */
-    .afc-card { border: 1px solid var(--afc-color-line); border-radius: var(--afc-radius-panel); background: #fff; box-shadow: var(--afc-shadow-sm); position: relative; transition: box-shadow .2s ease, border-color .2s ease; }
+    .afc-card { border: 1px solid var(--afc-color-line); border-radius: var(--afc-radius-panel); background: var(--afc-color-paper); box-shadow: var(--afc-shadow-sm); position: relative; transition: box-shadow .2s ease, border-color .2s ease; }
     .afc-card--interactive:hover { box-shadow: var(--afc-shadow-md); border-color: rgb(115 115 115 / .26); cursor: pointer; }
     .afc-card__header { padding: 18px 20px; border-bottom: 1px solid var(--afc-color-line); display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top-left-radius: inherit; border-top-right-radius: inherit; }
     .afc-card__title { margin: 0; font-size: 15px; font-weight: 700; color: var(--afc-color-ink); }
@@ -1108,7 +1108,7 @@
         left: auto;
         z-index: 99999;
         min-width: 190px;
-        background: #fff;
+        background: var(--afc-color-paper);
         border: 1px solid var(--afc-color-line);
         border-radius: 16px;
         box-shadow: 0 16px 48px rgba(0, 0, 0, .18);

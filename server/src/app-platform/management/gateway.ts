@@ -46,14 +46,23 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){
  const {contextResolver}=createManagementContexts(pool),business=new AppBusinessAuthorization(pool);
+ type Actor=Awaited<ReturnType<PlatformActorContextResolver['resolve']>>;
+ const snapshots=new WeakMap<Actor,ReturnType<AppBusinessAuthorization['resolve']>>();
+ function rulesFor(context:Actor){
+  if(context.actorType!=='person'||context.execution.type!=='application')return Promise.resolve(null);
+  let rules=snapshots.get(context);
+  if(!rules){rules=business.resolve(context.execution.appId,context.person.id);snapshots.set(context,rules);}
+  return rules;
+ }
+ // A new actor is resolved at every admission checkpoint; never cache across checkpoints.
  return {contextResolver,
   businessAuthorization:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>)=>{
    if(context.actorType!=='person'||context.execution.type!=='application')return undefined;
-   return await business.resolve(context.execution.appId,context.person.id)??undefined;
+   return await rulesFor(context)??undefined;
   },
   authorize:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>,permission:string)=>{
    if(context.actorType!=='person'||context.execution.type!=='application')return false;
-   const rules=await business.resolve(context.execution.appId,context.person.id);
+   const rules=await rulesFor(context);
    if(!rules)return (await context.authorize(permission,{})).allowed;
    return permission.startsWith(`app.${context.execution.appId}.`)&&rules.grants.some(g=>g.permission===permission);
   }};

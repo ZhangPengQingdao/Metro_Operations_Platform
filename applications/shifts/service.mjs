@@ -8,14 +8,24 @@ const date=v=>{if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return fal
 const ownOrganization=(input,employee)=>{const org=employee.organizationUnitId;if(!uuid(org)||input.organizationId&&input.organizationId!==org)throw Error('ACCESS_DENIED');return org;};
 const configId=(org,type)=>{const h=createHash('sha256').update(`${org??'global'}:${type}`).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-8${h.slice(17,20)}-${h.slice(20,32)}`;};
 export function createShiftsService(gateway){
- const data=createAppDataClient(gateway),signatures=createPlatformSignaturesClient(gateway),webhook=createPlatformWebhookClient(gateway);
+ let pendingData=Promise.resolve();
+ const dataGateway={invoke(operation,payload,signal){
+  const work=pendingData.then(()=>{if(signal?.aborted)throw Error('ABORTED');return gateway.invoke(operation,payload,signal);});
+  pendingData=work.then(()=>undefined,()=>undefined);return work;
+ }};
+ const data=createAppDataClient(dataGateway),signatures=createPlatformSignaturesClient(gateway),webhook=createPlatformWebhookClient(gateway);
  const readConfig=async(org,type,signal)=>(await data.get('configs',configId(org,type),signal)).row;
  async function ancestry(org,signal){return (await gateway.invoke('platform.people.organization_context',{organizationUnitId:org},signal)).organizations;}
- async function effective(org,type,signal){
-  const chain=await ancestry(org,signal);
-  for(const node of [...chain.filter((o,i)=>i===0||o.unitType==='department'),{id:null}]){const row=await readConfig(node.id,type,signal);if(row&&row.value.mode!=='inherit')return {value:row.value,source:node.id,revision:row.revision};}
+ async function configRows(org,type,signal,chain){
+  const scopes=org?[...(chain??await ancestry(org,signal)).filter((o,i)=>i===0||o.unitType==='department'),{id:null}]:[{id:null}];
+  const page=await data.list('configs',{filters:[{column:'config_type',value:type}],anyOf:scopes.map(node=>[{column:'scope_key',value:node.id??'global'}]),pageSize:40},signal);
+  return {scopes,rows:page.rows};
+ }
+ function resolveConfig(type,{scopes,rows}){
+  for(const node of scopes){const row=rows.find(row=>row.scope_key===(node.id??'global'));if(row&&row.value.mode!=='inherit')return {value:row.value,source:node.id,revision:row.revision};}
   return {value:type==='webhook'?{mode:'disabled',url:'',handover:false,meeting:false}:{mode:'override',modules:defaults[type]},source:null,revision:0};
  }
+ async function effective(org,type,signal,chain){return resolveConfig(type,await configRows(org,type,signal,chain));}
  function canRead(employee,row){return grant(employee,'app.shifts.read')?.self&&row.people.some(p=>p.id===employee.personId)||allowed(employee,'app.shifts.read',row.organization_id,row.created_by)||(grant(employee,'app.shifts.sign')&&row.kind==='meeting'&&row.people.some(p=>p.id===employee.personId));}
  async function record(id,employee,signal){if(!uuid(id))throw Error('INVALID_INPUT');const {row}=await data.get('records',id,signal);if(!row||!canRead(employee,row))throw Error('ACCESS_DENIED');return row;}
  async function member(id,org,signal){if(!uuid(id))throw Error('INVALID_INPUT');const page=await gateway.invoke('platform.people.members',{organizationUnitId:org,personId:id},signal);if(!page.rows[0])throw Error('INVALID_PERSON');return page.rows[0];}
@@ -47,10 +57,11 @@ export function createShiftsService(gateway){
   async settings(input,employee,signal){
    const org=input.organizationId??null;
    if(org===null?!grant(employee,'app.shifts.config')?.all:!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');
-   const values={};for(const type of ['handover','meeting','webhook']){const row=await readConfig(org,type,signal),resolved=row??(org?await effective(org,type,signal):null);
+   const chain=org?await ancestry(org,signal):undefined;
+   const values={};for(const type of ['handover','meeting','webhook']){const configs=await configRows(org,type,signal,chain),row=configs.rows.find(row=>row.scope_key===(org??'global')),resolved=resolveConfig(type,configs);
     const value=structuredClone(resolved?.value??(type==='webhook'?{mode:'disabled',url:'',handover:false,meeting:false}:{mode:'override',modules:defaults[type]}));
     if(type==='webhook'){value.configured=!!value.url;delete value.url;}
-    values[type]={value,revision:row?.revision??0,inherited:!row&&org!==null};
+    values[type]={value,revision:row?.revision??0,inherited:org!==null&&(!row||row.value.mode==='inherit')};
    }return values;
   },
   async configure(input,employee,signal){
