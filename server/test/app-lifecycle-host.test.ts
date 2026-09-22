@@ -248,3 +248,32 @@ test('planned maintenance pauses and restores a real lifecycle host across host 
   assert.equal((await host.status(f.admin)).serving,true);assert.equal(blocked,false);await host.close();
  }finally{await f.close();}
 });
+
+test('hosted API survives starting administrator logout and still rejects disabled generations',async()=>{
+ const f=await hostFixture();
+ try{
+  const initial=await f.registry.register(f.admin,manifest());
+  const running=await f.registry.beginLifecycle(f.admin,initial.appId,initial.revision,'install');
+  const enabled={...running,enabled:true,revision:running.revision+1,manifest:{...manifest(),
+   backend:{mode:'isolated' as const,runtime:'node' as const,entryArtifactId:'main',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:30}},
+   artifacts:[{id:'main',kind:'backend' as const,path:'main.js',bytes:1,sha256:'a'.repeat(64)}],
+   permissions:{requested:[],defined:[{code:'app.tool-lending.read',description:'Read'}]},
+   api:[{id:'read',method:'POST' as const,path:'/read',handler:'read',permission:'app.tool-lending.read'}]}};
+  let loggedOut=false,disabled=false,calls=0;
+  f.registry.get=async()=>{if(loggedOut)throw Error('ADMIN_SESSION_EXPIRED');return running;};
+  f.registry.settleLifecycle=async()=>enabled;
+  f.registry.runtimeSnapshot=async()=>({...enabled,enabled:!disabled});
+  const host=new AppLifecycleHost({...f.options,api:{contextResolver:{resolve:async()=>f.application},authorize:async()=>true}});
+  // Inject the already attached transport to exercise activation without an actual Docker daemon.
+  const internals=host as unknown as {lease:unknown;bridge:unknown;start(context:typeof f.admin,record:typeof running):Promise<unknown>;api:ReturnType<typeof import('../src/app-platform/runtime/hosted-api.ts').createHostedAppApi>};
+  internals.lease={assertHeld:async()=>{}};
+  internals.bridge={api:{invoke:async()=>{calls++;return {ok:true};},drain:async()=>{}}};
+  await internals.start(f.admin,running);
+  loggedOut=true;
+  const request={apiId:'read',method:'POST',path:'/read',payload:{}};
+  assert.equal((await internals.api.invoke(f.application,request) as {ok:boolean}).ok,true);
+  disabled=true;
+  await assert.rejects(internals.api.invoke(f.application,request),/STALE_API/);
+  assert.equal(calls,1);
+ }finally{await f.close();}
+});
