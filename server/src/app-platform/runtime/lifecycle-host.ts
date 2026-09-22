@@ -285,7 +285,7 @@ export class AppLifecycleHost {
       await this.extensions?.activate();
       if(enabled.manifest.api.length) {
         if(!this.options.api||!this.bridge)fail('API_NOT_CONFIGURED');
-        this.api=createHostedAppApi({...this.options.api,installation:enabled,getInstallation:id=>this.options.registry.get(context,id),transport:this.bridge.api});
+        this.api=createHostedAppApi({...this.options.api,installation:enabled,getInstallation:id=>this.options.registry.runtimeSnapshot(id),transport:this.bridge.api});
       }
       await this.lease!.assertHeld();this.active=enabled;return enabled;
     } catch {
