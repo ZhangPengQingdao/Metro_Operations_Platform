@@ -26,8 +26,11 @@ export function buildSandboxDocument(input: SandboxDocumentInput): SandboxDocume
   const style = input.style ? verified(input.style, 256 * 1024) : '';
   const nonce = randomBytes(24).toString('base64');
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`;
+  // Host-generated theme fragment contains no identity or authority. Apply before the first style/paint.
+  const themeBoot = `const t=location.hash==='#mop-theme=dark'?'dark':location.hash==='#mop-theme=light'?'light':document.documentElement.dataset.theme??(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('afc-theme-neutral');document.documentElement.dataset.theme=t;`;
+  const baseStyle = 'html,body{margin:0;background:#fafafa;color:#171717;color-scheme:light}html[data-theme="dark"],html[data-theme="dark"] body{background:#121212;color:#fafafa;color-scheme:dark}';
   // No arbitrary HTML, base, handlers or metadata precedes the enforced policy.
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform application</title><style nonce="${nonce}">${style.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="app"></div><script nonce="${nonce}" data-app-route="${encodeURIComponent(input.route??'/')}" data-platform-origin="${origin.origin.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${script.replace(/<\/script/gi,'<\\/script')}</script></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform application</title><script nonce="${nonce}">${themeBoot}</script><style nonce="${nonce}">${baseStyle}${style.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="app"></div><script nonce="${nonce}" data-app-route="${encodeURIComponent(input.route??'/')}" data-platform-origin="${origin.origin.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${script.replace(/<\/script/gi,'<\\/script')}</script></body></html>`;
   return Object.freeze({ html, headers: Object.freeze({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': `${csp}; sandbox allow-scripts; frame-ancestors ${origin.origin}`,
