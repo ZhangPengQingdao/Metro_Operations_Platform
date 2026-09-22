@@ -30,7 +30,8 @@ test('production sandbox applies explicit host theme before CSS and app code, in
  assert.ok(html.indexOf(boot)<html.indexOf('<style'));
  for(const [hash,systemDark,expected] of [['#mop-theme=dark',false,'dark'],['#mop-theme=light',true,'light'],['',true,'dark'],['#mop-theme=invalid',false,'light']] as const){
   const classes=new Set<string>(),dataset:Record<string,string>={};
-  runInNewContext(boot,{location:{hash},document:{documentElement:{dataset,classList:{add:(v:string)=>classes.add(v)}}},matchMedia:()=>({matches:systemDark})});
+  const documentElement={dataset,classList:{add:(v:string)=>classes.add(v)}};
+  runInNewContext(boot,{location:{hash},document:{documentElement},matchMedia:()=>({matches:systemDark})});
   assert.equal(dataset.theme,expected);assert.ok(classes.has('afc-theme-neutral'));
  }
 });
