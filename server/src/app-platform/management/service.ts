@@ -135,7 +135,7 @@ export async function createAppManagement(configFile:string,origin:string){
   async employeeApps(resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    const identity=await resolveIdentity();if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    const candidates=await employeeAccess.candidates(identity.userId);const applications=[];
-   for(const {appId}of candidates){try{const admitted=await admitEmployee(appId,resolveIdentity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;if(m.ui.mode==='sandbox')applications.push({appId,name:m.name,description:m.description,version:m.version,navigation:m.navigation,routes:m.routes});}catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}}
+   for(const {appId}of candidates){try{const admitted=await admitEmployee(appId,resolveIdentity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;if(m.ui.mode==='sandbox')applications.push({appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes});}catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}}
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
   },

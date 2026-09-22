@@ -29,6 +29,7 @@ function SettingIcon({ name, size = 16 }) {
 export function Settings({ session, call, sandbox }) {
   const [tab, setTab] = useState('handover');
   const [settings, setSettings] = useState(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [edit, setEdit] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -40,10 +41,14 @@ export function Settings({ session, call, sandbox }) {
   const current = settings?.[tab];
 
   useEffect(() => {
+    let active = true;
+    setSettings(null);
+    setError('');
     call('settings', { organizationId: org })
-      .then(setSettings)
-      .catch(e => setError(e.message));
-  }, [org]);
+      .then(value => { if (active) setSettings(value); })
+      .catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [org, loadAttempt]);
 
   useEffect(() => {
     void sandbox.invoke('platform.ui.modal', { open: !!edit }).catch(() => {});
@@ -121,6 +126,7 @@ export function Settings({ session, call, sandbox }) {
   return (
     <div className="settings-page">
       {error && <div className="notice-banner error" role="alert">{error}</div>}
+      {!settings && <div role="status">{error ? <Button onClick={() => setLoadAttempt(n => n + 1)}>重新加载设置</Button> : '正在加载模块设置…'}</div>}
       {notice && <div className="notice-banner success" role="status">{notice}</div>}
 
       {/* Nav Tabs */}

@@ -167,3 +167,11 @@ test('business API permissions stay application-defined and entry declarations c
  rejects(value=>{value.api[0].businessPermission='platform.authorization.manage';});
  rejects(value=>{value.permissions.defined[0].scopeKinds=[];});
 });
+
+test('signed application icons accept bounded SVG paths but no markup or external sources',()=>{
+ const manifest=fixture();manifest.icon={paths:['M5 4h14v16H5z','M8 10h8']};
+ assert.equal(validateAppManifest(manifest).ok,true);
+ for(const icon of [{paths:[]},{paths:['<script>alert(1)</script>']},{paths:['M0 0'],url:'https://example.com/icon.svg'},{paths:['M'.repeat(2049)]}]){
+  assert.equal(validateAppManifest({...manifest,icon}).ok,false);
+ }
+});

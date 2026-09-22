@@ -87,7 +87,7 @@ export class AppLifecycleHost {
     const lease=this.lease,api=this.api,installation=this.active,transport=this.bridge!.api;
     this.apiCalls++;
     try{return await this.workJournal.track(installation.id,async()=>{await lease.assertHeld();if(this.active!==installation)fail('API_NOT_READY');},
-      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drain(),{kind:'api',requestId:context.request.requestId,apiId:request.apiId});}
+      ()=>api.invoke(context,request,signal,assertAdmission),()=>transport.drainRequest(context.request.requestId),{kind:'api',requestId:context.request.requestId,apiId:request.apiId});}
     finally{this.apiCalls--;}
   }
   /** Verified employee session callback is retained for every nested service authorization. */

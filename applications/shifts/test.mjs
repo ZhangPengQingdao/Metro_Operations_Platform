@@ -34,3 +34,23 @@ test('meeting quiz and risk assignees must be attendees and snapshots preserve t
 test('form organization comes from login even with all-organization grants',async()=>{const h=fixture(),employee={...h.employee,businessAuthorization:{...h.employee.businessAuthorization,grants:h.employee.businessAuthorization.grants.map(g=>({...g,all:true}))}};for(const action of ['template','previous','members','load-draft'])assert.equal((await h.call(action,{kind:'meeting',organizationId:other},employee)).error.code,'ACCESS_DENIED');assert.equal((await h.call('save',{...h.form(),organizationId:other},employee)).error.code,'ACCESS_DENIED');const p=h.form();delete p.organizationId;assert.equal((await h.call('save',p,employee)).ok,true);assert.equal(h.tables.records.get(p.id).organization_id,org);});
 test('record text search applies before pagination',async()=>{const h=fixture(),p=h.form();p.form={study_content:'施工安全'};await h.call('save',p);await h.call('save',h.form());assert.equal((await h.call('list',{kind:'meeting',search:'施工安全'})).result.rows.length,1);assert.equal((await h.call('list',{kind:'meeting',search:'不存在'})).result.rows.length,0);});
 test('custom modules preserve per-line remarks and defaults; safety default remarks survive config',async()=>{const h=fixture(),modules=structuredClone(defaults.meeting);modules.push({id:'custom_list_test',label:'本班重点',type:'text',custom:true,enabled:true,enableRemarks:true,enableDefaultContent:true,defaultText:'检查票亭'});modules.find(m=>m.id==='safety_prediction').items[0].remark='检查防护用品';assert.equal((await h.call('configure',{organizationId:org,type:'meeting',value:{mode:'override',modules},revision:0,requestId:randomUUID()})).ok,true);const template=(await h.call('template',{kind:'meeting'})).result.modules;assert.equal(template.at(-1).enableRemarks,true);assert.equal(template.find(m=>m.id==='safety_prediction').items[0].remark,'检查防护用品');const p=h.form();p.modules=template;p.form={custom_list_test:[{text:'检查票亭',remark:'值班员确认'}]};assert.equal((await h.call('save',p)).ok,true);assert.deepEqual(h.tables.records.get(p.id).form_data.custom_list_test,[{text:'检查票亭',remark:'值班员确认'}]);});
+test('workgroup settings grant loads default modules without global configuration',async()=>{
+ const h=fixture();h.employee.businessAuthorization.grants=h.employee.businessAuthorization.grants.map(g=>({...g,all:false}));
+ const result=await h.call('settings',{organizationId:org});
+ assert.equal(result.ok,true);assert.deepEqual(result.result.handover.value.modules,defaults.handover);assert.deepEqual(result.result.meeting.value.modules,defaults.meeting);
+ assert.equal((await h.call('settings',{organizationId:other})).error.code,'ACCESS_DENIED');
+ assert.equal((await h.call('settings',{})).error.code,'ACCESS_DENIED');
+ assert.equal(h.calls.filter(c=>c.op==='platform.people.organization_context').length,1);
+});
+test('concurrent form reads serialize storage access and release the queue after failure',async()=>{
+ let active=0,maxActive=0,fail=true;
+ const employee=fixture().employee;
+ const handlers=createShiftsHandlers({async invoke(op){
+  if(op==='platform.people.organization_context')return {organizations:[{id:org,unitType:'workgroup'}]};
+  active++;maxActive=Math.max(maxActive,active);
+  try{await new Promise(resolve=>setTimeout(resolve,5));if(fail){fail=false;throw Error('STORAGE_BUSY');}return op.endsWith('.get')?{row:null}:{rows:[],nextCursor:null};}finally{active--;}
+ }});
+ const call=name=>handlers.get(name).execute({kind:'meeting',organizationId:org},new AbortController().signal,employee);
+ const [draft,template,previous]=await Promise.all([call('load-draft'),call('template'),call('previous')]);
+ assert.equal(maxActive,1);assert.equal(draft.error.code,'READ_FAILED');assert.equal(draft.error.writeOutcome,'not_started');assert.deepEqual(template.result.modules,defaults.meeting);assert.equal(previous.ok,true);
+});

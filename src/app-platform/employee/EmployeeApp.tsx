@@ -1,3 +1,4 @@
+import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {ManagedApplications,type ManagedApplication} from './ManagedApplications';
 import {ProfileSections} from '../identity/ProfileSections';
 import {createEmployeeApiBridge,type EmployeeApiRoute} from './api-bridge';
@@ -11,7 +12,7 @@ import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
 import type {SandboxJson} from '../host/sandbox/bridge';
 
 type Account={id:string;personId:string;username:string;name?:string};
-type App={appId:string;name:string;description:string;version:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
+type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
 type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;resource:SandboxFrameResource};
 function EmployeeApplication({account,path,onNavigation}:{account:Account;path:string;onNavigation:(appId:string,ids:string[])=>void}){
  const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);
@@ -49,7 +50,7 @@ export default function EmployeeApp(){
  if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" replace/>;
  const visibleApps=apps;
- const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
+ const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={<EmployeeProfile/>} notificationsContent={<EmployeeMessages/>}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
  {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname.startsWith('/employee/app/')?<EmployeeApplication key={`${account.id}:${pathname}`} account={account} path={pathname} onNavigation={onNavigation}/>:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}

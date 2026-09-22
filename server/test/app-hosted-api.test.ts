@@ -106,3 +106,15 @@ test('host-bound employee resolver is never on the wire and expires with the inv
  transport.accept({id:frame.id,result:true});await call;await assert.rejects(resolve(),/ACCESS_DENIED/);
  assert.equal(transport.employeeResolver(frame.id),undefined);transport.close();await transport.drain();
 });
+
+test('completed API request is not held by unrelated unfinished calls',async()=>{
+ const frames:any[]=[];
+ const transport=createAppStdioApiTransport(async frame=>{frames.push(frame);},()=>{},1000);
+ const employee=(requestId:string)=>({version:'1.0' as const,personId:'42000000-0000-4000-8000-000000000002',organizationUnitId:'42000000-0000-4000-8000-000000000003',requestId,traceId:requestId,permissions:[]});
+ const slow=transport.invoke({handler:'settings',method:'POST',path:'/settings',payload:{},employee:employee('slow')});
+ const fast=transport.invoke({handler:'session',method:'POST',path:'/session',payload:{},employee:employee('fast')});
+ await tick();transport.accept({id:frames[1].id,result:true});assert.equal(await fast,true);
+ await transport.drainRequest('fast');
+ let drained=false;const drain=transport.drainRequest('slow').then(()=>{drained=true;});await tick();assert.equal(drained,false);
+ transport.accept({id:frames[0].id,result:true});await slow;await drain;transport.close();await transport.drain();
+});

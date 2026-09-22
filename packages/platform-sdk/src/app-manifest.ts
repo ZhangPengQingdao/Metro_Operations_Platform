@@ -35,6 +35,8 @@ export interface AppManifest {
   id: string;
   version: string;
   name: string;
+  /** Signed, path-only SVG icon in a fixed 24 × 24 viewBox. */
+  icon?: { paths: string[] };
   description: string;
   /** Unverified publisher claim; installer verifies provenance separately. */
   publisherId: string;

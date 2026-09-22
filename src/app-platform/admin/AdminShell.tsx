@@ -1,3 +1,4 @@
+import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {readThemePreference,saveThemePreference} from '../identity/theme';
 import {SettingsSections} from './SettingsSections';
 import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
@@ -5,7 +6,7 @@ import {NavLink, useLocation} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
 export interface AdminUser {id: string; username: string; displayName: string}
-export interface AdminApplication {id: string; name: string; navigation: {id: string; label: string; path: string}[]}
+export interface AdminApplication {id: string; name: string; icon?: AppManifest['icon']; navigation: {id: string; label: string; path: string}[]}
 export interface AdminShellProps {
   mode?:'admin'|'employee';
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
@@ -86,7 +87,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
         </div>
         {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{app.navigation.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
           {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
-          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><PlatformIcon name="cube" size={20}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
+          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><ApplicationIcon icon={item.icon}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
         </nav>}
         <div className="afc-sidebar-bottom">
           <div className="afc-account" ref={account} onKeyDown={event => {if (event.key === 'Escape') {setAccountOpen(false); accountTrigger.current?.focus();}}}>
@@ -109,4 +110,8 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
       {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => (()=>{const next=event.target.value as typeof theme;saveThemePreference(next);setTheme(next);})()}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
     </AdminDialog>}
   </div>;
+}
+
+function ApplicationIcon({icon}:{icon?:AppManifest['icon']}) {
+ return icon ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon.paths.map((d,i)=><path key={i} d={d}/>)}</svg> : <PlatformIcon name="cube" size={20}/>;
 }
