@@ -29,6 +29,7 @@ const sandbox = createAppSandboxClient({
   }
 });
 const api = createAppApiClient(sandbox);
+const membersCache = new Map();
 
 document.documentElement.classList.add('afc-theme-neutral');
 
@@ -778,7 +779,18 @@ function App() {
   const [route,setRoute] = useState(initialRoute);
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
+  const warming = useRef(new Set());
   useEffect(() => sandbox.onRouteChange(setRoute), []);
+
+  function warmOtherForm(kind) {
+    if (!session) return;
+    const other = kind === 'meeting' ? 'handover' : 'meeting';
+    if (warming.current.has(other)) return;
+    warming.current.add(other);
+    void call('bootstrap', { kind: other, organizationId: session.organizationId })
+      .catch(() => {})
+      .finally(() => warming.current.delete(other));
+  }
 
   useEffect(() => {
     let active = true;
@@ -857,7 +869,7 @@ function App() {
         ) : route.endsWith('records') ? (
           <Records key={route} session={session} kind={route.includes('meeting') ? 'meeting' : 'handover'} />
         ) : (
-          <RecordForm key={route} session={session} kind={route === '/meeting' ? 'meeting' : 'handover'} />
+          <RecordForm key={route} session={session} kind={route === '/meeting' ? 'meeting' : 'handover'} onBootstrapped={warmOtherForm} />
         )
       ) : !error && (
         <p style={{ color: '#a1a1aa', fontSize: 13 }}>正在连接工班工作台…</p>
@@ -866,7 +878,7 @@ function App() {
   );
 }
 
-function RecordForm({ session, kind, initial, onSaved }) {
+function RecordForm({ session, kind, initial, onSaved, onBootstrapped }) {
   const base = initial ? {
     id: initial.id,
     revision: initial.revision,
@@ -894,7 +906,7 @@ function RecordForm({ session, kind, initial, onSaved }) {
 
   const [form, setForm] = useState(base);
   const [modules, setModules] = useState(initial?.module_snapshot ?? []);
-  const [members, setMembers] = useState([]);
+  const [members, setMembers] = useState(() => membersCache.get(base.organizationId)?.rows ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -930,6 +942,7 @@ function RecordForm({ session, kind, initial, onSaved }) {
           }));
         }
         setReady(true);
+        if (!initial) onBootstrapped?.(kind);
       } catch (e) {
         if (active) setError(e.message);
       }
@@ -941,8 +954,14 @@ function RecordForm({ session, kind, initial, onSaved }) {
     let active = true;
     (async () => {
       try {
+        const cached = membersCache.get(form.organizationId);
+        if (cached && Date.now() - cached.at < 30_000) {
+          setMembers(cached.rows);
+          return;
+        }
         const people = await call('members', { organizationId: form.organizationId });
         if (active) {
+          membersCache.set(form.organizationId, { rows: people.rows, at: Date.now() });
           setMembers(previous => [
             ...previous.filter(p => [form.hostId, ...form.participantIds, ...form.handoverIds, ...form.takeoverIds].includes(p.id) && !people.rows.some(n => n.id === p.id)),
             ...people.rows

@@ -5,7 +5,7 @@ import {createShiftsHandlers} from './handlers.mjs';
 import {defaults} from './modules.mjs';
 const org='61000000-0000-4000-8000-000000000001',other='61000000-0000-4000-8000-000000000002',person='61000000-0000-4000-8000-000000000003',second='61000000-0000-4000-8000-000000000004';
 function fixture(){
- const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[];let failPush=false;
+ const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[];let failPush=false,failTransaction=false;
  const employee={personId:person,organizationUnitId:org,businessAuthorization:{revision:randomUUID(),organizations:[{id:org,name:'测试工班'}],grants:['read','submit','config','sign'].map(p=>({permission:'app.shifts.'+p,self:p==='sign',all:p==='config',organizationIds:p==='sign'?[]:[org]}))}};
  const gateway={async invoke(op,p){calls.push({op,p});if(op==='platform.app_data.read_batch')return {results:await Promise.all(p.operations.map(async item=>{
   if('id' in item)return {row:structuredClone(tables[item.table].get(item.id)??null)};
@@ -14,7 +14,7 @@ function fixture(){
   if(item.order)rows.sort((a,b)=>String(a[item.order.column]).localeCompare(String(b[item.order.column]))*(item.order.direction==='desc'?-1:1));
   return {rows:structuredClone(rows.slice(0,item.pageSize)),nextCursor:null};}))};
   if(op==='platform.app_data.get')return {row:structuredClone(tables[p.table].get(p.id)??null)};
-  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>current?.[k]!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations)tables[m.table].set(m.id,{id:m.id,...m.values});return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
+  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>current?.[k]!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations)tables[m.table].set(m.id,{id:m.id,...m.values});if(failTransaction){failTransaction=false;throw Error('ACK_LOST');}return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
   if(op==='platform.app_data.list'){const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):r[f.column]===f.value;let rows=[...tables[p.table].values()].filter(r=>(p.filters??[]).every(f=>match(r,f))&&(!p.anyOf||p.anyOf.some(g=>g.every(f=>match(r,f)))));if(p.search)rows=rows.filter(r=>String(r[p.search.column]).toLowerCase().includes(p.search.text.toLowerCase()));if(p.range)rows=rows.filter(r=>(!p.range.from||r[p.range.column]>=p.range.from)&&(!p.range.to||r[p.range.column]<=p.range.to));return {rows:rows.slice(0,p.pageSize??20),nextCursor:null};}
   if(op==='platform.people.organization_context')return {organizations:[{id:p.organizationUnitId,name:'工班',unitType:'workgroup'}]};
   if(op==='platform.people.members')return {rows:[person,second].filter(id=>!p.personId||p.personId===id).filter(id=>!p.personIds||p.personIds.includes(id)).map(id=>({id,name:id===person?'甲':'乙',organizationUnitId:org}))};
@@ -26,7 +26,7 @@ function fixture(){
  }};
  const handlers=createShiftsHandlers(gateway);const call=(name,p,e=employee)=>handlers.get(name).execute(p,new AbortController().signal,e);
  const form=(kind='meeting')=>({kind,id:randomUUID(),requestId:randomUUID(),organizationId:org,date:'2026-09-20',time:'08:30',shiftType:'night',hostId:person,participantIds:[second],handoverIds:[],takeoverIds:[person],form:{}});
- return {call,form,employee,tables,calls,setFailPush:()=>{failPush=true;}};
+ return {call,form,employee,tables,calls,setFailPush:()=>{failPush=true;},setFailTransaction:()=>{failTransaction=true;}};
 }
 test('same day meetings and same shift handovers remain independent; repeated intent saves once',async()=>{const h=fixture();for(const kind of ['meeting','handover'])for(let i=0;i<2;i++){const p=h.form(kind);assert.equal((await h.call('save',p)).ok,true);assert.equal((await h.call('save',p)).ok,true);}assert.equal(h.tables.records.size,4);assert.equal(h.calls.filter(c=>c.op==='platform.app_data.transaction').length,4);});
 test('scope is applied before pagination and cross-organization detail and writes are denied',async()=>{const h=fixture();const p=h.form();assert.equal((await h.call('save',{...p,organizationId:other})).error.code,'ACCESS_DENIED');h.tables.records.set(p.id,{id:p.id,kind:'meeting',organization_id:other,created_by:second,people:[]});assert.equal((await h.call('detail',{id:p.id})).error.code,'ACCESS_DENIED');const page=await h.call('list',{kind:'meeting'});assert.deepEqual(page.result.rows,[]);assert.ok(h.calls.find(c=>c.op==='platform.app_data.list').p.anyOf);});
@@ -43,6 +43,40 @@ test('form bootstrap reads template, private draft and previous record in one st
  assert.deepEqual(boot.result.template.modules,defaults.handover);
  assert.deepEqual(h.calls.slice(start).filter(c=>c.op.startsWith('platform.app_data.')).map(c=>c.op),['platform.app_data.read_batch']);
  assert.equal((await h.call('bootstrap',{kind:'handover',organizationId:other})).error.code,'ACCESS_DENIED');
+});
+test('warm form bootstrap remains private and invalidates after draft, configuration and record writes',async()=>{
+ const h=fixture(),input={kind:'handover',organizationId:org};
+ const readCount=()=>h.calls.filter(c=>c.op==='platform.app_data.read_batch').length;
+ const first=await h.call('bootstrap',input);
+ first.result.template.modules[0].label='客户端修改';
+ assert.notEqual((await h.call('bootstrap',input)).result.template.modules[0].label,'客户端修改');
+ assert.equal(readCount(),1);
+ const otherEmployee={...h.employee,personId:second};
+ assert.equal((await h.call('bootstrap',input,otherEmployee)).result.draftRevision,0);
+ assert.equal(readCount(),2);
+ const revoked={...h.employee,businessAuthorization:{...h.employee.businessAuthorization,revision:randomUUID(),grants:h.employee.businessAuthorization.grants.filter(g=>g.permission!=='app.shifts.submit')}};
+ assert.equal((await h.call('bootstrap',input,revoked)).error.code,'ACCESS_DENIED');
+ assert.equal(readCount(),2);
+ const draft={organizationId:org,kind:'handover',value:{time:'08:30'},revision:0,requestId:randomUUID()};
+ assert.equal((await h.call('save-draft',draft)).ok,true);
+ assert.equal((await h.call('bootstrap',input)).result.draftRevision,1);
+ assert.equal(readCount(),3);
+ const modules=structuredClone(defaults.handover);modules[0].label='新的交接配置';
+ assert.equal((await h.call('configure',{organizationId:org,type:'handover',value:{mode:'override',modules},revision:0,requestId:randomUUID()})).ok,true);
+ assert.equal((await h.call('bootstrap',input)).result.template.modules[0].label,'新的交接配置');
+ assert.equal(readCount(),4);
+ const saved=h.form('handover');assert.equal((await h.call('save',saved)).ok,true);
+ assert.equal((await h.call('bootstrap',input)).result.previous.id,saved.id);
+ assert.equal(readCount(),5);
+});
+test('uncertain draft write invalidates warm bootstrap before another read',async()=>{
+ const h=fixture(),input={kind:'meeting',organizationId:org};
+ await h.call('bootstrap',input);
+ h.setFailTransaction();
+ const result=await h.call('save-draft',{...input,value:{time:'09:00'},revision:0,requestId:randomUUID()});
+ assert.equal(result.error.code,'OPERATION_UNCONFIRMED');
+ assert.equal((await h.call('bootstrap',input)).result.draftRevision,1);
+ assert.equal(h.calls.filter(c=>c.op==='platform.app_data.read_batch').length,2);
 });
 test('meeting quiz and risk assignees must be attendees and snapshots preserve the form shown',async()=>{const h=fixture(),p=h.form();p.modules=structuredClone(defaults.meeting);p.modules[0].label='填写时的学习文件';p.form={quiz_record:[{personId:second,content:'设备故障怎么处置',status:'correct'}],safety_prediction:{'item-1':{checked:true,remark:'作业前确认',personIds:[second]}}};assert.equal((await h.call('save',p)).ok,true);assert.equal(h.tables.records.get(p.id).module_snapshot[0].label,'填写时的学习文件');const invalid=h.form();invalid.form={quiz_record:[{personId:randomUUID(),content:'问题',status:''}]};assert.equal((await h.call('save',invalid)).error.code,'INVALID_INPUT');});
 

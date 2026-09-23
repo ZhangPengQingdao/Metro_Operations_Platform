@@ -9,6 +9,11 @@ const ownOrganization=(input,employee)=>{const org=employee.organizationUnitId;i
 const configId=(org,type)=>{const h=createHash('sha256').update(`${org??'global'}:${type}`).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-4${h.slice(13,16)}-8${h.slice(17,20)}-${h.slice(20,32)}`;};
 export function createShiftsService(gateway){
  let pendingData=Promise.resolve();
+ const bootstrapCache=new Map();let bootstrapGeneration=0;
+ const invalidateBootstrap=(org,k,person)=>{
+  bootstrapGeneration++;
+  for(const [key,entry] of bootstrapCache)if((!org||entry.org===org)&&(!k||entry.kind===k)&&(!person||entry.personId===person))bootstrapCache.delete(key);
+ };
  const dataGateway={invoke(operation,payload,signal){
   const work=pendingData.then(()=>{if(signal?.aborted)throw Error('ABORTED');return gateway.invoke(operation,payload,signal);});
   pendingData=work.then(()=>undefined,()=>undefined);return work;
@@ -48,8 +53,13 @@ export function createShiftsService(gateway){
   },
   async bootstrap(input,employee,signal){
    const k=kind(input.kind),org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);
-   const chain=await ancestry(org,signal),scopes=[...chain.filter((node,i)=>i===0||node.unitType==='department'),{id:null}];
    const canReadPrevious=allowed(employee,'app.shifts.read',org,employee.personId);
+   const key=`${employee.personId}:${org}:${k}:${canReadPrevious}:${employee.businessAuthorization?.revision??''}`;
+   const cached=bootstrapCache.get(key);
+   if(cached&&cached.expires>Date.now()){bootstrapCache.delete(key);bootstrapCache.set(key,cached);return structuredClone(cached.value);}
+   if(cached)bootstrapCache.delete(key);
+   const generation=bootstrapGeneration;
+   const chain=await ancestry(org,signal),scopes=[...chain.filter((node,i)=>i===0||node.unitType==='department'),{id:null}];
    const operations=[
     {table:'configs',filters:[{column:'config_type',value:k}],anyOf:scopes.map(node=>[{column:'scope_key',value:node.id??'global'}]),pageSize:40},
     {table:'drafts',id:configId(org,employee.personId+':'+k)},
@@ -66,11 +76,13 @@ export function createShiftsService(gateway){
    const template=resolveConfig(k,{scopes,rows:results[0].rows});
    const draft=results[1].row;
    const prior=canReadPrevious?results[2].rows[0]:null;
-   return {template:{modules:template.value.modules,source:template.source,revision:template.revision},draft:draft?.value??null,draftRevision:draft?.revision??0,
+   const value={template:{modules:template.value.modules,source:template.source,revision:template.revision},draft:draft?.value??null,draftRevision:draft?.revision??0,
     previous:prior?{id:prior.id,shiftType:prior.shift_type,handoverIds:prior.people.filter(p=>p.role==='takeover').map(p=>p.id),form:{other_matters:prior.form_data.other_matters??''}}:null};
+   if(!signal.aborted&&generation===bootstrapGeneration){bootstrapCache.set(key,{org,kind:k,personId:employee.personId,value:structuredClone(value),expires:Date.now()+60_000});if(bootstrapCache.size>128)bootstrapCache.delete(bootstrapCache.keys().next().value);}
+   return value;
   },
   async 'load-draft'(input,employee,signal){const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);const {row}=await data.get('drafts',configId(org,employee.personId+':'+kind(input.kind)),signal);return {draft:row?.value??null,revision:row?.revision??0};},
-  async 'save-draft'(input,employee,signal){const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);if(!uuid(input.requestId)||(!input.value||typeof input.value!=='object'||Array.isArray(input.value)||JSON.stringify(input.value).length>10000))throw Error('INVALID_INPUT');const id=configId(org,employee.personId+':'+kind(input.kind)),old=(await data.get('drafts',id,signal)).row;if((old?.revision??0)!==input.revision)throw Error('CONFLICT');await data.transaction(input.requestId,[{table:'drafts',id,action:old?'update':'insert',values:{owner_id:employee.personId,organization_id:org,value:input.value,revision:(old?.revision??0)+1},...(old?{expected:{revision:old.revision}}:{})}],signal);return {revision:(old?.revision??0)+1};},
+  async 'save-draft'(input,employee,signal){const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);if(!uuid(input.requestId)||(!input.value||typeof input.value!=='object'||Array.isArray(input.value)||JSON.stringify(input.value).length>10000))throw Error('INVALID_INPUT');const k=kind(input.kind),id=configId(org,employee.personId+':'+k),old=(await data.get('drafts',id,signal)).row;if((old?.revision??0)!==input.revision)throw Error('CONFLICT');try{await data.transaction(input.requestId,[{table:'drafts',id,action:old?'update':'insert',values:{owner_id:employee.personId,organization_id:org,value:input.value,revision:(old?.revision??0)+1},...(old?{expected:{revision:old.revision}}:{})}],signal);}finally{invalidateBootstrap(org,k,employee.personId);}return {revision:(old?.revision??0)+1};},
   async previous(input,employee,signal){
    const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);
    if(!allowed(employee,'app.shifts.read',org,employee.personId))return {row:null};
@@ -102,7 +114,7 @@ export function createShiftsService(gateway){
     value={mode:input.value.mode,url,handover:input.value.handover===true,meeting:input.value.meeting===true};
    }else{if(!['inherit','override'].includes(input.value?.mode))throw Error('INVALID_INPUT');value={mode:input.value.mode,modules:validateModules(type,input.value.modules)};}
    const values={organization_id:org,scope_key:org??'global',config_type:type,value,revision:(previous?.revision??0)+1,updated_by:employee.personId,updated_at:new Date().toISOString()};
-   await data.transaction(input.requestId,[{action:previous?'update':'insert',table:'configs',id:configId(org,type),values,...(previous?{expected:{revision:previous.revision}}:{})}],signal);return {saved:true};
+   try{await data.transaction(input.requestId,[{action:previous?'update':'insert',table:'configs',id:configId(org,type),values,...(previous?{expected:{revision:previous.revision}}:{})}],signal);}finally{invalidateBootstrap();}return {saved:true};
   },
   async 'test-webhook'(input,employee,signal){const org=input.organizationId??null;if(org===null?!grant(employee,'app.shifts.config')?.all:!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');
    const cfg=org?(await effective(org,'webhook',signal)).value:(await readConfig(null,'webhook',signal))?.value;if(!cfg?.url||cfg.mode==='disabled')throw Error('INVALID_INPUT');await webhook.send({url:cfg.url,message:'晨会交接：测试消息',messageType:'text'},signal);return {sent:true};},
@@ -126,7 +138,7 @@ export function createShiftsService(gateway){
    const resolved=[];for(let offset=0;offset<personIds.length;offset+=50){if(personIds.slice(offset,offset+50).some(id=>!uuid(id)))throw Error('INVALID_INPUT');resolved.push(...(await gateway.invoke('platform.people.members',{organizationUnitId:org,personIds:personIds.slice(offset,offset+50)},signal)).rows);}
    const people=[];for(const id of personIds){const p=resolved.find(p=>p.id===id);if(!p)throw Error('INVALID_PERSON');people.push({id:p.id,name:p.name,role:k==='meeting'?(id===input.hostId?'host':'participant'):(id===employee.personId||input.takeoverIds?.includes(id)?'takeover':'handover')});}
    const now=new Date().toISOString(),row={id:input.id,organization_id:org,record_date:input.date,record_time:input.time,record_order:input.date+'T'+input.time,kind:k,shift_type:k==='handover'?input.shiftType:'',host_id:k==='meeting'?input.hostId:null,people,search_text:people.map(p=>p.name).join(' ')+ ' '+Object.values(form).map(v=>typeof v==='string'?v:JSON.stringify(v)).join(' '),module_snapshot:config,form_data:form,created_by:existing?.created_by??employee.personId,created_at:existing?.created_at??now,updated_by:employee.personId,updated_at:now,revision:(existing?.revision??0)+1,intent_id:input.requestId};
-   const {id,...values}=row;await data.transaction(input.requestId,[{action:existing?'update':'insert',table:'records',id,values,...(existing?{expected:{revision:existing.revision}}:{})}],signal);
+   const {id,...values}=row;try{await data.transaction(input.requestId,[{action:existing?'update':'insert',table:'records',id,values,...(existing?{expected:{revision:existing.revision}}:{})}],signal);}finally{invalidateBootstrap(org,k);}
    let signatureStatus='none';if(k==='meeting'){try{await signatures.associate({entityId:id,title:'晨会记录',organizationUnitId:org,personIds:people.map(p=>p.id)},signal);signatureStatus='ready';}catch{signatureStatus='unconfirmed';}}
    return {id,saved:true,signatureStatus,notification:await notify(row,signal)};
   },

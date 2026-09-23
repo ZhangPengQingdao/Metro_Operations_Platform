@@ -11,6 +11,8 @@ export interface SandboxFrameProps {
   resource: SandboxFrameResource;
   operations: ReadonlyMap<string, SandboxBridgeOperation>;
   enabled: boolean;
+  /** Hidden warm frames must not leave the surrounding platform shell inert. */
+  visible?: boolean;
   title: string;
   /** Optional signed-app client routing; host verifies the new route before changing this prop. */
   route?: string;
@@ -44,7 +46,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
   }
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
-function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady }: SandboxFrameProps) {
+function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady, visible=true }: SandboxFrameProps) {
   const frame=useRef<HTMLIFrameElement>(null);
   const broker=useRef<SandboxBridgeBroker | null>(null);
   const loaded=useRef(false);
@@ -62,14 +64,14 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
   const [failed,setFailed]=useState(false);
   const [modalOpen,setModalOpen]=useState(false);
   useEffect(()=>{
-    if(!modalOpen||failed)return;
+    if(!modalOpen||failed||!visible)return;
     const shell=frame.current?.closest('.afc-admin');
     if(!shell)return;
     const siblings=Array.from(shell.querySelectorAll<HTMLElement>('.afc-sidebar-island,.afc-page-header'));
     const previous=siblings.map(element=>element.inert);
     shell.classList.add('afc-sandbox-modal-shell');siblings.forEach(element=>{element.inert=true;});
     return()=>{shell.classList.remove('afc-sandbox-modal-shell');siblings.forEach((element,index)=>{element.inert=previous[index]!;});};
-  },[modalOpen,failed]);
+  },[modalOpen,failed,visible]);
   // Resource/operations replacement revokes channel even if the caller forgot its revision key.
   useLayoutEffect(()=>{
     if(config.current.resource!==resource || config.current.operations!==operations){setFailed(true);return;}
