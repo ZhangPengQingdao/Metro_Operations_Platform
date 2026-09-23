@@ -60,7 +60,7 @@ function preflight(){
 }
 
 test('storage preflight is read-only and closes its distinct management session',async()=>{
- const f=preflight();assert.ok(await f.run());assert.equal(f.state.ends,1);
+ const f=preflight(),storage=await f.run();assert.ok(storage);await storage.closeRuntimeConnections();assert.equal(f.state.ends,1);
  assert.ok(f.queries.length>5);assert.ok(f.queries.every(sql=>sql.startsWith('SELECT')));
 });
 
@@ -69,7 +69,7 @@ test('storage preflight admits least-privilege non-superuser DDL role',async()=>
  f.state.admin=false;
  f.state.adminCreate=true;
  f.state.adminDbCreate=true;
- assert.ok(await f.run());
+ const storage=await f.run();assert.ok(storage);await storage.closeRuntimeConnections();
  assert.equal(f.state.ends,1);
 });
 

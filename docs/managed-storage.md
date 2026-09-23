@@ -24,7 +24,7 @@ MOP_APP_STORAGE_ADMIN_DATABASE_URL=postgresql://metro_storage_admin:CHANGE_ME@12
 
 - PUBLIC 不能持有数据库 CREATE/TEMPORARY、业务 schema CREATE，以及受检查的表、序列、函数、列和大对象权限。
 - 九张迁移、租约、恢复与版本证据表必须存在。
-- 启动检查验证独立身份、迁移表和数据库 ACL；每次存储操作继续执行原有锁、绑定、ACL 和版本检查。每次新建管理会话重新检查管理身份。
+- 启动检查验证独立身份、迁移表和数据库 ACL；每次存储操作继续执行应用锁、绑定、启用状态、授权和租约检查。运行时就绪状态及表结构最多复用 30 秒，生命周期管理操作仍使用独立管理会话。运行时管理连接池最多保留 8 个连接，每次借出都重新检查管理身份，归还前释放咨询锁；关闭服务时结束连接池。
 - 服务启动不会创建管理角色、提升 API 权限、撤销数据库 PUBLIC 权限或自动运行平台迁移。
 
 ACL 调整前保留实际授权快照，核对对其他数据库使用者的影响；回退只恢复原先存在的权限。不要删除应用数据、租约或迁移证据来“恢复”。
@@ -54,7 +54,7 @@ ACL 调整前保留实际授权快照，核对对其他数据库使用者的影�
 | --- | --- | --- |
 | `platform.app_data.get` | `platform.app_data.read` | `{table,id}` |
 | `platform.app_data.list` | `platform.app_data.read` | `{table,afterId?,pageSize?,filters?,search?}` |
-| `platform.app_data.read_batch` | `platform.app_data.read` | `{operations:[{table,id} 或 {table,pageSize,...查询条件},...]}` |
+| `platform.app_data.read_batch` | `platform.app_data.read` | `{operations:[{table,id} 或 {table,ids:[...] } 或 {table,pageSize,...查询条件},...]}` |
 | `platform.app_data.transaction` | `platform.app_data.write` | `{requestId,operations}` |
 | `platform.app_data.write` | `platform.app_data.write` | `{table,id,requestId,action,values?}` |
 
@@ -62,7 +62,7 @@ ACL 调整前保留实际授权快照，核对对其他数据库使用者的影�
 
 `list` 返回 `{rows,nextCursor}`，按 UUID 主键升序进行游标分页；将 nextCursor 作为下页 afterId，null 表示本次查询已到末页。pageSize 默认 20、最大 50。filters 最多 8 个 `{column,value}` 等值条件，仅支持 uuid/text/boolean/integer 列，null 匹配空值；search 为 `{column,text}`，仅支持单个 text 列的大小写不敏感字面子串查询，`%`、`_` 不作为通配符。所有条件先过滤再分页；列须来自已核对表结构，参数不能选择 SQL、schema 或排序表达式。单行仍限制 32 KiB，含一条前瞻记录的行数据总量最多 60,000 字节，超限明确拒绝，调用者可降低 pageSize；不返回全表总数。分页之间并发写入不构成同一快照。
 
-`read_batch` 将 1–4 个 get/list 读操作放入同一只读事务与短期存储租约，按输入顺序返回 `{results:[{row} 或 {rows,nextCursor},...]}`。每项仍执行相同的表结构、过滤和授权检查；整个响应共用 60,000 字节数据上限，不接收写入。单独查询能成功但组合超限时，应用应退回单项读取。
+`read_batch` 将 1–4 个 get/list/按 ID 批量取行操作放入同一只读事务与短期存储租约，以一条数据库语句执行，按输入顺序返回 `{results:[{row} 或 {rows,nextCursor} 或 {rows},...]}`。`ids` 每项最多 50 个 UUID，只能读取当前应用的声明式表。整批统一授权，逐项检查表结构与过滤条件；整个响应共用 60,000 字节数据上限，不接收写入。单独查询能成功但组合超限时，应用应退回单项读取。
 
 `transaction` 将 1–16 个 insert/update/delete 合并为一个数据库事务，返回 `{results:[{row},...]}`。每项提供 table、id、action 和适用的 values；update/delete 必须提供非空 expected 字段对象，数据库在写入时比较旧值，不匹配则返回 `STORAGE_CONFLICT` 并回滚整批操作。insert 不接受 expected。整批请求共用一个 requestId，最多 16 KiB；同一表结构检查、授权复核、安装锁、租约和未知结果阻断适用于全部操作。库存值和版本比较后更新，再新增流水，可保证同一事务成功或全部回滚。库存不得为负、员工所属工班及冲销规则仍必须由物料应用的可信后端校验，通用存储接口不代替业务授权。
 
@@ -85,7 +85,9 @@ await data.transaction(transactionId, [
 ]);
 ```
 
-每次调用持有应用存储锁，检查安装版本、启用状态、授权、迁移账本和数据库 ACL。平台先持久化租约，再为 runtime 角色设置短期凭据；实际 DML 使用独立 runtime 会话。runtime 没有 owner、建表、平台表或其他应用数据权限。凭据不离开平台受控执行器，结束后撤销登录并核对会话已关闭。生命周期恢复可清理旧 runtime 租约，不能借此认定写入回滚。
+每次调用持有应用存储锁，检查安装版本、启用状态与授权；迁移账本、数据库 ACL 和表结构就绪状态最多缓存 30 秒。平台先持久化租约，再为 runtime 角色设置短期凭据；实际 DML 使用独立 runtime 会话。runtime 没有 owner、建表、平台表或其他应用数据权限。凭据不离开平台受控执行器，结束后撤销登录并核对会话已关闭。生命周期恢复可清理旧 runtime 租约，不能借此认定写入回滚。
+
+存储链路诊断可临时设置 `MOP_APP_STORAGE_TIMING=1` 并重启服务；日志事件 `app_storage_timing` 只记录 appId、操作类型、总耗时、连接耗时、SQL 次数及累计 SQL 耗时，不记录查询参数或行数据。此开关默认关闭。本地真实 PostgreSQL 热读约 10–11 毫秒，仅代表存储段；跨机数据库时应以生产端到端测量为准。
 
 写入先记录唯一 `(installationId,requestId)`，再执行事务；确认提交后标记 completed，确认回滚后标记 rolled_back。任何已有请求 ID 均拒绝再次执行，不返回伪造的成功结果。提交断连、完成记录落库失败等情况保留 dispatched，阻断该应用后续读写及启用就绪检查。SDK 不自动重试，也不能更换请求 ID 来绕过未知结果。
 

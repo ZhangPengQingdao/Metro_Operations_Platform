@@ -9,6 +9,7 @@ function fixture(){
  const gateway={async invoke(operation,p){
   if(operation==='platform.people.members')return {rows:[...members.values()].filter(row=>row.organizationUnitId===p.organizationUnitId&&(!p.personId||row.id===p.personId))};
   if(operation==='platform.app_data.get')return {row:structuredClone(tables[p.table].get(p.id)??null)};
+  if(operation==='platform.app_data.read_batch')return {results:p.operations.map(item=>({rows:item.ids.map(id=>tables[item.table].get(id)).filter(Boolean).map(row=>structuredClone(row))}))};
   if(operation==='platform.app_data.list')return {rows:[...tables[p.table].values()].filter(r=>p.filters.every(f=>r[f.column]===f.value)&&(!p.anyOf||p.anyOf.some(group=>group.every(f=>r[f.column]===f.value)))),nextCursor:null};
   assert.equal(operation,'platform.app_data.transaction');writes++;
   if(spent.has(p.requestId))throw Error('STORAGE_REQUEST_ALREADY_RECORDED');spent.add(p.requestId);
@@ -118,8 +119,24 @@ test('initial stock and inbound record are committed together',async()=>{
 });
 test('movement presentation respects the single-owner storage session and includes edit ownership',async()=>{
  const f=fixture(),id=await f.stock();await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:2},f.employee);
- let active=false;const service=createMaterialsService({async invoke(...args){assert.equal(active,false,'storage session must not overlap');active=true;try{await new Promise(resolve=>setImmediate(resolve));return await f.gateway.invoke(...args);}finally{active=false;}}});
+ let active=false,reads=0;const service=createMaterialsService({async invoke(...args){assert.equal(active,false,'storage session must not overlap');active=true;try{reads++;await new Promise(resolve=>setImmediate(resolve));return await f.gateway.invoke(...args);}finally{active=false;}}});
  const result=await service.list({kind:'movements'},f.employee);assert.equal(result.rows.length,2);assert.equal(result.rows[0].material_name,'Bolt');assert.equal(result.rows[1].own,true);
+ assert.equal(reads,2);
+});
+test('bootstrap returns session and first page in one application request',async()=>{
+ const f=fixture(),id=await f.stock(),operations=[];
+ const {createMaterialsHandlers}=await import('./handlers.mjs');
+ const handlers=createMaterialsHandlers({invoke:async(operation,payload,signal)=>{operations.push(operation);return f.gateway.invoke(operation,payload,signal);}});
+ const response=await handlers.get('bootstrap').execute({route:'stock'},new AbortController().signal,{...f.employee,permissions:['app.materials.manage']});
+ assert.equal(response.ok,true);
+ assert.equal(response.result.session.leader,true);
+ assert.equal(response.result.page.rows[0].id,id);
+ assert.deepEqual(operations,['platform.app_data.list']);
+ const recordsOnly={...f.employee,businessAuthorization:{revision:randomUUID(),organizations:[{id:f.employee.organizationUnitId,name:'Team'}],grants:[{permission:'app.materials.read-records',all:false,self:false,organizationIds:[f.employee.organizationUnitId]}]}};
+ assert.equal((await handlers.get('bootstrap').execute({route:'home'},new AbortController().signal,recordsOnly)).ok,true);
+ const denied=await handlers.get('bootstrap').execute({route:'stock'},new AbortController().signal,recordsOnly);
+ assert.equal(denied.ok,false);
+ assert.equal(denied.error.code,'ACCESS_DENIED');
 });
 test('material editing preserves stock, rejects stale versions, and requires a manager',async()=>{
  const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);

@@ -96,9 +96,8 @@ export class AppLifecycleHost {
     const input=structuredClone(request),identity=structuredClone(await resolveIdentity());
     if(identity.source==='service')throw new GatewayError('ACCESS_DENIED',403);
     const assertAdmission=async()=>{await this.admittedSnapshot();if(!isDeepStrictEqual(identity,await resolveIdentity()))throw new GatewayError('ACCESS_DENIED',403);};
-    await assertAdmission();
     const actor=await this.options.api.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId:this.options.appId},requestId:randomUUID(),traceId:randomUUID()});
-    await assertAdmission();
+    // Hosted API checks admission before dispatch and again before result delivery.
     return this.invokeApi(actor,input,signal,assertAdmission);
   }
   /** Employee ingress uses the same durable work boundary as backend service requests. */

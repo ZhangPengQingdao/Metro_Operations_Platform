@@ -48,14 +48,23 @@ export function createManagementApiAuthorization(pool:ConnectablePool&QueryableC
  const {contextResolver}=createManagementContexts(pool),business=new AppBusinessAuthorization(pool);
  type Actor=Awaited<ReturnType<PlatformActorContextResolver['resolve']>>;
  const snapshots=new WeakMap<Actor,ReturnType<AppBusinessAuthorization['resolve']>>();
+ const businessSessions=new Map<string,{value:ReturnType<AppBusinessAuthorization['resolve']>;expires:number}>();
+ const cache=<T>(entries:Map<string,{value:Promise<T>;expires:number}>,key:string,load:()=>Promise<T>,limit:number):Promise<T>=>{
+  const entry=entries.get(key);
+  if(entry&&entry.expires>Date.now()){entries.delete(key);entries.set(key,entry);return entry.value;}
+  const value=load();entries.set(key,{value,expires:Date.now()+30_000});
+  if(entries.size>limit)entries.delete(entries.keys().next().value!);
+  void value.catch(()=>{if(entries.get(key)?.value===value)entries.delete(key);});
+  return value;
+ };
  function rulesFor(context:Actor){
   if(context.actorType!=='person'||context.execution.type!=='application')return Promise.resolve(null);
   let rules=snapshots.get(context);
-  if(!rules){rules=business.resolve(context.execution.appId,context.person.id);snapshots.set(context,rules);}
+  if(!rules){const appId=context.execution.appId,personId=context.person.id;rules=cache(businessSessions,`${personId}:${appId}:${context.person.organization?.id??''}`,()=>business.resolve(appId,personId),512);snapshots.set(context,rules);}
   return rules;
  }
- // A new actor is resolved at every admission checkpoint; never cache across checkpoints.
  return {contextResolver,
+  clearSessions:()=>businessSessions.clear(),
   businessAuthorization:async(context:Awaited<ReturnType<PlatformActorContextResolver['resolve']>>)=>{
    if(context.actorType!=='person'||context.execution.type!=='application')return undefined;
    return await rulesFor(context)??undefined;

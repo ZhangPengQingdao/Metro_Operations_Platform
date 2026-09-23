@@ -132,13 +132,43 @@ export class AppBusinessAuthorization{
  }
  async resolve(appId:string,personId:string){return this.read(db=>this.resolveWith(db,appId,personId));}
  private async resolveWith(db:QueryableClient,appId:string,personId:string){
-  const app=await this.installation(db,appId),state=await this.state(db,app.id);if(state?.mode!=='application')return null;
-  const p=await this.person(db,personId);if(!app.record.enabled)fail('APP_DISABLED');
-  const roles=await query<{rules:BusinessRule[]}>(db,`SELECT r.rules FROM platform_app_business_roles r JOIN platform_app_business_members m ON m.role_id=r.id AND m.installation_id=r.installation_id WHERE r.installation_id=$1 AND m.person_id=$2 AND r.status='active' ORDER BY r.id`,[app.id,personId]);
-  const orgs=await query<{id:string;parent_id:string|null;unit_type:string;status:string;name:string}>(db,'SELECT id,parent_id,unit_type,status,name FROM platform_organization_units');
+  appIdSchema.parse(appId);
+  const [snapshot]=await query<{
+   record:{manifest:AppManifest;enabled:boolean};
+   state:{mode:'legacy'|'application';revision:string;audience:Audience|null;default_role_id:string|null}|null;
+   person:{organization_unit_id:string}|null;
+   roles:{rules:BusinessRule[]}[];
+   orgs:{id:string;parent_id:string|null;unit_type:string;status:string;name:string}[];
+   delegated:{rules:BusinessRule[];organization_id:string;permission:string}[];
+   selected:{rules:BusinessRule[]}[];
+  }>(db,`SELECT i.record,
+   (SELECT to_jsonb(a) FROM platform_app_authorization a WHERE a.installation_id=i.id) AS state,
+   (SELECT to_jsonb(p) FROM platform_people p JOIN platform_organization_units o ON o.id=p.organization_unit_id
+    JOIN platform_positions pos ON pos.id=p.position_id WHERE p.id=$2 AND p.employment_status='active'
+    AND o.status='active' AND pos.status='active') AS person,
+   coalesce((SELECT jsonb_agg(jsonb_build_object('rules',r.rules) ORDER BY r.id)
+    FROM platform_app_business_roles r JOIN platform_app_business_members m ON m.role_id=r.id AND m.installation_id=r.installation_id
+    WHERE r.installation_id=i.id AND m.person_id=$2 AND r.status='active'),'[]'::jsonb) AS roles,
+   coalesce((SELECT jsonb_agg(to_jsonb(o)) FROM platform_organization_units o),'[]'::jsonb) AS orgs,
+   coalesce((SELECT jsonb_agg(jsonb_build_object('rules',r.rules,'organization_id',m.organization_id,'permission',d.permission))
+    FROM platform_app_delegated_members m JOIN platform_app_role_delegations d USING(installation_id,role_id)
+    JOIN platform_app_business_roles r ON r.id=m.role_id AND r.installation_id=m.installation_id
+    WHERE m.installation_id=i.id AND m.person_id=$2 AND r.status='active'),'[]'::jsonb) AS delegated,
+   coalesce((SELECT jsonb_agg(jsonb_build_object('rules',r.rules)) FROM platform_app_business_roles r
+    WHERE r.installation_id=i.id AND r.id=coalesce(
+     (SELECT m.role_id FROM platform_app_member_roles m WHERE m.installation_id=i.id AND m.person_id=$2),
+     (SELECT a.default_role_id FROM platform_app_authorization a WHERE a.installation_id=i.id))
+    AND r.status='active'),'[]'::jsonb) AS selected
+   FROM platform_app_installations i WHERE i.app_id=$1`,[appId,personId]);
+  if(!snapshot)fail('APP_NOT_FOUND',404);
+  const {record,state,orgs,delegated,selected}=snapshot;
+  if(state?.mode!=='application')return null;
+  const p=snapshot.person;
+  if(!p)return fail('EMPLOYEE_PERSON_INACTIVE');
+  if(!record.enabled)fail('APP_DISABLED');
+  const roles=[...snapshot.roles];
   const byId=new Map(orgs.map(o=>[o.id,o]));
   const ancestor=(id:string,type:string)=>{const seen=new Set<string>();let o=byId.get(id);while(o&&!seen.has(o.id)&&o.status==='active'){seen.add(o.id);if(o.unit_type===type)return o.id;o=o.parent_id?byId.get(o.parent_id):undefined;}return undefined;};
-  const delegated=await query<{rules:BusinessRule[];organization_id:string;permission:string}>(db,`SELECT r.rules,m.organization_id,d.permission FROM platform_app_delegated_members m JOIN platform_app_role_delegations d USING(installation_id,role_id) JOIN platform_app_business_roles r ON r.id=m.role_id AND r.installation_id=m.installation_id WHERE m.installation_id=$1 AND m.person_id=$2 AND r.status='active'`,[app.id,personId]);
   for(const d of delegated){
    if(ancestor(p.organization_unit_id,'workgroup')!==d.organization_id||!d.rules.length||d.rules.some(r=>r.scope!=='workgroup'||r.permission===d.permission))continue;
    roles.push({rules:d.rules});
@@ -146,12 +176,10 @@ export class AppBusinessAuthorization{
   const audience=state.audience;
   if(audience&&!audienceIncludes(audience,personId,p.organization_unit_id,orgs.map(o=>({...o,parentId:o.parent_id}))))return {revision:state.revision,grants:[],organizations:[]};
   if(state.default_role_id){
-   const [assigned]=await query<{role_id:string}>(db,'SELECT role_id FROM platform_app_member_roles WHERE installation_id=$1 AND person_id=$2',[app.id,personId]);
-   const selected=await query<{rules:BusinessRule[]}>(db,"SELECT rules FROM platform_app_business_roles WHERE installation_id=$1 AND id=$2 AND status='active'",[app.id,assigned?.role_id??state.default_role_id]);
    roles.splice(0,roles.length,...selected);
   }
   const grants:ResolvedBusinessGrant[]=[];
-  for(const permission of app.record.manifest.permissions.defined){const rules=roles.flatMap(r=>r.rules).filter(r=>r.permission===permission.code&&(permission.scopeKinds??['all']).includes(r.scope));if(!rules.length)continue;
+  for(const permission of record.manifest.permissions.defined){const rules=roles.flatMap(r=>r.rules).filter(r=>r.permission===permission.code&&(permission.scopeKinds??['all']).includes(r.scope));if(!rules.length)continue;
    const ids=new Set<string>();let all=false,self=false;
    for(const r of rules){if(r.scope==='all')all=true;else if(r.scope==='self')self=true;else if(r.scope==='workgroup'){const id=ancestor(p.organization_unit_id,'workgroup');if(id)ids.add(id);}else if(r.scope==='department'){const root=ancestor(p.organization_unit_id,'department');if(root)for(const o of orgs)if(ancestor(o.id,'department')===root)ids.add(o.id);}else for(const id of r.organizationIds)if(byId.get(id)?.status==='active')ids.add(id);}
    if(all||self||ids.size)grants.push({permission:permission.code,all,self,organizationIds:[...ids].sort()});

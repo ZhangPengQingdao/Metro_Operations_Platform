@@ -38,7 +38,7 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get/list` 与 `platform.assets.get/list`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
 
-员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，平台验证实时员工身份、应用使用授权与业务权限。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件、外联和 trusted UI 仍拒绝。物料的实际 Docker 托管全链路尚待验收。
+员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，每次请求核验员工登录态。员工应用准入与业务授权在单进程内最多复用 30 秒；本进程通过员工账号、应用使用授权、应用业务授权、审批和应用生命周期操作后立即失效，其他进程或直接改库的变化可能延迟最多 30 秒生效。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件、外联和 trusted UI 仍拒绝。物料的实际 Docker 托管全链路尚待验收。
 
 CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默认管理端不挂载该入口；本版通过管理端上传导出的签名 JSON 包安装。
 

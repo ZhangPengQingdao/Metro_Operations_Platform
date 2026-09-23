@@ -99,7 +99,7 @@ export interface AppDataListOptions {
   anyOf?:readonly (readonly AppDataFilter[])[];
   search?:{column:string;text:string};
 }
-export type AppDataRead = {table:string;id:string} | ({table:string}&AppDataListOptions&{pageSize:number});
+export type AppDataRead = {table:string;id:string} | {table:string;ids:readonly string[]} | ({table:string}&AppDataListOptions&{pageSize:number});
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */
 export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
   return Object.freeze({

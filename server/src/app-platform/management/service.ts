@@ -25,6 +25,7 @@ import {createManagementGateway,createManagementApiAuthorization} from './gatewa
 import {GatewayError} from '../gateway/model.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {EmployeeAppAccess} from '../employee/access.js';
+import {EmployeeAppSessions} from '../employee/app-session.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
 import {buildSandboxDocument} from '../sandbox/document.js';
@@ -39,6 +40,7 @@ export async function createAppManagement(configFile:string,origin:string){
  const assertOpen=()=>{if(maintenanceBlocked)throw new AppManagementError('PLATFORM_MAINTENANCE');};
  const queue={run:<T>(work:()=>Promise<T>)=>managementQueue.run(()=>{assertOpen();return work();}),close:managementQueue.close};
  let resources:Awaited<ReturnType<typeof createSandboxResourceServer>>|undefined;
+ let storage:Awaited<ReturnType<typeof createManagedStorageComposition>>|undefined;
  try{
  const required=await db.query("SELECT to_regclass('platform_app_install_requests') AS installs,to_regclass('platform_app_runtime_work') AS work,to_regclass('platform_app_docker_dispatches') AS docker,to_regclass('platform_app_versions') AS versions");
  if(!required.rows[0].installs||!required.rows[0].work||!required.rows[0].versions||(config.docker&&!required.rows[0].docker))throw new AppManagementError('APP_MANAGEMENT_MIGRATIONS_REQUIRED');
@@ -55,13 +57,16 @@ export async function createAppManagement(configFile:string,origin:string){
  const installJournal=new PostgresInstallJournal(db);
  const versionJournal=new PostgresAppVersionJournal(db);
  const readArtifact=createVersionedArtifactReader(installJournal,versionJournal);
- const storage=config.managedStorage?await createManagedStorageComposition({apiDatabaseUrl:connectionString,
+ storage=config.managedStorage?await createManagedStorageComposition({apiDatabaseUrl:connectionString,
   adminDatabaseUrl:process.env.MOP_APP_STORAGE_ADMIN_DATABASE_URL,apiClient:db,
   registry:client=>new AppRegistryService(new PostgresAppRegistryRepository(client),{authorization,host:()=>{throw new Error('STORAGE_REGISTRY_READ_ONLY');}}),
   reader:createStorageArtifactReader({getInstallation:appId=>repository.findByAppId(appId),readArtifact})}):undefined;
  const gateway=createManagementGateway(getDatabasePool()!,storage?.runtimeData.operations());
  const employeeAccess=new EmployeeAppAccess(getDatabasePool()!);
- const runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:createManagementApiAuthorization(getDatabasePool()!),connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
+ const employeeAppSessions=new EmployeeAppSessions();
+ const apiAuthorization=createManagementApiAuthorization(getDatabasePool()!);
+ const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
+ const runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:apiAuthorization,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
  const approve=async(_context:PlatformManagementContext,manifest:Parameters<typeof manifestApprovalDigest>[0])=>{
   const fresh=await loadAppManagementConfig(configFile);
   return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&(await approvals.current()).approvedManifestDigests.includes(manifestApprovalDigest(manifest));
@@ -94,7 +99,15 @@ export async function createAppManagement(configFile:string,origin:string){
 
  async function admitEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
   const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
-  return admitEmployeeApplication({resolveIdentity,assertAccess:personId=>employeeAccess.assert(appId,personId),snapshot:()=>host.admittedSnapshot(),assertApproval:()=>assertRuntimeApproval(undefined,appId)});
+  const identity=await resolveIdentity();
+  if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
+  return employeeAppSessions.get(identity,appId,()=>{
+   let first=true;
+   return admitEmployeeApplication({resolveIdentity:()=>{
+    if(first){first=false;return Promise.resolve(identity);}
+    return resolveIdentity();
+   },assertAccess:personId=>employeeAccess.assert(appId,personId),snapshot:()=>host.admittedSnapshot(),assertApproval:()=>assertRuntimeApproval(undefined,appId)});
+  });
  }
 
  if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN);
@@ -112,30 +125,40 @@ export async function createAppManagement(configFile:string,origin:string){
   change:async(appId,revision,action)=>{
    if(!maintenanceContext)throw Error('MAINTENANCE_CONTEXT_REQUIRED');
    if(action==='enable'){await versions.assertActivationAllowed(maintenanceContext,appId);await assertRuntimeApproval(maintenanceContext,appId);}
-   return (await runtime.getHost(appId)).execute(maintenanceContext,{revision,action});
+   const result=await (await runtime.getHost(appId)).execute(maintenanceContext,{revision,action});
+   invalidateAppSessions();
+   return result;
   },
  },process.env.MOP_MAINTENANCE_STATE):undefined;
  await maintenance?.initialize();
  return {
+  invalidateEmployeeSessions:invalidateAppSessions,
   maintenanceActive:()=>maintenanceBlocked,
   maintenanceStatus:()=>maintenance?.status()??null,
   prepareMaintenance:(context:PlatformManagementContext,taskId:string)=>managementQueue.run(async()=>{if(!maintenance)throw Error('MAINTENANCE_NOT_CONFIGURED');maintenanceContext=context;return maintenance.prepare(taskId,context.actorType==='administrator'?context.administrator.id:'');}),
   restoreMaintenance:(context:PlatformManagementContext,taskId:string)=>managementQueue.run(async()=>{if(!maintenance)throw Error('MAINTENANCE_NOT_CONFIGURED');maintenanceContext=context;return maintenance.restore(taskId);}),
   approvalPolicy:(context:PlatformManagementContext)=>approvals.get(context),
-  savePublisherPolicy:(context:PlatformManagementContext,revision:number,keys:Parameters<AppApprovalStore['save']>[2]['keys'])=>queue.run(()=>approvals.save(context,revision,{keys})),
+  savePublisherPolicy:(context:PlatformManagementContext,revision:number,keys:Parameters<AppApprovalStore['save']>[2]['keys'])=>queue.run(async()=>{const result=await approvals.save(context,revision,{keys});invalidateAppSessions();return result;}),
   previewPackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>queue.run(()=>preview(context,input)),
   approvePackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string},revision:number,digest:string,platformCapabilities=false)=>queue.run(async()=>{
    const result=await preview(context,input);
    if(result.digest!==digest||result.policyRevision!==revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
    if(!result.supported||!result.compatible)throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
    if(platformCapabilities)requestedPlatformCapabilities(result.manifest);
-   return approvals.save(context,revision,{approval:{digest,approved:true,platformCapabilities}});
+   const approval=await approvals.save(context,revision,{approval:{digest,approved:true,platformCapabilities}});invalidateAppSessions();return approval;
   }),
-  revokeApproval:(context:PlatformManagementContext,revision:number,digest:string)=>queue.run(()=>approvals.save(context,revision,{approval:{digest,approved:false}})),
+  revokeApproval:(context:PlatformManagementContext,revision:number,digest:string)=>queue.run(async()=>{const result=await approvals.save(context,revision,{approval:{digest,approved:false}});invalidateAppSessions();return result;}),
   async employeeApps(resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    const identity=await resolveIdentity();if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    const candidates=await employeeAccess.candidates(identity.userId);const applications=[];
-   for(const {appId}of candidates){try{const admitted=await admitEmployee(appId,resolveIdentity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;if(m.ui.mode==='sandbox')applications.push({appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes});}catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}}
+   for(let index=0;index<candidates.length;index+=4){
+    const group=await Promise.all(candidates.slice(index,index+4).map(async({appId})=>{
+     try{const admitted=await admitEmployee(appId,async()=>identity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;
+      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes}:null;
+     }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
+    }));
+    for(const app of group)if(app)applications.push(app);
+   }
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
   },
@@ -187,12 +210,12 @@ export async function createAppManagement(configFile:string,origin:string){
    return storage.reconcile(context,appId,revision,attemptId);
   }),
   uploadRoot:config.uploadRoot,
-  install:(context:PlatformManagementContext,input:Parameters<AppInstaller['install']>[1])=>queue.run(()=>installer.install(context,input)),
+  install:(context:PlatformManagementContext,input:Parameters<AppInstaller['install']>[1])=>queue.run(async()=>{const result=await installer.install(context,input);invalidateAppSessions();return result;}),
   status:(context:PlatformManagementContext,appId:string)=>queue.run(()=>installer.status(context,appId)),
-  recover:(context:PlatformManagementContext,appId:string,revision:number)=>queue.run(()=>installer.recover(context,appId,revision)),
-  versionUpdate:(context:PlatformManagementContext,input:Parameters<AppVersionService['update']>[1])=>queue.run(()=>versions.update(context,input)),
+  recover:(context:PlatformManagementContext,appId:string,revision:number)=>queue.run(async()=>{const result=await installer.recover(context,appId,revision);invalidateAppSessions();return result;}),
+  versionUpdate:(context:PlatformManagementContext,input:Parameters<AppVersionService['update']>[1])=>queue.run(async()=>{const result=await versions.update(context,input);invalidateAppSessions();return result;}),
   versionStatus:(context:PlatformManagementContext,appId:string)=>queue.run(()=>versions.status(context,appId)),
-  versionRecover:(context:PlatformManagementContext,appId:string,requestId:string)=>queue.run(()=>versions.recover(context,appId,requestId)),
+  versionRecover:(context:PlatformManagementContext,appId:string,requestId:string)=>queue.run(async()=>{const result=await versions.recover(context,appId,requestId);invalidateAppSessions();return result;}),
   async getHost(appId:string){
    const host=await runtime.getHost(appId);
    return {status:(context:PlatformManagementContext)=>queue.run(()=>host.status(context)),
@@ -201,15 +224,15 @@ export async function createAppManagement(configFile:string,origin:string){
      if(['upgrade','rollback'].includes(input.action))throw new AppManagementError('SIGNED_PACKAGE_REQUIRED');
      if(input.action==='install')throw new AppManagementError('SIGNED_PACKAGE_REQUIRED');
      if(input.action==='enable'){await versions.assertActivationAllowed(context,appId);await assertRuntimeApproval(context,appId);}
-     return host.execute(context,input);
+     const result=await host.execute(context,input);invalidateAppSessions();return result;
     }),
-    recover:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.recover(context,revision)),
+    recover:(context:PlatformManagementContext,revision:number)=>queue.run(async()=>{const result=await host.recover(context,revision);invalidateAppSessions();return result;}),
     prepareCredential:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.prepareCredential(context,revision)),
    };
   },
   ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();}):undefined});}),
-  close:()=>queue.close(async()=>{await resources?.close();await runtime.close();db.release();}),
+  close:()=>queue.close(async()=>{await resources?.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
  };
- }catch(error){await resources?.close();db.release();throw error;}
+ }catch(error){await resources?.close();await storage?.closeRuntimeConnections();db.release();throw error;}
 }
 export type AppManagement=Awaited<ReturnType<typeof createAppManagement>>;

@@ -18,6 +18,7 @@ function ActionIcon({kind}){const Icon={edit:PencilSimpleLine,delete:Trash,plus:
 function App(){
  const [route,setRoute]=useState(initialRoute);
  const routeRef=useRef(route);routeRef.current=route;
+ const skipInitialLoad=useRef(false);
  useEffect(()=>{let active=true,running=false;async function sync(){if(!sandbox.ready()||running)return;running=true;try{const result=await sandbox.invoke('platform.ui.theme',{});if(active&&['light','dark'].includes(result.theme)){document.documentElement.classList.add('afc-theme-neutral');document.documentElement.dataset.theme=result.theme;}}finally{running=false;}}void sync();const timer=setInterval(()=>void sync().catch(()=>{}),1000);return()=>{active=false;clearInterval(timer);};},[]);
 
  const [caps,setCaps]=useState(null),[rows,setRows]=useState([]),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[pages,setPages]=useState([null]),[next,setNext]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[dialog,setDialog]=useState(null),[form,setForm]=useState({}),[saving,setSaving]=useState(false);
@@ -31,9 +32,15 @@ function App(){
   catch(e){if(write&&!errors[Object.keys(errors).find(k=>errors[k]===e.message)])uncertain=true;throw e;}finally{if(write)writing=false;}
  }
  async function load(isCurrent=()=>true){if(!caps||settings&&!caps.leader)return;const visible=()=>isCurrent()&&routeRef.current===route;setLoading(true);setError('');try{const result=await call(settings?'members':'list',settings?(query?{search:query}:{}):{kind:records?'consumptions':'materials',pageSize:20,...(cursor?{afterId:cursor}:{}),...(query?{search:query}:{})});if(visible()){setRows(result.rows);setNext(result.nextCursor??null);}}catch(e){if(visible())setError(e.message);}finally{if(visible())setLoading(false);}}
- useEffect(()=>{let cancelled=false;const deadline=Date.now()+10000,timer=setInterval(async()=>{if(sandbox.ready()){clearInterval(timer);try{const value=await call('session',{});if(cancelled)return;setCaps(value);await sandbox.invoke('platform.ui.navigation',{ids:value.business?[...(value.permissions.includes('app.materials.read-stock')?['stock']:[]),...(value.permissions.includes('app.materials.read-records')?['records']:[])]:['stock','records',...(value.leader?['settings']:[])]});}catch(e){if(!cancelled)setError(e.message);}}else if(Date.now()>deadline){clearInterval(timer);setError('应用连接未就绪，请重新打开');}},25);return()=>{cancelled=true;clearInterval(timer);};},[]);
+ useEffect(()=>{let cancelled=false;const deadline=Date.now()+10000,timer=setInterval(async()=>{if(sandbox.ready()){clearInterval(timer);try{
+  const requestedRoute=routeRef.current,routeName=requestedRoute==='/settings'?'settings':requestedRoute==='/records'?'records':requestedRoute==='/'?'home':'stock';
+  const value=await call('bootstrap',{route:routeName});if(cancelled)return;
+  if(routeRef.current===requestedRoute){skipInitialLoad.current=true;setRows(value.page.rows);setNext(value.page.nextCursor??null);}
+  setCaps(value.session);
+  await sandbox.invoke('platform.ui.navigation',{ids:value.session.business?[...(value.session.permissions.includes('app.materials.read-stock')?['stock']:[]),...(value.session.permissions.includes('app.materials.read-records')?['records']:[])]:['stock','records',...(value.session.leader?['settings']:[])]});
+ }catch(e){if(!cancelled)setError(e.message);}}else if(Date.now()>deadline){clearInterval(timer);setError('应用连接未就绪，请重新打开');}},25);return()=>{cancelled=true;clearInterval(timer);};},[]);
  useEffect(()=>{if(!caps)return;void sandbox.invoke('platform.ui.modal',{open:!!dialog}).catch(()=>setError('弹窗显示状态未同步，请重新打开应用'));},[caps,!!dialog]);
- useEffect(()=>{let active=true;void load(()=>active);return()=>{active=false;};},[caps,query,cursor,route]);
+ useEffect(()=>{if(skipInitialLoad.current){skipInitialLoad.current=false;return;}let active=true;void load(()=>active);return()=>{active=false;};},[caps,query,cursor,route]);
  useEffect(()=>{const timer=setTimeout(()=>{setPages([null]);setQuery(search.trim());},300);return()=>clearTimeout(timer);},[search]);
  useEffect(()=>{
   if(!dialog||!['consume','outbound','correct'].includes(dialog.kind))return;

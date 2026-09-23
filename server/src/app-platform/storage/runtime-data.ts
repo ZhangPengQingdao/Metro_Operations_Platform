@@ -17,12 +17,13 @@ import {GatewayError,jsonSnapshot,type AppGatewayOperation,type GatewayJson} fro
 const identifier=z.string().regex(/^[a-z][a-z0-9_]{0,62}$/).refine(v=>!v.startsWith('pg_')&&!v.startsWith('platform_'));
 const base={table:identifier,id:z.string().uuid()};
 const readInput=z.object(base).strict();
+const readManyInput=z.object({table:identifier,ids:z.array(z.string().uuid()).min(1).max(50)}).strict();
 const writeInput=z.object({...base,requestId:z.string().uuid(),action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id'in v.values));
 const transactionItem=z.object({...base,action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional(),expected:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>
  (v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id' in v.values))&&
  (v.action==='insert'?v.expected===undefined:!!v.expected&&Object.keys(v.expected).length>0&&Object.keys(v.expected).length<=63&&!('id' in v.expected)));
 const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
-const readBatchInput=z.object({operations:z.array(z.union([readInput,runtimeListInput])).min(1).max(4)}).strict();
+const readBatchInput=z.object({operations:z.array(z.union([readInput,readManyInput,runtimeListInput])).min(1).max(4)}).strict();
 const rows=async<T>(db:QueryableClient,sql:string,args?:readonly unknown[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
 const q=(v:string)=>`"${v}"`; // Only validated binding and identifier values.
 export interface RuntimeStorageOptions{
@@ -30,9 +31,12 @@ export interface RuntimeStorageOptions{
  endpoint:Omit<AppMigrationCredentials,'user'|'password'>;
  findInstallation(client:QueryableClient,appId:string):Promise<AppInstallation|null>;
  connectRuntime?(credentials:AppMigrationCredentials):Promise<ManagedAppAdminClient>;
+ observeTiming?(timing:{appId:string;mode:'read'|'write'|'list'|'transaction'|'read_batch';totalMs:number;adminConnectMs:number;runtimeConnectMs:number;sqlCount:number;sqlMs:number}):void;
 }
 /** Service-only, bounded row operations. No SQL, role, schema or employee identity supplied by applications. */
 export class AppRuntimeDataService{
+ private readonly readiness=new Map<string,number>();
+ private readonly tableColumns=new Map<string,{columns:Map<string,string>;expires:number}>();
  constructor(private readonly options:RuntimeStorageOptions){}
  operations():AppGatewayOperation[]{return [false,true].map<AppGatewayOperation>(write=>({
   name:write?'platform.app_data.write':'platform.app_data.get',permissionCode:write?'platform.app_data.write':'platform.app_data.read',mode:write?'write':'read',
@@ -66,13 +70,19 @@ export class AppRuntimeDataService{
   if(Buffer.byteLength(JSON.stringify(parsed))>16384)throw new GatewayError('INVALID_PARAMS');
   const permission=write?'platform.app_data.write':'platform.app_data.read';
   const appId=context.execution.appId!;
+  const started=performance.now();let adminConnectMs=0,runtimeConnectMs=0,sqlCount=0,sqlMs=0;
+  const instrument=(client:ManagedAppAdminClient):ManagedAppAdminClient=>({
+   query:async(sql,args)=>{const start=performance.now();try{return await client.query(sql,args);}finally{sqlCount++;sqlMs+=performance.now()-start;}},
+   end:()=>client.end(),
+   ...(client.on?{on:client.on.bind(client)}:{}),
+  });
   let admin:ManagedAppAdminClient|undefined,runtime:ManagedAppAdminClient|undefined,plan:ManagedAppStorage|undefined;
   let transaction=false,commitSent=false,intent=false,lease=false;
   const requestId=batch?.requestId??mutation?.requestId;
   const check=()=>{if(signal.aborted)throw new GatewayError('ABORTED',499);};
   const authorize=async()=>{check();if(!(await context.authorize(permission,{})).allowed)throw new GatewayError('ACCESS_DENIED',403);check();};
   try{
-   await authorize();admin=await this.options.connectAdmin();admin.on?.('error',()=>undefined);
+   await authorize();const adminStart=performance.now();admin=instrument(await this.options.connectAdmin());adminConnectMs=performance.now()-adminStart;admin.on?.('error',()=>undefined);
    await admin.query('SET search_path=pg_catalog,public');
    const initial=await this.options.findInstallation(admin,appId);if(!initial||!initial.enabled)throw new GatewayError('ACCESS_DENIED',403);
    const b=binding(initial);if(b.mode!=='managed')throw new AppStorageError('MIGRATION_STORAGE_NOT_MANAGED');plan=b;
@@ -82,15 +92,29 @@ export class AppRuntimeDataService{
     if(!current||!current.enabled||current.revision!==initial.revision||!isDeepStrictEqual(binding(current),plan))throw new GatewayError('ACCESS_DENIED',403);};
    await revalidate();
    await recoverRuntimeStorageLease(admin,plan);
-   const inspector=new AppStorageService({get:async()=>{throw Error('NO_MANAGEMENT_CONTEXT');}},{query:(sql,args)=>admin!.query(sql,args)});
    await assertRuntimeWritesSettled(admin,plan.installationId);
-   await inspector.assertBoundRuntimeReady(plan);
-   await assertStorageMigrationsReady(admin,initial,plan.manifestDigest);
+   const readyKey=`${plan.installationId}:${initial.revision}:${plan.manifestDigest}`;
+   if((this.readiness.get(readyKey)??0)<=Date.now()){
+    const inspector=new AppStorageService({get:async()=>{throw Error('NO_MANAGEMENT_CONTEXT');}},{query:(sql,args)=>admin!.query(sql,args)});
+    await inspector.assertBoundRuntimeReady(plan);
+    await assertStorageMigrationsReady(admin,initial,plan.manifestDigest);
+    this.readiness.set(readyKey,Date.now()+30_000);
+    if(this.readiness.size>128)this.readiness.delete(this.readiness.keys().next().value!);
+   }
    // Fail closed on abandoned migration owners, rather than borrow or repair their credentials.
    if((await rows(admin,"SELECT id FROM public.platform_app_storage_leases WHERE installation_id=$1 AND status='active'",[plan.installationId])).length)throw new AppStorageError('STORAGE_LEASE_CLEANUP_REQUIRED');
    const tables=(batch??readBatch)?(batch??readBatch)!.operations.map(item=>item.table):[(parsed as {table:string}).table];
    const columnSets=new Map<string,Map<string,string>>();
-   for(const table of new Set(tables))columnSets.set(table,await this.columns(admin,plan,table));
+   for(const table of new Set(tables)){
+    const key=`${readyKey}:${table}`,cached=this.tableColumns.get(key);
+    if(cached&&cached.expires>Date.now())columnSets.set(table,cached.columns);
+    else{
+     const columns=await this.columns(admin,plan,table);
+     this.tableColumns.set(key,{columns,expires:Date.now()+30_000});
+     if(this.tableColumns.size>512)this.tableColumns.delete(this.tableColumns.keys().next().value!);
+     columnSets.set(table,columns);
+    }
+   }
    const columns=columnSets.get(tables[0])!;
    if(listing)runtimeListQuery(listing,columns);
    for(const item of batch?.operations??(mutation?[mutation]:[])){
@@ -111,7 +135,7 @@ export class AppRuntimeDataService{
    await admin.query(`ALTER ROLE ${q(plan.runtimeRole)} LOGIN PASSWORD '${scram(password)}' VALID UNTIL '${expiry}'`);
    await revalidate();
    const credentials={...this.options.endpoint,user:plan.runtimeRole,password};
-   runtime=await (this.options.connectRuntime??connectRuntime)(credentials);runtime.on?.('error',()=>undefined);
+   const runtimeStart=performance.now();runtime=instrument(await (this.options.connectRuntime??connectRuntime)(credentials));runtimeConnectMs=performance.now()-runtimeStart;runtime.on?.('error',()=>undefined);
    const identity=await rows<{session_user:string;current_user:string;database:string;rolsuper:boolean}>(runtime,'SELECT session_user,current_user,current_database() AS database,rolsuper FROM pg_catalog.pg_roles WHERE rolname=current_user');
    if(identity.length!==1||identity[0].session_user!==plan.runtimeRole||identity[0].current_user!==plan.runtimeRole||identity[0].database!==this.options.endpoint.database||identity[0].rolsuper)throw new AppStorageError('STORAGE_IDENTITY_MISMATCH');
    await runtime.query(write?'BEGIN':'BEGIN READ ONLY');transaction=true;
@@ -144,15 +168,34 @@ export class AppRuntimeDataService{
    };
    let output:GatewayJson;
    if(readBatch){
-    const results=[];
-    for(const item of readBatch.operations){
-     await revalidate();
-     const result=await statement(item,false,false);
+    const values:unknown[]=[];
+    const expressions=readBatch.operations.map(item=>{
+     const table=`${q(plan!.schema)}.${q(item.table)}`,columns=columnSets.get(item.table)!;
+     const listing='pageSize' in item;
+     const list=listing?runtimeListQuery(item,columns):undefined;
+     const query=list?`SELECT t.* FROM ${table} t${list.suffix}`:'ids' in item?`SELECT t.* FROM ${table} t WHERE id=ANY($1::uuid[]) ORDER BY id`:`SELECT t.* FROM ${table} t WHERE id=$1`;
+     const args=listing?list!.values:'ids' in item?[item.ids]:[(item as z.infer<typeof readInput>).id],offset=values.length;
+     values.push(...args);
+     const shifted=query.replace(/\$(\d+)/g,(_,number:string)=>`$${Number(number)+offset}`);
+     const orderBy=listing?(item as z.infer<typeof runtimeListInput>).order:undefined;
+     const direction=orderBy?.direction==='desc'?'DESC':'ASC';
+     const order=orderBy?`r.${q(orderBy.column)} ${direction},r.id ${direction}`:'r.id';
+     return `(SELECT coalesce(jsonb_agg(jsonb_build_object('text',left(row_to_json(r)::text,32769),'bytes',octet_length(row_to_json(r)::text)) ORDER BY ${order}),'[]'::jsonb) FROM (${shifted}) r)`;
+    });
+    check();
+    const [batchRow]=await rows<{results:{text:string;bytes:number}[][]}>(runtime!,`SELECT jsonb_build_array(${expressions.join(',')}) AS results`,values);
+    const results=readBatch.operations.map((item,index)=>{
+     const received=batchRow.results[index];
+     resultBytes+=received.reduce((sum,row)=>sum+row.bytes,0);
+     if(received.length>('pageSize' in item?item.pageSize+1:'ids' in item?item.ids.length:1)||received.some(row=>row.bytes>32768)||resultBytes>60000)throw new AppStorageError('STORAGE_RESULT_LIMIT');
+     const result=received.map(row=>JSON.parse(row.text));
+     if('ids' in item)return {rows:result};
      if('pageSize' in item){
       const page=result.slice(0,item.pageSize);
-      results.push({rows:page,nextCursor:result.length>item.pageSize?(item.order?{id:page[page.length-1].id,value:String(page[page.length-1][item.order.column])}:page[page.length-1].id):null});
-     }else results.push({row:result[0]??null});
-    }
+      return {rows:page,nextCursor:result.length>item.pageSize?(item.order?{id:page[page.length-1].id,value:String(page[page.length-1][item.order.column])}:page[page.length-1].id):null};
+     }
+     return {row:result[0]??null};
+    });
     output=jsonSnapshot({results},65536);
    }else if(batch){
     const results=[];
@@ -179,6 +222,7 @@ export class AppRuntimeDataService{
     try{if(runtime)await runtime.end();}
     finally{try{if(admin&&plan&&lease)await recoverRuntimeStorageLease(admin,plan);}finally{if(admin)await admin.end();}}
    }catch{throw new GatewayError('STORAGE_CLEANUP_REQUIRED',503,write&&intent?'unknown':'not_started');}
+   finally{try{this.options.observeTiming?.({appId,mode:mode===true?'write':mode===false?'read':mode,totalMs:performance.now()-started,adminConnectMs,runtimeConnectMs,sqlCount,sqlMs});}catch{/* Diagnostic logging must not change the storage outcome. */}}
   }
  }
  private async columns(client:QueryableClient,plan:ManagedAppStorage,table:string){
