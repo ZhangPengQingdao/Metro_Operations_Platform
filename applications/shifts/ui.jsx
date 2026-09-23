@@ -779,17 +779,20 @@ function App() {
   const [route,setRoute] = useState(initialRoute);
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
-  const warming = useRef(new Set());
+  const warming = useRef(new Map());
+  const visited = useRef(new Set());
   useEffect(() => sandbox.onRouteChange(setRoute), []);
 
   function warmOtherForm(kind) {
+    visited.current.add(kind);
     if (!session) return;
     const other = kind === 'meeting' ? 'handover' : 'meeting';
-    if (warming.current.has(other)) return;
-    warming.current.add(other);
-    void call('bootstrap', { kind: other, organizationId: session.organizationId })
+    if (visited.current.has(other) || warming.current.has(other)) return;
+    const pending = call('bootstrap', { kind: other, organizationId: session.organizationId });
+    warming.current.set(other, pending);
+    void pending
       .catch(() => {})
-      .finally(() => warming.current.delete(other));
+      .finally(() => { if (warming.current.get(other) === pending) warming.current.delete(other); });
   }
 
   useEffect(() => {
@@ -869,7 +872,8 @@ function App() {
         ) : route.endsWith('records') ? (
           <Records key={route} session={session} kind={route.includes('meeting') ? 'meeting' : 'handover'} />
         ) : (
-          <RecordForm key={route} session={session} kind={route === '/meeting' ? 'meeting' : 'handover'} onBootstrapped={warmOtherForm} />
+          <RecordForm key={route} session={session} kind={route === '/meeting' ? 'meeting' : 'handover'}
+            preloaded={warming.current.get(route === '/meeting' ? 'meeting' : 'handover')} onBootstrapped={warmOtherForm} />
         )
       ) : !error && (
         <p style={{ color: '#a1a1aa', fontSize: 13 }}>正在连接工班工作台…</p>
@@ -878,7 +882,7 @@ function App() {
   );
 }
 
-function RecordForm({ session, kind, initial, onSaved, onBootstrapped }) {
+function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded }) {
   const base = initial ? {
     id: initial.id,
     revision: initial.revision,
@@ -924,7 +928,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped }) {
     setError('');
     (async () => {
       try {
-        const boot = initial ? null : await call('bootstrap', { kind, organizationId: form.organizationId });
+        const boot = initial ? null : await (loadAttempt === 0 && preloaded ? preloaded : call('bootstrap', { kind, organizationId: form.organizationId }));
         if (!active) return;
         const t = initial ? { modules: initial.module_snapshot } : boot.template;
         setModules(t.modules);
