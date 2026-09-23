@@ -1,5 +1,5 @@
 import {readThemePreference} from '../../identity/theme';
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation } from './bridge.js';
 
 export type SandboxFrameResource = { mode: 'isolated-origin'; url: string; platformOrigin: string }
@@ -18,6 +18,7 @@ export interface SandboxFrameProps {
   route?: string;
   initialRoute?: string;
   onRouteReady?: (route:string)=>void;
+  onFrameLoad?: ()=>void;
 }
 
 export function validateSandboxResource(resource: SandboxFrameResource): boolean {
@@ -46,7 +47,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
   }
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
-function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady, visible=true }: SandboxFrameProps) {
+function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
   const frame=useRef<HTMLIFrameElement>(null);
   const broker=useRef<SandboxBridgeBroker | null>(null);
   const loaded=useRef(false);
@@ -54,7 +55,8 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
   const config=useRef({resource,operations});
   const lastSentRoute=useRef(initialRoute);
   const routeRef=useRef(route),routeReadyRef=useRef(onRouteReady);
-  routeRef.current=route;routeReadyRef.current=onRouteReady;
+  const frameLoadRef=useRef(onFrameLoad);
+  routeRef.current=route;routeReadyRef.current=onRouteReady;frameLoadRef.current=onFrameLoad;
   const [session]=useState(createSandboxSession);
   const [initialTheme]=useState<'dark'|'light'>(()=>{
     const preference=(typeof document!=='undefined'?document.querySelector('.afc-admin')?.getAttribute('data-theme'):undefined)??readThemePreference();
@@ -113,13 +115,17 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
     // Opaque target cannot be named by origin. Bootstrap carries no platform identity or bearer secret.
     target.postMessage({version:'1.0',type:'init',appId,session},'*');
     if(routeRef.current&&routeRef.current!==lastSentRoute.current){target.postMessage({version:'1.0',type:'route',appId,session,path:routeRef.current},'*');lastSentRoute.current=routeRef.current;}
+    frameLoadRef.current?.();
   };
-  if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
   const isDark=initialTheme==='dark';
-  return <iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
+  // Keep the actual frame element stable while the host hides or shows a retained application.
+  // Re-applying srcDoc on a parent render navigates some browsers and invalidates the channel.
+  const frameElement=useMemo(()=><iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
     src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />;
+    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark]);
+  if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
+  return frameElement;
 }
