@@ -209,6 +209,17 @@ class PublicRelease(unittest.TestCase):
   with patch.object(github.opener,'open',return_value=io.BytesIO(b'{}')) as opened:
    self.assertEqual(github.fetch('https://api.github.com/repos/a/b'),{})
   self.assertIsNone(opened.call_args.args[0].get_header('Authorization'))
+ def test_empty_tag_assets_are_refreshed_by_matching_release_id(self):
+  github=u.Github('');tag={'id':42,'tag_name':'v0.10.6','draft':False,'prerelease':False,'assets':[]}
+  detail={**tag,'assets':[{'id':7,'name':'release.json','size':100}]}
+  with patch.object(github,'fetch',side_effect=[tag,detail]) as fetch:
+   self.assertEqual(github.release('0.10.6'),detail)
+  self.assertTrue(fetch.call_args.args[0].endswith('/releases/42'))
+ def test_refreshed_release_must_match_tag_identity(self):
+  github=u.Github('');tag={'id':42,'tag_name':'v0.10.6','assets':[]}
+  for detail in [{**tag,'id':43},{**tag,'tag_name':'v0.10.7'},{**tag,'draft':True}]:
+   with self.subTest(detail=detail),patch.object(github,'fetch',side_effect=[tag,detail]):
+    with self.assertRaisesRegex(u.Failure,'INVALID_RELEASE'):github.release('0.10.6')
 
 class RegistryRelease(unittest.TestCase):
  setUp=Fixture.setUp
