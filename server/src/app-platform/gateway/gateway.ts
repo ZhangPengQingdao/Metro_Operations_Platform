@@ -110,30 +110,29 @@ export class AppGateway {
       trace.operation=operation.name;
       const fresh=async()=>{
         const guard=async()=>{check();try{await assertAdmission?.();}catch{throw new GatewayError('ACCESS_DENIED',403);}check();};
-        await guard();
         check();const authenticated=await identity();check();
         // The identity factory is trusted; the union remains correlated at runtime.
         const actor=await this.options.contextResolver.resolve({...authenticated,requestId:trace.requestId!,traceId:trace.traceId} as Parameters<PlatformActorContextResolver['resolve']>[0]);
-        await guard();
         // Storage reuses these methods immediately before COMMIT. Retain the host admission
         // guard on the operation context, not just at initial Gateway authentication.
         const employeeActor=resolveEmployee?await resolveEmployee():undefined;
         if(employeeActor&&(employeeActor.execution.type!=='application'||employeeActor.execution.appId!==appId))throw new GatewayError('INVALID_IDENTITY',401);
+        // One admission check after resolving the checkpoint, before exposing its context.
         await guard();
-        return {...actor,...(employeeActor?{employeeActor}:{}),authorize:async(...args:Parameters<typeof actor.authorize>)=>{await guard();const result=await actor.authorize(args[0],args[1]);await guard();return result;},
-          ...(actor.authorizeApplication?{authorizeApplication:async(...args:Parameters<typeof actor.authorize>)=>{await guard();const result=await actor.authorizeApplication!(args[0],args[1]);await guard();return result;}}:{})};
+        return {...actor,...(employeeActor?{employeeActor}:{}),authorize:async(...args:Parameters<typeof actor.authorize>)=>{check();const result=await actor.authorize(args[0],args[1]);await guard();return result;},
+          ...(actor.authorizeApplication?{authorizeApplication:async(...args:Parameters<typeof actor.authorize>)=>{check();const result=await actor.authorizeApplication!(args[0],args[1]);await guard();return result;}}:{})};
       };
       let context=await fresh();check();
       trace.actorId=context.actorType==='person'?context.person.id:context.execution.serviceIdentityId;
       this.admission.authenticated(appId,context.actorType==='person'?context.person.id:'service');
       if(!operation.validateParams(request.params)) throw new GatewayError('INVALID_PARAMS');
-      const authorize=async()=>{
-        context=await fresh();check();
+      const authorize=async(refresh=true)=>{
+        if(refresh)context=await fresh();check();
         const resources=await operation.resolveResources(context,request.params);check();
         if(!Array.isArray(resources)||resources.length<1||resources.length>128) throw new GatewayError('ACCESS_DENIED',403);
         for(const resource of resources) {if(!(await context.authorize(operation.permissionCode,resource)).allowed) throw new GatewayError('ACCESS_DENIED',403);check();}
       };
-      await authorize();check();
+      await authorize(false);check();
       writeStarted=operation.mode==='write';
       const result=jsonSnapshot(await operation.execute(context,request.params,controller.signal),this.admission.limits.resultBytes);check();
       if(!operation.validateResult(result)) throw new GatewayError('INVALID_RESULT',502);

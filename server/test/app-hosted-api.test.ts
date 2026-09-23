@@ -118,3 +118,12 @@ test('completed API request is not held by unrelated unfinished calls',async()=>
  let drained=false;const drain=transport.drainRequest('slow').then(()=>{drained=true;});await tick();assert.equal(drained,false);
  transport.accept({id:frames[0].id,result:true});await slow;await drain;transport.close();await transport.drain();
 });
+
+test('API admission runs once after each policy checkpoint and still rejects logout before result delivery',async()=>{
+ const f=fixture();let checks=0,revoked=false;
+ const guard=async()=>{checks++;if(revoked)throw Error('SESSION_REVOKED');};
+ await f.api.invoke(f.actor,f.request,undefined,guard);assert.equal(checks,2);
+ f.execute(async()=>{revoked=true;return {ok:true};});
+ await assert.rejects(f.api.invoke(f.actor,f.request,undefined,guard));
+ f.api.close();await f.api.drain();
+});
