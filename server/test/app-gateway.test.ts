@@ -296,3 +296,16 @@ test('host-held stdio credentials use fresh registry checks before execution and
   } finally {await session.stop();}
  }
 });
+
+test('read checkpoints avoid duplicate admission work and still reject revocation during resource lookup',async()=>{
+ const f=await gatewayFixture();let checks=0;
+ const guard=async()=>{checks++;};
+ await f.gateway.invokeService(f.r.appId,f.issued.credential,f.request,undefined,guard);
+ assert.equal(checks,4,'one context and one authorization admission per execution/result checkpoint');
+ let revoked=false,executed=false;
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[{...f.operation,
+  resolveResources:async()=>{revoked=true;return [{organizationUnitId:org}];},
+  execute:async()=>{executed=true;return {ok:true};}}]});
+ await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request,undefined,async()=>{if(revoked)throw Error('revoked');}),/ACCESS_DENIED/);
+ assert.equal(executed,false);
+});

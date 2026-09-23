@@ -61,8 +61,6 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
       const work = Promise.resolve().then(async () => {
         let employeeActor: Extract<PlatformActorContext,{actorType:'person'}>;
         async function check() {
-          await assertAdmission?.();
-          await current();
           const actor = await contextResolver.resolve({ actorType: 'person', trustedIdentity: identity,
             execution: { type: 'application', appId }, requestId: metadata.requestId, traceId: metadata.traceId });
           const businessAuthorization=await options.businessAuthorization?.(actor);
@@ -71,22 +69,24 @@ export function createHostedAppApi(options: HostedAppApiOptions) {
           if (actor.actorType !== 'person' || actor.execution.type !== 'application' || actor.execution.appId !== appId ||
               !personId || !organizationUnitId || actor.person?.id !== personId || actor.person?.organization?.id !== organizationUnitId ||
               !(businessEntry?businessAuthorization.grants.length>0:await authorize(actor, effectivePermission, payload))) throw new AppStdioApiError('ACCESS_DENIED');
-          await current();
-          await assertAdmission?.();
-          if (controller.signal.aborted) throw new AppStdioApiError('ABORTED');
           const permissions:string[]=[];
           for(const permission of manifest.permissions.defined){
             if(await authorize(actor,permission.code,{}))permissions.push(permission.code);
           }
           const serialized=JSON.stringify({permissions,businessAuthorization});
           if(permissionSnapshot!==undefined&&permissionSnapshot!==serialized)throw new AppStdioApiError('ACCESS_DENIED');
+          // Resolve this checkpoint once; validate mutable admission after all policy reads.
+          await current();
+          await assertAdmission?.();
+          if (controller.signal.aborted) throw new AppStdioApiError('ABORTED');
           permissionSnapshot=serialized;
           employeeActor=actor;
           return parseAppBackendEmployeeContext({version:'1.0',personId,organizationUnitId,requestId:metadata.requestId,traceId:metadata.traceId,permissions,...(businessAuthorization?{businessAuthorization}:{})});
         }
         const employee = await check();
         dispatched = true;
-        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload, employee }, controller.signal,async()=>{await check();},async()=>{await check();return employeeActor;});
+        // Stdio employeeResolver runs the admission guard before/after this accessor.
+        const result = await transport.invoke({ handler: api.handler, method: api.method, path: api.path, payload, employee }, controller.signal,async()=>{await check();},async()=>employeeActor);
         await check();
         return jsonSnapshot(result, 256 * 1024);
       }).catch(error => {
