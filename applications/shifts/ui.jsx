@@ -17,6 +17,7 @@ if (!origin) throw Error('PLATFORM_ORIGIN_REQUIRED');
 
 const sandbox = createAppSandboxClient({
   appId: 'shifts',
+  timeoutMs: 30_000,
   platformOrigin: origin,
   port: {
     parent: window.parent,

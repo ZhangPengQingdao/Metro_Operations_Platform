@@ -249,7 +249,7 @@ test('planned maintenance pauses and restores a real lifecycle host across host 
  }finally{await f.close();}
 });
 
-test('hosted API survives starting administrator logout and still rejects disabled generations',async()=>{
+test('hosted API survives starting administrator logout and still rejects disabled generations',async(t)=>{
  const f=await hostFixture();
  try{
   const initial=await f.registry.register(f.admin,manifest());
@@ -259,7 +259,7 @@ test('hosted API survives starting administrator logout and still rejects disabl
    artifacts:[{id:'main',kind:'backend' as const,path:'main.js',bytes:1,sha256:'a'.repeat(64)}],
    permissions:{requested:[],defined:[{code:'app.tool-lending.read',description:'Read'}]},
    api:[{id:'read',method:'POST' as const,path:'/read',handler:'read',permission:'app.tool-lending.read'}]}};
-  let loggedOut=false,disabled=false,calls=0;
+  let loggedOut=false,disabled=false,calls=0,slow=false;
   f.registry.get=async()=>{if(loggedOut)throw Error('ADMIN_SESSION_EXPIRED');return running;};
   f.registry.settleLifecycle=async()=>enabled;
   f.registry.runtimeSnapshot=async()=>({...enabled,enabled:!disabled});
@@ -267,7 +267,7 @@ test('hosted API survives starting administrator logout and still rejects disabl
   // Inject the already attached transport to exercise activation without an actual Docker daemon.
   const internals=host as unknown as {lease:unknown;bridge:unknown;start(context:typeof f.admin,record:typeof running):Promise<unknown>;api:ReturnType<typeof import('../src/app-platform/runtime/hosted-api.ts').createHostedAppApi>};
   internals.lease={assertHeld:async()=>{}};
-  internals.bridge={api:{invoke:async()=>{calls++;return {ok:true};},drain:async()=>{}}};
+  internals.bridge={api:{invoke:async()=>{calls++;if(slow)await new Promise(()=>{});return {ok:true};},drain:async()=>{}}};
   await internals.start(f.admin,running);
   loggedOut=true;
   const request={apiId:'read',method:'POST',path:'/read',payload:{}};
@@ -275,5 +275,11 @@ test('hosted API survives starting administrator logout and still rejects disabl
   disabled=true;
   await assert.rejects(internals.api.invoke(f.application,request),/STALE_API/);
   assert.equal(calls,1);
+  disabled=false;slow=true;t.mock.timers.enable({apis:['setTimeout']});
+  let finished=false;const pending=internals.api.invoke(f.application,request).finally(()=>{finished=true;});
+  const rejection=assert.rejects(pending,/TIMEOUT/);
+  await new Promise(resolve=>setImmediate(resolve));
+  t.mock.timers.tick(10_001);await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+  t.mock.timers.tick(20_000);await rejection;t.mock.timers.reset();
  }finally{await f.close();}
 });

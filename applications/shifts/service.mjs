@@ -58,7 +58,10 @@ export function createShiftsService(gateway){
    const org=input.organizationId??null;
    if(org===null?!grant(employee,'app.shifts.config')?.all:!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');
    const chain=org?await ancestry(org,signal):undefined;
-   const values={};for(const type of ['handover','meeting','webhook']){const configs=await configRows(org,type,signal,chain),row=configs.rows.find(row=>row.scope_key===(org??'global')),resolved=resolveConfig(type,configs);
+   const scopes=org?[...chain.filter((o,i)=>i===0||o.unitType==='department'),{id:null}]:[{id:null}];
+   const rows=[];let afterId;
+   do{const page=await data.list('configs',{anyOf:scopes.map(node=>[{column:'scope_key',value:node.id??'global'}]),pageSize:50,...(afterId?{afterId}:{})},signal);rows.push(...page.rows);afterId=page.nextCursor;}while(afterId);
+   const values={};for(const type of ['handover','meeting','webhook']){const configs={scopes,rows:rows.filter(row=>row.config_type===type)},row=configs.rows.find(row=>row.scope_key===(org??'global')),resolved=resolveConfig(type,configs);
     const value=structuredClone(resolved?.value??(type==='webhook'?{mode:'disabled',url:'',handover:false,meeting:false}:{mode:'override',modules:defaults[type]}));
     if(type==='webhook'){value.configured=!!value.url;delete value.url;}
     values[type]={value,revision:row?.revision??0,inherited:org!==null&&(!row||row.value.mode==='inherit')};
