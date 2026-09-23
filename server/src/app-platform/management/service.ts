@@ -150,6 +150,11 @@ export async function createAppManagement(configFile:string,origin:string){
    if(fresh.identity.userId!==first.identity.userId||fresh.access.revision!==first.access.revision||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
    return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));}):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
   },
+  async employeeUiAdmission(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+   assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
+   if(admission.installation.manifest.ui.mode!=='sandbox'||!admission.installation.manifest.routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
+   return {admissionKey:employeeAdmissionKey(admission)};
+  },
   async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown,admissionKey:string){
    const host=runtime.findHost(appId);
    if(!host)throw new GatewayError('ACCESS_DENIED',403);

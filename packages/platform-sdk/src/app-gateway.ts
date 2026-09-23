@@ -99,9 +99,11 @@ export interface AppDataListOptions {
   anyOf?:readonly (readonly AppDataFilter[])[];
   search?:{column:string;text:string};
 }
+export type AppDataRead = {table:string;id:string} | ({table:string}&AppDataListOptions&{pageSize:number});
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */
 export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
   return Object.freeze({
+    readBatch(operations:readonly AppDataRead[],signal?:AbortSignal){return gateway.invoke('platform.app_data.read_batch',{operations} as unknown as AppGatewayJson,signal);},
     transaction(requestId:string,operations:readonly AppDataMutation[],signal?:AbortSignal){return gateway.invoke('platform.app_data.transaction',{requestId,operations},signal);},
     list(table:string,options:AppDataListOptions={},signal?:AbortSignal){return gateway.invoke('platform.app_data.list',{table,...options},signal);},
     get(table:string,id:string,signal?:AbortSignal){return gateway.invoke('platform.app_data.get',{table,id},signal);},

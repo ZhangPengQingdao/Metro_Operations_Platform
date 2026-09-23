@@ -4,7 +4,7 @@
 
 管理端默认装配支持 `ui: sandbox/none`、`backend: none/isolated`、`storage: none` 的签名应用。独立后端使用平台审批的固定 Node 镜像，内存/CPU 有界，非 root、文件系统只读、网络隔离，并提供容器内 8080 健康端点。
 
-显式开启 `managedStorage` 并配置独立存储管理连接后，隔离后端应用可声明 `storage: managed`，接通建表、迁移和追加迁移升级等生命周期。数据库前置条件、权限限制与验证范围见 [托管存储](managed-storage.md)。同一开关装配应用服务身份的 `platform.app_data.get/list/write/transaction` 与 SDK 单行读写、游标分页查询、受控原子多行写接口；表结构与授权限制见上述文档。
+显式开启 `managedStorage` 并配置独立存储管理连接后，隔离后端应用可声明 `storage: managed`，接通建表、迁移和追加迁移升级等生命周期。数据库前置条件、权限限制与验证范围见 [托管存储](managed-storage.md)。同一开关装配应用服务身份的 `platform.app_data.get/list/read_batch/write/transaction` 与 SDK 单行读写、同事务批量读取、游标分页查询、受控原子多行写接口；表结构与授权限制见上述文档。
 
 SDK 导出 manifest、gateway、sandbox、backend 和 test-kit 契约。`examples/installable-app` 可构建最小签名安装样本：
 

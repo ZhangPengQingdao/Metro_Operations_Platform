@@ -18,10 +18,17 @@ function EmployeeApplication({account,path,onNavigation}:{account:Account;path:s
  const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);
  const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(path),appId=match?.[1];
  useEffect(()=>{
-  const controller=new AbortController();let active=true;setCurrent(null);setError('');let loading=false;
+  const controller=new AbortController();let active=true;setCurrent(null);setError('');let loading=false,admissionKey:string|null=null;
   async function load(){if(loading||!active)return;if(!appId){setError('应用不存在。');return;}loading=true;
-   try{const value=await employeeRequest<Resource>(`/apps/${appId}/ui?path=${encodeURIComponent(match?.[2]??'/')}`,{signal:controller.signal});if(active){setError('');setCurrent(old=>old?.instanceKey===value.instanceKey?old:value);}}
-   catch(e){if(active){setCurrent(null);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
+   try{
+    const route=encodeURIComponent(match?.[2]??'/');
+    if(admissionKey){
+     const check=await employeeRequest<{admissionKey:string}>(`/apps/${appId}/ui-admission?path=${route}`,{signal:controller.signal});
+     if(check.admissionKey===admissionKey)return;
+    }
+    const value=await employeeRequest<Resource>(`/apps/${appId}/ui?path=${route}`,{signal:controller.signal});
+    if(active){admissionKey=value.admissionKey;setError('');setCurrent(old=>old?.instanceKey===value.instanceKey?old:value);}
+   }catch(e){if(active){admissionKey=null;setCurrent(null);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
   }
   void load();const timer=setInterval(()=>void load(),5000);const focus=()=>void load();window.addEventListener('focus',focus);
   return()=>{active=false;controller.abort();clearInterval(timer);window.removeEventListener('focus',focus);};
@@ -45,7 +52,7 @@ export default function EmployeeApp(){
  const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
  const {pathname}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setOwned([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/profile').then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
- useEffect(()=>{if(!account)return;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){setOwned(managed.applications);setApps(value.applications);setError('');}}catch(e){if(active){setApps([]);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>void refresh(),5000);return()=>{active=false;c.abort();clearInterval(timer);};},[account?.id]);
+ useEffect(()=>{if(!account)return;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){setOwned(managed.applications);setApps(value.applications);setError('');}}catch(e){if(active){setApps([]);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setOwned([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" replace/>;
