@@ -54,12 +54,15 @@ ACL 调整前保留实际授权快照，核对对其他数据库使用者的影�
 | --- | --- | --- |
 | `platform.app_data.get` | `platform.app_data.read` | `{table,id}` |
 | `platform.app_data.list` | `platform.app_data.read` | `{table,afterId?,pageSize?,filters?,search?}` |
+| `platform.app_data.read_batch` | `platform.app_data.read` | `{operations:[{table,id} 或 {table,pageSize,...查询条件},...]}` |
 | `platform.app_data.transaction` | `platform.app_data.write` | `{requestId,operations}` |
 | `platform.app_data.write` | `platform.app_data.write` | `{table,id,requestId,action,values?}` |
 
 `action` 为 insert、update 或 delete；delete 不带 values，其余必须提供非空字段对象，且不能修改 id。返回 `{row:对象或null}`；更新/删除不存在的记录返回 null。请求最多 16 KiB、单行结果最多 32 KiB。另有受控多行事务接口；不开放任意 SQL 或跨应用 schema 入口。
 
 `list` 返回 `{rows,nextCursor}`，按 UUID 主键升序进行游标分页；将 nextCursor 作为下页 afterId，null 表示本次查询已到末页。pageSize 默认 20、最大 50。filters 最多 8 个 `{column,value}` 等值条件，仅支持 uuid/text/boolean/integer 列，null 匹配空值；search 为 `{column,text}`，仅支持单个 text 列的大小写不敏感字面子串查询，`%`、`_` 不作为通配符。所有条件先过滤再分页；列须来自已核对表结构，参数不能选择 SQL、schema 或排序表达式。单行仍限制 32 KiB，含一条前瞻记录的行数据总量最多 60,000 字节，超限明确拒绝，调用者可降低 pageSize；不返回全表总数。分页之间并发写入不构成同一快照。
+
+`read_batch` 将 1–4 个 get/list 读操作放入同一只读事务与短期存储租约，按输入顺序返回 `{results:[{row} 或 {rows,nextCursor},...]}`。每项仍执行相同的表结构、过滤和授权检查；整个响应共用 60,000 字节数据上限，不接收写入。单独查询能成功但组合超限时，应用应退回单项读取。
 
 `transaction` 将 1–16 个 insert/update/delete 合并为一个数据库事务，返回 `{results:[{row},...]}`。每项提供 table、id、action 和适用的 values；update/delete 必须提供非空 expected 字段对象，数据库在写入时比较旧值，不匹配则返回 `STORAGE_CONFLICT` 并回滚整批操作。insert 不接受 expected。整批请求共用一个 requestId，最多 16 KiB；同一表结构检查、授权复核、安装锁、租约和未知结果阻断适用于全部操作。库存值和版本比较后更新，再新增流水，可保证同一事务成功或全部回滚。库存不得为负、员工所属工班及冲销规则仍必须由物料应用的可信后端校验，通用存储接口不代替业务授权。
 

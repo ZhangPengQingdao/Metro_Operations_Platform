@@ -22,6 +22,7 @@ const transactionItem=z.object({...base,action:z.enum(['insert','update','delete
  (v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id' in v.values))&&
  (v.action==='insert'?v.expected===undefined:!!v.expected&&Object.keys(v.expected).length>0&&Object.keys(v.expected).length<=63&&!('id' in v.expected)));
 const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
+const readBatchInput=z.object({operations:z.array(z.union([readInput,runtimeListInput])).min(1).max(4)}).strict();
 const rows=async<T>(db:QueryableClient,sql:string,args?:readonly unknown[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
 const q=(v:string)=>`"${v}"`; // Only validated binding and identifier values.
 export interface RuntimeStorageOptions{
@@ -44,6 +45,11 @@ export class AppRuntimeDataService{
   resolveResources:async c=>{this.requireService(c);return [{}];},
   execute:(c,v,signal)=>this.execute(c,v,'list',signal),validateResult:()=>true,
  },{
+  name:'platform.app_data.read_batch',permissionCode:'platform.app_data.read',mode:'read' as const,
+  validateParams:v=>readBatchInput.safeParse(v).success&&Buffer.byteLength(JSON.stringify(v))<=16384,
+  resolveResources:async c=>{this.requireService(c);return [{}];},
+  execute:(c,v,signal)=>this.execute(c,v,'read_batch',signal),validateResult:()=>true,
+ },{
   name:'platform.app_data.transaction',permissionCode:'platform.app_data.write',mode:'write',
   validateParams:v=>transactionInput.safeParse(v).success&&Buffer.byteLength(JSON.stringify(v))<=16384,
   resolveResources:async c=>{this.requireService(c);return [{}];},
@@ -52,11 +58,11 @@ export class AppRuntimeDataService{
  private requireService(context:PlatformActorContext):asserts context is Extract<PlatformActorContext,{actorType:'service'}>{
   if(context.actorType!=='service'||context.execution.type!=='service')throw new GatewayError('ACCESS_DENIED',403);
  }
- async execute(context:PlatformActorContext,input:unknown,mode:boolean|'list'|'transaction',signal:AbortSignal):Promise<GatewayJson>{
+ async execute(context:PlatformActorContext,input:unknown,mode:boolean|'list'|'transaction'|'read_batch',signal:AbortSignal):Promise<GatewayJson>{
   this.requireService(context);
-  const write=mode===true||mode==='transaction',batch=mode==='transaction'?transactionInput.parse(input):undefined,listing=mode==='list'?runtimeListInput.parse(input):undefined;
+  const write=mode===true||mode==='transaction',batch=mode==='transaction'?transactionInput.parse(input):undefined,readBatch=mode==='read_batch'?readBatchInput.parse(input):undefined,listing=mode==='list'?runtimeListInput.parse(input):undefined;
   const mutation=mode===true?writeInput.parse(input):undefined;
-  const parsed=batch??mutation??listing??readInput.parse(input);
+  const parsed=batch??readBatch??mutation??listing??readInput.parse(input);
   if(Buffer.byteLength(JSON.stringify(parsed))>16384)throw new GatewayError('INVALID_PARAMS');
   const permission=write?'platform.app_data.write':'platform.app_data.read';
   const appId=context.execution.appId!;
@@ -82,11 +88,11 @@ export class AppRuntimeDataService{
    await assertStorageMigrationsReady(admin,initial,plan.manifestDigest);
    // Fail closed on abandoned migration owners, rather than borrow or repair their credentials.
    if((await rows(admin,"SELECT id FROM public.platform_app_storage_leases WHERE installation_id=$1 AND status='active'",[plan.installationId])).length)throw new AppStorageError('STORAGE_LEASE_CLEANUP_REQUIRED');
-   const tables=batch?batch.operations.map(item=>item.table):[(parsed as {table:string}).table];
+   const tables=(batch??readBatch)?(batch??readBatch)!.operations.map(item=>item.table):[(parsed as {table:string}).table];
    const columnSets=new Map<string,Map<string,string>>();
    for(const table of new Set(tables))columnSets.set(table,await this.columns(admin,plan,table));
    const columns=columnSets.get(tables[0])!;
-   const listQuery=listing?runtimeListQuery(listing,columns):undefined;
+   if(listing)runtimeListQuery(listing,columns);
    for(const item of batch?.operations??(mutation?[mutation]:[])){
     for(const [name,value]of [...Object.entries(item.values??{}),...Object.entries('expected' in item?item.expected??{}:{})]){
      const type=columnSets.get(item.table)!.get(name);if(!type||name==='id'||!validValue(type,value))throw new GatewayError('INVALID_PARAMS');
@@ -112,10 +118,11 @@ export class AppRuntimeDataService{
    if(requestId)await recordRuntimeTransaction(admin,runtime,plan.installationId,requestId);
    check();
    let resultBytes=0;
-   const statement=async(item:z.infer<typeof transactionItem>|z.infer<typeof readInput>,isMutation:boolean,requireRow:boolean)=>{
+   const statement=async(item:z.infer<typeof transactionItem>|z.infer<typeof readInput>|z.infer<typeof runtimeListInput>,isMutation:boolean,requireRow:boolean)=>{
     check();const table=`${q(plan!.schema)}.${q(item.table)}`,itemColumns=columnSets.get(item.table)!;
-    let sql=`SELECT t.* FROM ${table} t WHERE id=$1`,values:unknown[]=[item.id];
-    if(listQuery){sql=`SELECT t.* FROM ${table} t${listQuery.suffix}`;values=listQuery.values;}
+    const itemList='pageSize' in item?runtimeListQuery(item,itemColumns):undefined;
+    let sql=`SELECT t.* FROM ${table} t WHERE id=$1`,values:unknown[]=['id' in item?item.id:undefined];
+    if(itemList){sql=`SELECT t.* FROM ${table} t${itemList.suffix}`;values=itemList.values;}
     if(isMutation&&'action' in item){
      const entries=Object.entries(item.values??{}),names=entries.map(([key])=>key);
      const encode=(key:string,value:unknown)=>itemColumns.get(key)==='jsonb'&&value!==null?JSON.stringify(value):value;
@@ -131,12 +138,23 @@ export class AppRuntimeDataService{
     // Bounds apply to the whole response, including transaction operations and list lookahead.
     const result=await rows<{text:string;bytes:number}>(runtime!,`WITH r AS (${sql}) SELECT left(row_to_json(r)::text,32769) AS text,octet_length(row_to_json(r)::text) AS bytes FROM r`,values);
     resultBytes+=result.reduce((sum,r)=>sum+r.bytes,0);
-    if(result.length>(listing?listing.pageSize+1:1)||result.some(r=>r.bytes>32768)||resultBytes>60000)throw new AppStorageError('STORAGE_RESULT_LIMIT');
+    if(result.length>(itemList?(item as z.infer<typeof runtimeListInput>).pageSize+1:1)||result.some(r=>r.bytes>32768)||resultBytes>60000)throw new AppStorageError('STORAGE_RESULT_LIMIT');
     if(requireRow&&result.length!==1)throw new GatewayError('STORAGE_CONFLICT',409);
     return result.map(r=>JSON.parse(r.text));
    };
    let output:GatewayJson;
-   if(batch){
+   if(readBatch){
+    const results=[];
+    for(const item of readBatch.operations){
+     await revalidate();
+     const result=await statement(item,false,false);
+     if('pageSize' in item){
+      const page=result.slice(0,item.pageSize);
+      results.push({rows:page,nextCursor:result.length>item.pageSize?(item.order?{id:page[page.length-1].id,value:String(page[page.length-1][item.order.column])}:page[page.length-1].id):null});
+     }else results.push({row:result[0]??null});
+    }
+    output=jsonSnapshot({results},65536);
+   }else if(batch){
     const results=[];
     for(const item of batch.operations){await revalidate();results.push({row:(await statement(item,true,true))[0]});}
     output=jsonSnapshot({results},65536);

@@ -46,6 +46,29 @@ export function createShiftsService(gateway){
    const k=kind(input.kind),org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);
    const value=await effective(org,k,signal);return {modules:value.value.modules,source:value.source,revision:value.revision};
   },
+  async bootstrap(input,employee,signal){
+   const k=kind(input.kind),org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);
+   const chain=await ancestry(org,signal),scopes=[...chain.filter((node,i)=>i===0||node.unitType==='department'),{id:null}];
+   const canReadPrevious=allowed(employee,'app.shifts.read',org,employee.personId);
+   const operations=[
+    {table:'configs',filters:[{column:'config_type',value:k}],anyOf:scopes.map(node=>[{column:'scope_key',value:node.id??'global'}]),pageSize:40},
+    {table:'drafts',id:configId(org,employee.personId+':'+k)},
+    ...(canReadPrevious?[{table:'records',...scope(employee,'app.shifts.read'),filters:[{column:'organization_id',value:org},{column:'kind',value:k}],order:{column:'record_order',direction:'desc'},pageSize:1}]:[])
+   ];
+   let results;
+   try{({results}=await data.readBatch(operations,signal));}
+   catch(error){
+    if(error.code!=='STORAGE_RESULT_LIMIT')throw error;
+    // A large historical record can exceed the shared response bound; retain the safe paged path.
+    results=[await data.list('configs',{filters:operations[0].filters,anyOf:operations[0].anyOf,pageSize:40},signal),await data.get('drafts',operations[1].id,signal)];
+    if(canReadPrevious)results.push(await data.list('records',{...scope(employee,'app.shifts.read'),filters:operations[2].filters,order:operations[2].order,pageSize:1},signal));
+   }
+   const template=resolveConfig(k,{scopes,rows:results[0].rows});
+   const draft=results[1].row;
+   const prior=canReadPrevious?results[2].rows[0]:null;
+   return {template:{modules:template.value.modules,source:template.source,revision:template.revision},draft:draft?.value??null,draftRevision:draft?.revision??0,
+    previous:prior?{id:prior.id,shiftType:prior.shift_type,handoverIds:prior.people.filter(p=>p.role==='takeover').map(p=>p.id),form:{other_matters:prior.form_data.other_matters??''}}:null};
+  },
   async 'load-draft'(input,employee,signal){const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);const {row}=await data.get('drafts',configId(org,employee.personId+':'+kind(input.kind)),signal);return {draft:row?.value??null,revision:row?.revision??0};},
   async 'save-draft'(input,employee,signal){const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);if(!uuid(input.requestId)||(!input.value||typeof input.value!=='object'||Array.isArray(input.value)||JSON.stringify(input.value).length>10000))throw Error('INVALID_INPUT');const id=configId(org,employee.personId+':'+kind(input.kind)),old=(await data.get('drafts',id,signal)).row;if((old?.revision??0)!==input.revision)throw Error('CONFLICT');await data.transaction(input.requestId,[{table:'drafts',id,action:old?'update':'insert',values:{owner_id:employee.personId,organization_id:org,value:input.value,revision:(old?.revision??0)+1},...(old?{expected:{revision:old.revision}}:{})}],signal);return {revision:(old?.revision??0)+1};},
   async previous(input,employee,signal){

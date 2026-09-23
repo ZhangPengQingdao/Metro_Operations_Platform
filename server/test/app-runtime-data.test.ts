@@ -57,6 +57,15 @@ test('atomic storage transactions require bounded compare-and-set mutations',asy
  for(const operations of [[],Array(17).fill(update),[{...update,expected:{}}],[{table:'inventory',id,action:'update',values:{quantity:7}}],[{...update,values:{id}}],[{table:'entries',id,action:'insert',values:{note:'x'},expected:{note:'y'}}]])assert.equal(operation.validateParams({requestId:id,operations}),false);
  await assert.rejects(operation.execute({...f.actor,actorType:'person'} as PlatformActorContext,{requestId:id,operations:[update]},new AbortController().signal),/ACCESS_DENIED/);assert.equal(f.connections(),0);
 });
+test('read batch admits only bounded get/list requests under read permission',async()=>{
+ const f=fixture(),operation=f.service.operations().find(o=>o.name==='platform.app_data.read_batch')!;
+ assert.equal(operation.permissionCode,'platform.app_data.read');assert.equal(operation.mode,'read');
+ const valid={operations:[{table:'drafts',id},{table:'records',pageSize:1,filters:[{column:'kind',value:'meeting'}]}]};
+ assert.ok(operation.validateParams(valid));
+ for(const input of [{operations:[]},{operations:Array(5).fill({table:'drafts',id})},{operations:[{table:'drafts',id,schema:'public'}]},{operations:[{table:'records',pageSize:51}]},{operations:[{table:'records',pageSize:1,filters:[{column:'id;DROP TABLE',value:id}]}]}])assert.equal(operation.validateParams(input),false);
+ await assert.rejects(operation.execute({...f.actor,actorType:'person'} as PlatformActorContext,valid,new AbortController().signal),/ACCESS_DENIED/);
+ assert.equal(f.connections(),0);
+});
 test('SDK forwards one atomic intent without replaying an uncertain transaction',async()=>{
  const {createAppDataClient,createAppGatewayClient}=await import('@metro/platform-sdk/app-gateway');
  let count=0;

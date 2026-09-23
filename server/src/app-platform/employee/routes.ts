@@ -54,6 +54,11 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
    return options.management.employeeUi(req.params.appId,query.path,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/ui-admission',async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
+   return options.management.employeeUiAdmission(req.params.appId,query.path,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/gateway',{bodyLimit:65536},async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    return options.management.invokeEmployee(req.params.appId,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]),req.body,z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']));

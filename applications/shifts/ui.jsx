@@ -906,29 +906,16 @@ function RecordForm({ session, kind, initial, onSaved }) {
   useEffect(() => {
     let active = true;
     draftRevision.current = 0;
-    if (!initial) {
-      call('load-draft', { kind, organizationId: form.organizationId })
-        .then(d => {
-          if (active) draftRevision.current = d.revision;
-        })
-        .catch(e => {
-          if (active) setError(e.message);
-        });
-    }
-    return () => { active = false; };
-  }, [form.organizationId, loadAttempt]);
-
-  useEffect(() => {
-    let active = true;
     setReady(false);
     setError('');
     (async () => {
       try {
-        const t = initial ? { modules: initial.module_snapshot } : await call('template', { kind, organizationId: form.organizationId });
+        const boot = initial ? null : await call('bootstrap', { kind, organizationId: form.organizationId });
         if (!active) return;
+        const t = initial ? { modules: initial.module_snapshot } : boot.template;
         setModules(t.modules);
-        const prior = !initial ? (await call('previous', { kind, organizationId: form.organizationId })).row : null;
-        if (!active) return;
+        const prior = boot?.previous ?? null;
+        draftRevision.current = boot?.draftRevision ?? 0;
         if (!initial) {
           setForm(f => ({
             ...f,
