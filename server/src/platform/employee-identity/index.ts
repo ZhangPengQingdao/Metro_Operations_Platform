@@ -75,10 +75,14 @@ export class EmployeeIdentityService{
  async authenticate(token?:string):Promise<EmployeeAccount|null>{
   if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
   return this.read(async db=>{
-   const [row]=await rows<Row>(db,`SELECT a.* FROM platform_employee_accounts a JOIN platform_employee_sessions s ON s.account_id=a.id
-    WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active'`,[digest(token)]);
-   if(!row||!(await rows(db,activePerson,[row.person_id])).length)return null;
-   return publicAccount(row);
+   const [row]=await rows<Row>(db,`SELECT a.* FROM platform_employee_sessions s
+    JOIN platform_employee_accounts a ON a.id=s.account_id
+    JOIN platform_people p ON p.id=a.person_id
+    JOIN platform_organization_units o ON o.id=p.organization_unit_id
+    JOIN platform_positions pos ON pos.id=p.position_id
+    WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active'
+    AND p.employment_status='active' AND o.status='active' AND pos.status='active'`,[digest(token)]);
+   return row?publicAccount(row):null;
   });
  }
  async login(input:unknown){

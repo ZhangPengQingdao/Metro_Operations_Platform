@@ -30,7 +30,7 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
  const suffix=randomBytes(6).toString('hex'),database=`mop_storage_test_${suffix}`,apiRole=`mop_api_${suffix}`,password=randomBytes(24).toString('hex');
  const root=await mkdtemp(join(tmpdir(),'mop-storage-pg-'));
  const supervisor=new Client({connectionString:input});await supervisor.connect();
- let api:Client|undefined,admin:Client|undefined,runtime:ReturnType<typeof createAppRuntimeComposition>|undefined;
+ let api:Client|undefined,admin:Client|undefined,runtime:ReturnType<typeof createAppRuntimeComposition>|undefined,storage:Awaited<ReturnType<typeof createManagedStorageComposition>>|undefined;
  const roleNames:string[]=[];
  try{
   await supervisor.query(`CREATE ROLE "${apiRole}" LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEROLE NOCREATEDB`);
@@ -49,7 +49,7 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   await assert.rejects(createManagedStorageComposition(options),/UNSAFE_PUBLIC_DATABASE_PRIVILEGES/);
   // Fixture-owned database only; production composition never changes these ACLs.
   await admin.query(`REVOKE CREATE,TEMPORARY ON DATABASE "${database}" FROM PUBLIC; REVOKE CREATE ON SCHEMA public FROM PUBLIC`);
-  const storage=await createManagedStorageComposition(options);
+  storage=await createManagedStorageComposition(options);
   const actor:PlatformAdministratorContext={actorType:'administrator',administrator:{id:'44000000-0000-4000-8000-000000000001',username:'test',displayName:'Test'},execution:{type:'platform'},
    request:{requestId:'test',traceId:'test',startedAt:new Date().toISOString()},authorize:async permissionCode=>({id:'test',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'administrator',effectiveScopes:[],decidedAt:new Date().toISOString()})};
   runtime=createAppRuntimeComposition({registry,gateway:{drain:async()=>{}} as unknown as AppGateway,storage,artifactRoot:join(root,'runtime'),readArtifact,
@@ -88,25 +88,36 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   await admin.query(`INSERT INTO "${plan.schema}".records VALUES(1,'preserved')`);
   await installer.install(actor,{...await bundle('storage-other','1.0.0'),requestId:'storage-other-0001'});
   const otherPlan=binding(await registry.get(actor,'storage-other'));if(otherPlan.mode!=='managed')throw Error('binding');
-  let allowed=true,denyAfterStatement=false,employeeAllowed=true,revokeEmployeeAfterStatement=false;
+  let allowed=true,denyAfterStatement=false,employeeAllowed=true,revokeEmployeeAfterStatement=false,batchStatements=0;
   const appActor={actorType:'service',execution:{type:'service',appId:record.appId,serviceIdentityId:'test-service'},
    authorize:async(permissionCode:string)=>({allowed,permissionCode})} as PlatformActorContext;
   const connectAdmin=async()=>{const c=new Client({connectionString:adminUrl.href});await c.connect();return c;};
   const credentials=parseStorageDatabaseUrl(adminUrl.href);const {host:dbHost,port,database:dbName,ssl}=credentials;
   const runtimeData=new AppRuntimeDataService({connectAdmin,endpoint:{host:dbHost,port,database:dbName,ssl},findInstallation:(c,id)=>new PostgresAppRegistryRepository(c).findByAppId(id),
+   ...(process.env.MOP_APP_STORAGE_TIMING==='1'?{observeTiming:(timing:Parameters<NonNullable<ConstructorParameters<typeof AppRuntimeDataService>[0]['observeTiming']>>[0])=>console.info(JSON.stringify({event:'app_storage_test_timing',...timing}))}:{}),
    connectRuntime:async creds=>{const c=new Client({...creds,options:'-c search_path=pg_catalog'});await c.connect();
     assert.equal((await c.query('SELECT session_user')).rows[0].session_user,plan.runtimeRole);
     await assert.rejects(c.query('SELECT * FROM public.platform_employee_accounts'),/permission denied/);
     await assert.rejects(c.query(`SELECT * FROM "${otherPlan.schema}".entries`),/permission denied/);
     await assert.rejects(c.query(`CREATE TABLE "${plan.schema}".forbidden(id int)`),/permission denied/);
     await assert.rejects(c.query(`SET ROLE "${plan.ownerRole}"`),/permission denied/);
-    return {query:async(sql,args)=>{const r=await c.query(sql,args?[...args]:undefined);if(denyAfterStatement&&sql.startsWith('WITH r AS ('))allowed=false;if(revokeEmployeeAfterStatement&&sql.startsWith('WITH r AS ('))employeeAllowed=false;return r;},end:()=>c.end()};
+    return {query:async(sql,args)=>{if(sql.startsWith('SELECT jsonb_build_array('))batchStatements++;const r=await c.query(sql,args?[...args]:undefined);if(denyAfterStatement&&(sql.startsWith('WITH r AS (')||sql.startsWith('SELECT jsonb_build_array(')))allowed=false;if(revokeEmployeeAfterStatement&&sql.startsWith('WITH r AS ('))employeeAllowed=false;return r;},end:()=>c.end()};
    }});
   const id=randomUUID(),requestId=randomUUID(),signal=new AbortController().signal;
-  const call=(input:unknown,write:boolean|'list'|'transaction'=false)=>runtimeData.execute(appActor,input,write,signal);
+  const call=(input:unknown,write:boolean|'list'|'transaction'|'read_batch'=false)=>runtimeData.execute(appActor,input,write,signal);
   const insert={table:'entries',id,requestId,action:'insert',values:{value:{note:'own data'}}};
   assert.equal((await storage.runtimeData.execute(appActor,insert,true,signal)).row.value.note,'own data');
+  assert.equal((await storage.runtimeData.execute(appActor,{table:'entries',id},false,signal)).row.id,id);
+  assert.equal((await storage.runtimeData.execute(appActor,{table:'entries',id},false,signal)).row.id,id);
   assert.equal((await call({table:'entries',id})).row.value.note,'own data');
+  const grouped=await call({operations:[{table:'entries',id},{table:'entries',pageSize:1,filters:[{column:'id',value:id}]},{table:'entries',ids:[id]}]},'read_batch');
+  assert.equal(grouped.results[0].row.id,id);
+  assert.deepEqual(grouped.results[1].rows.map((row:{id:string})=>row.id),[id]);
+  assert.deepEqual(grouped.results[2].rows.map((row:{id:string})=>row.id),[id]);
+  assert.equal(batchStatements,1);
+  denyAfterStatement=true;
+  await assert.rejects(call({operations:[{table:'entries',id},{table:'entries',pageSize:1}]},'read_batch'),/ACCESS_DENIED/);
+  denyAfterStatement=false;allowed=true;
   await assert.rejects(call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'not-a-date'}},true),/INVALID_PARAMS/);
   await call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'2026-09-16T00:00:00Z'}},true);
   assert.equal(Date.parse((await call({table:'entries',id})).row.occurred_at),Date.parse('2026-09-16T00:00:00Z'));
@@ -284,6 +295,7 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   assert.equal((await admin.query("SELECT count(*)::int AS n FROM public.platform_app_storage_leases WHERE status='active'")).rows[0].n,0);
  }finally{
   await runtime?.close();
+  await storage?.closeRuntimeConnections();
   if(admin){
    const present=(await admin.query("SELECT to_regclass('public.platform_app_installations') AS table_name")).rows[0];
    if(present.table_name)for(const row of (await admin.query('SELECT id FROM public.platform_app_installations')).rows){const stem='app_'+row.id.replaceAll('-','');roleNames.push(stem+'_owner',stem+'_runtime');}

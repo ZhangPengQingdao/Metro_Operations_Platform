@@ -83,8 +83,19 @@ export function createMaterialsService(gateway,{clock=()=>new Date(),newId=rando
    if(input.kind==='consumptions')filters.push({column:'kind',value:'out'});
    const result=await data.list(input.kind==='consumptions'?'movements':input.kind,{filters,...scope,...(input.afterId?{afterId:input.afterId}:{}),...(input.pageSize?{pageSize:input.pageSize}:{}),...(input.search?{search:{column:input.kind==='materials'?'name':'remark',text:input.search}}:{})},signal);
    if(input.kind==='materials')return {...result,rows:result.rows.map(row=>({...row,...(employee.businessAuthorization?{canInbound:allowed(employee,'app.materials.inbound',row),canOutbound:allowed(employee,'app.materials.outbound',row),canUpdate:allowed(employee,'app.materials.update',row)}:{})}))};
-   const labels=new Map();for(const id of new Set(result.rows.map(row=>row.material_id)))labels.set(id,await material(id,employee,signal,employee.businessAuthorization?result.rows.find(r=>r.material_id===id).organization_id:undefined));
-   const rows=[];for(const row of result.rows){const reversed=!!(await data.get('reversals',row.id,signal)).row;if(input.kind==='consumptions'&&reversed)continue;rows.push({...row,material_name:labels.get(row.material_id).name,material_sku:labels.get(row.material_id).sku,unit:labels.get(row.material_id).unit,reversed,own:row.operator_id===employee.personId,...(employee.businessAuthorization?{canModify:allowed(employee,'app.materials.modify-consumption',row),canDelete:allowed(employee,'app.materials.delete-consumption',row)}:{})});}return {...result,rows};
+   if(!result.rows.length)return result;
+   const {results:[materials,reversals]}=await data.readBatch([
+    {table:'materials',ids:[...new Set(result.rows.map(row=>row.material_id))]},
+    {table:'reversals',ids:result.rows.map(row=>row.id)},
+   ],signal);
+   const labels=new Map(materials.rows.map(row=>[row.id,row])),reversedIds=new Set(reversals.rows.map(row=>row.id));
+   const rows=[];for(const row of result.rows){
+    const label=labels.get(row.material_id);
+    if(!label||label.organization_id!==row.organization_id||!employee.businessAuthorization&&label.organization_id!==employee.organizationUnitId||
+      !Number.isInteger(label.quantity)||label.quantity<0||label.quantity>2147483647||!Number.isInteger(label.version)||label.version<0)fail('MATERIAL_DENIED');
+    const reversed=reversedIds.has(row.id);if(input.kind==='consumptions'&&reversed)continue;
+    rows.push({...row,material_name:label.name,material_sku:label.sku,unit:label.unit,reversed,own:row.operator_id===employee.personId,...(employee.businessAuthorization?{canModify:allowed(employee,'app.materials.modify-consumption',row),canDelete:allowed(employee,'app.materials.delete-consumption',row)}:{})});
+   }return {...result,rows};
   },
  });
 }

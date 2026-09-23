@@ -15,6 +15,12 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
  const attempts=new Map<string,{count:number;until:number}>();
+ const precheckedIdentity=new WeakMap<FastifyRequest,Awaited<ReturnType<EmployeeIdentityService['resolveIdentity']>>>();
+ const resolveRequestIdentity=(req:FastifyRequest)=>{
+  const checked=precheckedIdentity.get(req);
+  if(checked){precheckedIdentity.delete(req);return Promise.resolve(checked);}
+  return options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]);
+ };
  app.register(async scoped=>{
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
@@ -30,43 +36,43 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
     const now=Date.now();for(const [id,entry]of attempts)if(entry.until<=now)attempts.delete(id);
     if(!attempts.has(req.ip)&&attempts.size>=10000)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
     const entry=attempts.get(req.ip)??{count:0,until:now+60000};attempts.set(req.ip,entry);if(++entry.count>5)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
-   }else await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]);
+   }else precheckedIdentity.set(req,await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   });
   scoped.post('/auth/login',{bodyLimit:4096},async(req,reply)=>{const result=await options.service.login(req.body);reply.setCookie(EMPLOYEE_SESSION_COOKIE,result.token,{...cookie,maxAge:8*60*60});return result.account;});
   scoped.get('/auth/me',async req=>options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE]));
-  scoped.post('/auth/logout',async(req,reply)=>{await options.service.logout(req.cookies[EMPLOYEE_SESSION_COOKIE]!);reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
+  scoped.post('/auth/logout',async(req,reply)=>{await options.service.logout(req.cookies[EMPLOYEE_SESSION_COOKIE]!);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/profile',async req=>options.service.profile(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
-  scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
+  scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
-  scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE])).userId):[]}));
-  async function ownerId(req:FastifyRequest){return (await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE])).userId;}
+  scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
+  async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});
-  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-authorization',{bodyLimit:65536},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.change(req.params.appId,await ownerId(req),req.body);});
-  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-delegation',{bodyLimit:16384},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.delegate(req.params.appId,await ownerId(req),req.body);});
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-authorization',{bodyLimit:65536},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');const result=await options.business.change(req.params.appId,await ownerId(req),req.body);options.management?.invalidateEmployeeSessions();return result;});
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/business-delegation',{bodyLimit:16384},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');const result=await options.business.delegate(req.params.appId,await ownerId(req),req.body);options.management?.invalidateEmployeeSessions();return result;});
   scoped.get('/apps',async req=>{
    if(!options.management)return {applications:[]};
-   return options.management.employeeApps(()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+   return options.management.employeeApps(()=>resolveRequestIdentity(req));
   });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/ui',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
-   return options.management.employeeUi(req.params.appId,query.path,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+   return options.management.employeeUi(req.params.appId,query.path,()=>resolveRequestIdentity(req));
   });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/ui-admission',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
-   return options.management.employeeUiAdmission(req.params.appId,query.path,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+   return options.management.employeeUiAdmission(req.params.appId,query.path,()=>resolveRequestIdentity(req));
   });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/gateway',{bodyLimit:65536},async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
-   return options.management.invokeEmployee(req.params.appId,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]),req.body,z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']));
+   return options.management.invokeEmployee(req.params.appId,()=>resolveRequestIdentity(req),req.body,z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']));
   });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/api',{bodyLimit:65536},async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const input=z.object({apiId:z.string().min(1).max(100),method:z.enum(['GET','POST','PUT','PATCH','DELETE']),path:z.string().min(1).max(512),payload:z.unknown().refine(value=>value!==undefined)}).strict().parse(req.body);
-   return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
+   return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>resolveRequestIdentity(req),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
   });
  },{prefix:'/api/employee'});
  app.register(async scoped=>{
@@ -78,8 +84,8 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.addHook('preHandler',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==options.origin)throw new EmployeeIdentityError(403,'EMPLOYEE_ORIGIN_DENIED');});
   scoped.get('/employee-accounts',async req=>options.service.list(await options.resolveAdmin(req),req.query));
   scoped.get<{Params:{appId:string}}>('/apps/:appId/employee-access',async req=>{const context=await options.resolveAdmin(req);if(!options.access)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.access.list(context,req.params.appId);});
-  scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-access',{bodyLimit:4096},async req=>{const context=await options.resolveAdmin(req);if(!options.access)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.access.set(context,req.params.appId,req.body);});
-  scoped.post('/employee-accounts',{bodyLimit:4096},async(req,reply)=>reply.code(201).send(await options.service.create(await options.resolveAdmin(req),req.body)));
-  scoped.patch<{Params:{id:string}}>('/employee-accounts/:id',{bodyLimit:4096},async req=>options.service.update(await options.resolveAdmin(req),req.params.id,req.body));
+  scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-access',{bodyLimit:4096},async req=>{const context=await options.resolveAdmin(req);if(!options.access)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');const result=await options.access.set(context,req.params.appId,req.body);options.management?.invalidateEmployeeSessions();return result;});
+  scoped.post('/employee-accounts',{bodyLimit:4096},async(req,reply)=>{const result=await options.service.create(await options.resolveAdmin(req),req.body);options.management?.invalidateEmployeeSessions();return reply.code(201).send(result);});
+  scoped.patch<{Params:{id:string}}>('/employee-accounts/:id',{bodyLimit:4096},async req=>{const result=await options.service.update(await options.resolveAdmin(req),req.params.id,req.body);options.management?.invalidateEmployeeSessions();return result;});
  },{prefix:'/api/admin'});
 }

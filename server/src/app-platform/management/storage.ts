@@ -1,4 +1,4 @@
-import {Client} from 'pg';
+import {Client,Pool} from 'pg';
 import {AppRuntimeDataService} from '../storage/runtime-data.js';
 import {PostgresAppRegistryRepository} from '../registry/index.js';
 import type {QueryableClient} from '../../core/database/index.js';
@@ -65,20 +65,23 @@ export async function createManagedStorageComposition(options:{
  if(api.user===admin.user)throw new AppStorageError('STORAGE_SEPARATE_IDENTITY_REQUIRED');
  if(api.host!==admin.host||api.port!==admin.port||api.database!==admin.database||JSON.stringify(api.ssl)!==JSON.stringify(admin.ssl))
   throw new AppStorageError('STORAGE_DATABASE_MISMATCH');
+ const assertAdminIdentity=async(client:QueryableClient)=>{
+  const identity=await client.query(`SELECT session_user AS session_user,current_user AS current_user,current_database() AS database,
+    r.rolsuper,r.rolcreaterole,has_database_privilege(current_user,current_database(),'CREATE') AS has_database_create
+    FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`) as {rows:Record<string,unknown>[]};
+  const row=identity.rows[0];
+  const isSuper=row?.rolsuper===true;
+  const isLeastPrivilegeAdmin=row?.rolsuper===false&&row?.rolcreaterole===true&&row?.has_database_create===true;
+  if(identity.rows.length!==1||row?.session_user!==admin.user||row?.current_user!==admin.user||row?.database!==admin.database||(!isSuper&&!isLeastPrivilegeAdmin))
+   throw new AppStorageError('STORAGE_ADMIN_IDENTITY_REQUIRED');
+ };
  const connectAdmin=async()=>{
   const client=createClient(admin);
   client.on?.('error',()=>undefined);
   try{
    await client.connect();
    // Recheck identity on every fresh session, including recovery after configuration/role changes.
-   const identity=await client.query(`SELECT session_user AS session_user,current_user AS current_user,current_database() AS database,
-    r.rolsuper,r.rolcreaterole,has_database_privilege(current_user,current_database(),'CREATE') AS has_database_create
-    FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`) as {rows:Record<string,unknown>[]};
-   const row=identity.rows[0];
-   const isSuper=row?.rolsuper===true;
-   const isLeastPrivilegeAdmin=row?.rolsuper===false&&row?.rolcreaterole===true&&row?.has_database_create===true;
-   if(identity.rows.length!==1||row?.session_user!==admin.user||row?.current_user!==admin.user||row?.database!==admin.database||(!isSuper&&!isLeastPrivilegeAdmin))
-    throw new AppStorageError('STORAGE_ADMIN_IDENTITY_REQUIRED');
+   await assertAdminIdentity(client);
    return client;
   }catch(error){
    try{await client.end();}catch{throw new AppStorageError('STORAGE_SESSION_CLOSE_FAILED');}
@@ -101,5 +104,30 @@ export async function createManagedStorageComposition(options:{
  finally{if(client)try{await client.end();}catch{throw new AppStorageError('STORAGE_SESSION_CLOSE_FAILED');}}
  const {host,port,database,ssl}=admin;
  const endpoint={host,port,database,ssl};
- return Object.assign(new ManagedAppStorageService(new ManagedAppOperations({connectAdmin,registry:options.registry,endpoint}),options.reader),{runtimeData:new AppRuntimeDataService({connectAdmin,endpoint,findInstallation:(client,appId)=>new PostgresAppRegistryRepository(client).findByAppId(appId)})});
+ const runtimeAdminPool=new Pool({...admin,max:8,idleTimeoutMillis:15_000,connectionTimeoutMillis:5000,statement_timeout:30_000,lock_timeout:5000,
+  idle_in_transaction_session_timeout:30_000,options:'-c search_path=pg_catalog,public',application_name:'mop-storage-runtime-admin',...{replication:'false'}});
+ runtimeAdminPool.on('error',()=>undefined);
+ const connectRuntimeAdmin=async():Promise<ManagedAppAdminClient>=>{
+  const client=await runtimeAdminPool.connect();let released=false,failed=false;
+  const onError=()=>{failed=true;};client.on('error',onError);
+  try{
+   await assertAdminIdentity(client);
+   return {
+    query:(sql,args)=>client.query(sql,args?[...args]:undefined),
+    end:async()=>{
+     if(released)return;
+     released=true;
+     try{
+      if(failed)throw new AppStorageError('STORAGE_ADMIN_CONNECTION_FAILED');
+      await client.query('SELECT pg_advisory_unlock_all()');
+      client.removeListener('error',onError);client.release();
+     }catch(error){client.removeListener('error',onError);client.release(error as Error);throw error;}
+    },
+   };
+  }catch(error){client.removeListener('error',onError);client.release(error as Error);throw error;}
+ };
+ return Object.assign(new ManagedAppStorageService(new ManagedAppOperations({connectAdmin,registry:options.registry,endpoint}),options.reader),{closeRuntimeConnections:()=>runtimeAdminPool.end(),runtimeData:new AppRuntimeDataService({connectAdmin:connectRuntimeAdmin,endpoint,findInstallation:(client,appId)=>new PostgresAppRegistryRepository(client).findByAppId(appId),
+  ...(process.env.MOP_APP_STORAGE_TIMING==='1'?{observeTiming:(timing:{appId:string;mode:string;totalMs:number;adminConnectMs:number;runtimeConnectMs:number;sqlCount:number;sqlMs:number})=>{
+   console.info(JSON.stringify({event:'app_storage_timing',...timing}));
+  }}:{})})});
 }

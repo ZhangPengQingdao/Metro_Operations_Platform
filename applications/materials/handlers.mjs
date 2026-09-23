@@ -5,11 +5,21 @@ import {createMaterialsService} from './service.mjs';
 const businessErrors=new Set(['INVALID_INPUT','EMPLOYEE_REQUIRED','MATERIAL_DENIED','MOVEMENT_DENIED','INSUFFICIENT_STOCK','QUANTITY_LIMIT','ALREADY_REVERSED','REVERSAL_NOT_ALLOWED','ACCESS_DENIED','SETTINGS_CONFLICT','MATERIAL_CONFLICT']);
 export function createMaterialsHandlers(gateway){
  const access=createMaterialsAccess(gateway);
- const routes={recipients:'recipients',update:'update','correct-inbound':'correct','correct-outbound':'correct',create:'create',inbound:'move',outbound:'move','reverse-inbound':'reverse','reverse-outbound':'reverse',list:'list',session:'session',members:'members','set-manager':'setManager'};
+ const routes={recipients:'recipients',update:'update','correct-inbound':'correct','correct-outbound':'correct',create:'create',inbound:'move',outbound:'move','reverse-inbound':'reverse','reverse-outbound':'reverse',list:'list',session:'session',bootstrap:'bootstrap',members:'members','set-manager':'setManager'};
  return new Map(Object.entries(routes).map(([name,operation])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,
   async execute(payload,signal,employee){
    try{
     if(!payload||typeof payload!=='object'||Array.isArray(payload)||'direction' in payload||'expectedKind' in payload||'ownOnly' in payload)throw Error('INVALID_INPUT');
+    if(operation==='bootstrap'){
+     if(Object.keys(payload).length!==1||!['home','stock','records','settings'].includes(payload.route)||employee.businessAuthorization&&payload.route==='settings')throw Error('INVALID_INPUT');
+     const session=employee.businessAuthorization?{business:true,leader:false,manageMaterials:false,organizations:employee.businessAuthorization.organizations,permissions:employee.businessAuthorization.grants.map(g=>g.permission)}:await access.capabilities(employee,signal);
+     if(payload.route==='settings'&&!session.leader)throw Error('ACCESS_DENIED');
+     const kind=payload.route==='records'||payload.route==='home'&&employee.businessAuthorization&&!session.permissions.includes('app.materials.read-stock')?'consumptions':'materials';
+     const permission=permissionFor('list',{kind});
+     if(employee.businessAuthorization&&!session.permissions.includes(permission))throw Error('ACCESS_DENIED');
+     const page=payload.route==='settings'?await access.members({},employee,signal):await createMaterialsService(gateway,{permission}).list({kind,pageSize:20},employee,signal);
+     return {ok:true,result:{session,page}};
+    }
     if(employee.businessAuthorization){
      if(operation==='session'){if(Object.keys(payload).length)throw Error('INVALID_INPUT');return {ok:true,result:{business:true,leader:false,manageMaterials:false,organizations:employee.businessAuthorization.organizations,permissions:employee.businessAuthorization.grants.map(g=>g.permission)}};}
      if(['members','setManager'].includes(operation))throw Error('ACCESS_DENIED');
