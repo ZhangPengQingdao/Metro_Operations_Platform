@@ -67,6 +67,12 @@ class Github:
   require(not data.get('draft') and not data.get('prerelease') and isinstance(data.get('tag_name'),str),'INVALID_RELEASE')
   version(data['tag_name'].removeprefix('v'))
   require(data['tag_name'].startswith('v') and (not tag or data['tag_name']=='v'+tag),'INVALID_RELEASE')
+  if tag and data.get('assets')==[]:
+   release_id=data.get('id')
+   require(type(release_id) is int and release_id>0,'INVALID_RELEASE')
+   refreshed=self.fetch(f'https://api.github.com/repos/{REPO}/releases/{release_id}')
+   require(refreshed.get('id')==release_id and refreshed.get('tag_name')==data['tag_name'] and not refreshed.get('draft') and not refreshed.get('prerelease') and isinstance(refreshed.get('assets'),list),'INVALID_RELEASE')
+   data=refreshed
   return data
  def asset(self,release,name,destination,limit,progress=None):
   found=[a for a in release.get('assets',[]) if a.get('name')==name]
