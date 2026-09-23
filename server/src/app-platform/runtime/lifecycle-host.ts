@@ -248,7 +248,7 @@ export class AppLifecycleHost {
       const previous=await d.journal.latest(record.id);
       let attempt=await supervisor.dispatch(context,{appId:record.appId,revision:record.revision,operationId:record.lifecycle!.operationId,expectedSequence:previous?.sequence??0,action:'create',containerId:null,policy,approval:d.approval});
       const attachment=await attachAppDocker({socketPath:d.socketPath,executor:d.executor,policy,approval:d.approval,containerId:attempt.observation!.containerId});
-      try {this.bridge=startAppStdioGateway({appId:record.appId,serviceCredential:this.credential!.value,gateway:this.gatedGateway,stdout:attachment.stdout,stdin:attachment.stdin,requireApiContext:record.manifest.api.length>0});}
+      try {this.bridge=startAppStdioGateway({appId:record.appId,serviceCredential:this.credential!.value,gateway:this.gatedGateway,stdout:attachment.stdout,stdin:attachment.stdin,apiTimeoutMs:(record.manifest.backend.mode==='isolated'||record.manifest.backend.mode==='trusted')?Math.min(30_000,record.manifest.backend.limits.timeoutSeconds*1000):undefined,requireApiContext:record.manifest.api.length>0});}
       catch(error){attachment.close();throw error;}
       attempt=await supervisor.dispatch(context,{appId:record.appId,revision:record.revision,operationId:record.lifecycle!.operationId,expectedSequence:attempt.sequence,action:'start',containerId:attempt.observation!.containerId,policy,approval:d.approval});
       const readiness=new AppDockerReadiness(this.options.registry,d.journal,d.executor);
@@ -285,7 +285,7 @@ export class AppLifecycleHost {
       await this.extensions?.activate();
       if(enabled.manifest.api.length) {
         if(!this.options.api||!this.bridge)fail('API_NOT_CONFIGURED');
-        this.api=createHostedAppApi({...this.options.api,installation:enabled,getInstallation:id=>this.options.registry.runtimeSnapshot(id),transport:this.bridge.api});
+        this.api=createHostedAppApi({...this.options.api,installation:enabled,timeoutMs:(enabled.manifest.backend.mode==='isolated'||enabled.manifest.backend.mode==='trusted')?Math.min(30_000,enabled.manifest.backend.limits.timeoutSeconds*1000):undefined,getInstallation:id=>this.options.registry.runtimeSnapshot(id),transport:this.bridge.api});
       }
       await this.lease!.assertHeld();this.active=enabled;return enabled;
     } catch {

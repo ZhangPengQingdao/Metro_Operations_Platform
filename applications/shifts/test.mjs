@@ -41,6 +41,7 @@ test('workgroup settings grant loads default modules without global configuratio
  assert.equal((await h.call('settings',{organizationId:other})).error.code,'ACCESS_DENIED');
  assert.equal((await h.call('settings',{})).error.code,'ACCESS_DENIED');
  assert.equal(h.calls.filter(c=>c.op==='platform.people.organization_context').length,1);
+ assert.equal(h.calls.filter(c=>c.op==='platform.app_data.list').length,1);
 });
 test('concurrent form reads serialize storage access and release the queue after failure',async()=>{
  let active=0,maxActive=0,fail=true;
@@ -53,4 +54,15 @@ test('concurrent form reads serialize storage access and release the queue after
  const call=name=>handlers.get(name).execute({kind:'meeting',organizationId:org},new AbortController().signal,employee);
  const [draft,template,previous]=await Promise.all([call('load-draft'),call('template'),call('previous')]);
  assert.equal(maxActive,1);assert.equal(draft.error.code,'READ_FAILED');assert.equal(draft.error.writeOutcome,'not_started');assert.deepEqual(template.result.modules,defaults.meeting);assert.equal(previous.ok,true);
+});
+test('settings follows config pagination and retains inherited modules and secret redaction',async()=>{
+ const employee=fixture().employee;const cursors=[];
+ const modules=structuredClone(defaults.meeting);modules[0].label='分页继承配置';
+ const handlers=createShiftsHandlers({async invoke(op,p){
+  if(op==='platform.people.organization_context')return {organizations:[{id:org,unitType:'workgroup'}]};
+  assert.equal(op,'platform.app_data.list');cursors.push(p.afterId);
+  return p.afterId?{rows:[{scope_key:'global',config_type:'meeting',value:{mode:'override',modules}}],nextCursor:null}:{rows:[{scope_key:org,config_type:'webhook',revision:3,value:{mode:'override',url:'https://example.com/secret',meeting:true}}],nextCursor:'next-page'};
+ }});
+ const response=await handlers.get('settings').execute({organizationId:org},new AbortController().signal,employee);
+ assert.equal(response.ok,true);assert.deepEqual(cursors,[undefined,'next-page']);assert.equal(response.result.meeting.value.modules[0].label,'分页继承配置');assert.equal(response.result.meeting.inherited,true);assert.equal(response.result.webhook.revision,3);assert.equal(response.result.webhook.value.configured,true);assert.equal('url' in response.result.webhook.value,false);
 });
