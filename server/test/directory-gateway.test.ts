@@ -27,9 +27,10 @@ test('session revocation and identity replacement during a call never deliver a 
  for(const mode of ['revoked','changed']){
   const f=fixture();await assert.rejects(f.gateway.invokeDelegatedFromSession('reader',async()=>{
    f.state.identityCalls++;
-   if(f.state.identityCalls===3){if(mode==='revoked')throw Error('session gone');return {source:'session',userId:two};}
+   // Revoke after the actual asset read, independently of checkpoint implementation count.
+   if(f.state.assetReads>=2){if(mode==='revoked')throw Error('session gone');return {source:'session',userId:two};}
    return {source:'session',userId:one};
-  },f.request));assert.equal(f.state.identityCalls,3);
+  },f.request));assert.ok(f.state.assetReads>=2);
  }
 });
 test('directory parameters reject scope spoofing and missing records before execution',async()=>{
