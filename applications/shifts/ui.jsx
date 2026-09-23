@@ -11,7 +11,7 @@ import {platformUiCss} from '@metro/platform-sdk/ui-styles';
 import {createAppSandboxClient,createAppApiClient} from '@metro/platform-sdk/app-sandbox';
 
 const script = document.currentScript;
-const route = decodeURIComponent(script?.dataset.appRoute ?? '/');
+const initialRoute = decodeURIComponent(script?.dataset.appRoute ?? '/');
 const origin = script?.dataset.platformOrigin;
 if (!origin) throw Error('PLATFORM_ORIGIN_REQUIRED');
 
@@ -775,8 +775,10 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai'
 const clock = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
 
 function App() {
+  const [route,setRoute] = useState(initialRoute);
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
+  useEffect(() => sandbox.onRouteChange(setRoute), []);
 
   useEffect(() => {
     let active = true;
@@ -853,9 +855,9 @@ function App() {
         route === '/settings' ? (
           <Settings call={call} sandbox={sandbox} session={session} />
         ) : route.endsWith('records') ? (
-          <Records session={session} kind={route.includes('meeting') ? 'meeting' : 'handover'} />
+          <Records key={route} session={session} kind={route.includes('meeting') ? 'meeting' : 'handover'} />
         ) : (
-          <RecordForm session={session} kind={route === '/meeting' ? 'meeting' : 'handover'} />
+          <RecordForm key={route} session={session} kind={route === '/meeting' ? 'meeting' : 'handover'} />
         )
       ) : !error && (
         <p style={{ color: '#a1a1aa', fontSize: 13 }}>正在连接工班工作台…</p>

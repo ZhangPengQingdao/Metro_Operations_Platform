@@ -148,7 +148,7 @@ export async function createAppManagement(configFile:string,origin:string){
    const document=buildSandboxDocument({platformOrigin:origin,route:path,script:{text:Buffer.from(bytes).toString('utf8'),bytes:artifact.bytes,sha256:artifact.sha256}});
    const fresh=await admitEmployee(appId,resolveIdentity);
    if(fresh.identity.userId!==first.identity.userId||fresh.access.revision!==first.access.revision||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
-   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));}):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
+   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),clientRouting:m.ui.clientRouting===true,admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));}):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
   },
   async employeeUiAdmission(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const admission=await admitEmployee(appId,resolveIdentity);

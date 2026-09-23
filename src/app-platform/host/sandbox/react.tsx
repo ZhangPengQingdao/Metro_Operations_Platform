@@ -12,6 +12,10 @@ export interface SandboxFrameProps {
   operations: ReadonlyMap<string, SandboxBridgeOperation>;
   enabled: boolean;
   title: string;
+  /** Optional signed-app client routing; host verifies the new route before changing this prop. */
+  route?: string;
+  initialRoute?: string;
+  onRouteReady?: (route:string)=>void;
 }
 
 export function validateSandboxResource(resource: SandboxFrameResource): boolean {
@@ -40,12 +44,15 @@ export function SandboxFrame(props: SandboxFrameProps) {
   }
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
-function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps) {
+function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady }: SandboxFrameProps) {
   const frame=useRef<HTMLIFrameElement>(null);
   const broker=useRef<SandboxBridgeBroker | null>(null);
   const loaded=useRef(false);
   const active=useRef(false);
   const config=useRef({resource,operations});
+  const lastSentRoute=useRef(initialRoute);
+  const routeRef=useRef(route),routeReadyRef=useRef(onRouteReady);
+  routeRef.current=route;routeReadyRef.current=onRouteReady;
   const [session]=useState(createSandboxSession);
   const [initialTheme]=useState<'dark'|'light'>(()=>{
     const preference=(typeof document!=='undefined'?document.querySelector('.afc-admin')?.getAttribute('data-theme'):undefined)??readThemePreference();
@@ -67,10 +74,21 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
   useLayoutEffect(()=>{
     if(config.current.resource!==resource || config.current.operations!==operations){setFailed(true);return;}
     active.current=true;
-    const onMessage=(event:MessageEvent)=>{ void broker.current?.receive(event); };
+    const onMessage=(event:MessageEvent)=>{
+      if(event.source===frame.current?.contentWindow&&event.origin==='null'){
+       const value=event.data;
+       if(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')==='appId,path,session,type,version'
+        &&value.version==='1.0'&&value.type==='route-ready'&&value.appId===appId&&value.session===session
+        &&typeof value.path==='string'&&value.path===routeRef.current)routeReadyRef.current?.(value.path);
+      }
+      void broker.current?.receive(event);
+    };
     window.addEventListener('message',onMessage);
     return ()=>{ active.current=false;window.removeEventListener('message',onMessage); broker.current?.close();broker.current=null; };
   },[resource,operations]);
+  useEffect(()=>{
+    if(route&&route!==lastSentRoute.current&&broker.current){frame.current?.contentWindow?.postMessage({version:'1.0',type:'route',appId,session,path:route},'*');lastSentRoute.current=route;}
+  },[route,initialRoute,appId,session]);
   const onLoad=()=>{
     if(!active.current)return;
     if(loaded.current){broker.current?.close();broker.current=null;setFailed(true);return;}
@@ -92,6 +110,7 @@ function MountedFrame({ appId, resource, operations, title }: SandboxFrameProps)
       send:response=>target.postMessage(response,'*')});
     // Opaque target cannot be named by origin. Bootstrap carries no platform identity or bearer secret.
     target.postMessage({version:'1.0',type:'init',appId,session},'*');
+    if(routeRef.current&&routeRef.current!==lastSentRoute.current){target.postMessage({version:'1.0',type:'route',appId,session,path:routeRef.current},'*');lastSentRoute.current=routeRef.current;}
   };
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
   const isDark=initialTheme==='dark';

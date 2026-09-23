@@ -13,26 +13,33 @@ import type {SandboxJson} from '../host/sandbox/bridge';
 
 type Account={id:string;personId:string;username:string;name?:string};
 type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
-type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;resource:SandboxFrameResource};
+type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;resource:SandboxFrameResource;initialRoute:string};
 function EmployeeApplication({account,path,onNavigation}:{account:Account;path:string;onNavigation:(appId:string,ids:string[])=>void}){
- const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);
- const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(path),appId=match?.[1];
+ const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0),[activeRoute,setActiveRoute]=useState('/'),[pending,setPending]=useState(true);
+ const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(path),appId=match?.[1],requestedRoute=match?.[2]??'/';
  useEffect(()=>{
-  const controller=new AbortController();let active=true;setCurrent(null);setError('');let loading=false,admissionKey:string|null=null;
+  const controller=new AbortController();let active=true,loading=false,first=true;
+  const soft=!!current?.clientRouting&&current.appId===appId;let admitted=soft?current:null;
+  if(!soft)setCurrent(null);
+  setError('');setPending(true);
   async function load(){if(loading||!active)return;if(!appId){setError('应用不存在。');return;}loading=true;
    try{
-    const route=encodeURIComponent(match?.[2]??'/');
-    if(admissionKey){
+    const route=encodeURIComponent(requestedRoute);
+    if(admitted){
      const check=await employeeRequest<{admissionKey:string}>(`/apps/${appId}/ui-admission?path=${route}`,{signal:controller.signal});
-     if(check.admissionKey===admissionKey)return;
+     if(check.admissionKey===admitted.admissionKey){
+      if(active&&first){setActiveRoute(requestedRoute);if(requestedRoute===activeRoute)setPending(false);first=false;}
+      return;
+     }
     }
     const value=await employeeRequest<Resource>(`/apps/${appId}/ui?path=${route}`,{signal:controller.signal});
-    if(active){admissionKey=value.admissionKey;setError('');setCurrent(old=>old?.instanceKey===value.instanceKey?old:value);}
-   }catch(e){if(active){admissionKey=null;setCurrent(null);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
+    if(active){admitted={...value,initialRoute:requestedRoute};setError('');setCurrent(admitted);setActiveRoute(requestedRoute);setPending(false);first=false;}
+   }catch(e){if(active){admitted=null;setCurrent(null);setPending(false);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
   }
   void load();const timer=setInterval(()=>void load(),5000);const focus=()=>void load();window.addEventListener('focus',focus);
   return()=>{active=false;controller.abort();clearInterval(timer);window.removeEventListener('focus',focus);};
  },[path,serial,account.id]);
+ useEffect(()=>{if(!pending||!current?.clientRouting)return;const timer=setTimeout(()=>{setCurrent(null);setError('应用切页未完成，请重新打开。');setPending(false);},10000);return()=>clearTimeout(timer);},[pending,current?.instanceKey,path]);
  const operations=useMemo(()=>{
   const invoke=async(endpoint:string,body:unknown,signal:AbortSignal)=>{try{const response=await employeeRequest<{result:SandboxJson}>(`/apps/${appId}/${endpoint}`,{method:'POST',body,signal,admissionKey:current?.admissionKey});return response.result;}catch(e){if(e instanceof EmployeeRequestError&&(e.status===401||e.status===403)){setCurrent(null);setError(e.message);}throw e;}};
   const routes=createEmployeeApiBridge(current?.api??[],(request,signal)=>invoke('api',request,signal));
@@ -44,7 +51,8 @@ function EmployeeApplication({account,path,onNavigation}:{account:Account;path:s
   routes.set('platform.ui.navigation',{validate:params=>{if(!params||typeof params!=='object'||Array.isArray(params))return false;const ids=(params as {ids?:SandboxJson}).ids;return Array.isArray(ids)&&ids.length<=32&&ids.every((id:SandboxJson)=>typeof id==='string');},authorize:async()=>true,execute:async params=>{onNavigation(appId!, (params as {ids:string[]}).ids);return {ok:true};}});
   return routes;
  },[appId,account.id,current,onNavigation]);
- return <section className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled title={current.name}/>:<p role="status">正在加载应用…</p>}</section>;
+ const waiting=pending||activeRoute!==requestedRoute;
+ return <section className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled title={current.name} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute)setPending(false);}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
 }
 export default function EmployeeApp(){
  const [owned,setOwned]=useState<ManagedApplication[]>([]);
@@ -60,7 +68,7 @@ export default function EmployeeApp(){
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={<EmployeeProfile/>} notificationsContent={<EmployeeMessages/>}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
- {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname.startsWith('/employee/app/')?<EmployeeApplication key={`${account.id}:${pathname}`} account={account} path={pathname} onNavigation={onNavigation}/>:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
+ {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname.startsWith('/employee/app/')?<EmployeeApplication key={`${account.id}:${pathname.split('/')[3]}`} account={account} path={pathname} onNavigation={onNavigation}/>:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
  </AdminShell>;
 }
 function EmployeeProfile(){
