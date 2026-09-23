@@ -1,9 +1,9 @@
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Button,Input,QuantityInput,Select,Field,PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp,FilterBar,DataList,TableActions,ListPagination,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton,Dialog} from '@metro/platform-sdk/ui';
 import {platformUiCss} from '@metro/platform-sdk/ui-styles';
 import {createAppSandboxClient,createAppApiClient} from '@metro/platform-sdk/app-sandbox';
-const script=document.currentScript,origin=script?.dataset.platformOrigin,route=decodeURIComponent(script?.dataset.appRoute??'/');
+const script=document.currentScript,origin=script?.dataset.platformOrigin,initialRoute=decodeURIComponent(script?.dataset.appRoute??'/');
 document.documentElement.classList.add('afc-theme-neutral');
 if(!document.documentElement.dataset.theme && typeof window!=='undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches){
  document.documentElement.dataset.theme='dark';
@@ -16,10 +16,13 @@ const errors={MATERIAL_CONFLICT:'物料已被其他人修改，请重新打开�
 let writing=false,uncertain=false;
 function ActionIcon({kind}){const Icon={edit:PencilSimpleLine,delete:Trash,plus:Plus,in:ArrowLineDown,out:ArrowLineUp}[kind];return <Icon size={18} weight="regular"/>;}
 function App(){
+ const [route,setRoute]=useState(initialRoute);
+ const routeRef=useRef(route);routeRef.current=route;
  useEffect(()=>{let active=true,running=false;async function sync(){if(!sandbox.ready()||running)return;running=true;try{const result=await sandbox.invoke('platform.ui.theme',{});if(active&&['light','dark'].includes(result.theme)){document.documentElement.classList.add('afc-theme-neutral');document.documentElement.dataset.theme=result.theme;}}finally{running=false;}}void sync();const timer=setInterval(()=>void sync().catch(()=>{}),1000);return()=>{active=false;clearInterval(timer);};},[]);
 
  const [caps,setCaps]=useState(null),[rows,setRows]=useState([]),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[pages,setPages]=useState([null]),[next,setNext]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[dialog,setDialog]=useState(null),[form,setForm]=useState({}),[saving,setSaving]=useState(false);
  const [recipients,setRecipients]=useState([]),[materials,setMaterials]=useState([]),[optionsLoading,setOptionsLoading]=useState(false);
+ useEffect(()=>sandbox.onRouteChange(path=>{setSearch('');setQuery('');setPages([null]);setNext(null);setRows([]);setDialog(null);setLoading(false);setError('');setRoute(path);}),[]);
  const settings=route==='/settings',records=route==='/records'||route==='/'&&caps?.business&&!caps.permissions.includes('app.materials.read-stock')&&caps.permissions.includes('app.materials.read-records'),cursor=pages.at(-1);
  async function call(name,payload,write=false){
   if(write&&(writing||uncertain))throw Error('写入结果待核对，请联系管理员后再操作');
@@ -27,10 +30,10 @@ function App(){
   try{const reply=await api.invoke(name,payload);if(!reply.ok){if(write&&reply.error.writeOutcome==='unknown')uncertain=true;throw Error(errors[reply.error.code]??(write?'结果未确认，请联系管理员核对，勿重复提交':'读取失败，请重新打开应用'));}return reply.result;}
   catch(e){if(write&&!errors[Object.keys(errors).find(k=>errors[k]===e.message)])uncertain=true;throw e;}finally{if(write)writing=false;}
  }
- async function load(){if(!caps||settings&&!caps.leader)return;setLoading(true);setError('');try{const result=await call(settings?'members':'list',settings?(query?{search:query}:{}):{kind:records?'consumptions':'materials',pageSize:20,...(cursor?{afterId:cursor}:{}),...(query?{search:query}:{})});setRows(result.rows);setNext(result.nextCursor??null);}catch(e){setError(e.message);}finally{setLoading(false);}}
+ async function load(isCurrent=()=>true){if(!caps||settings&&!caps.leader)return;const visible=()=>isCurrent()&&routeRef.current===route;setLoading(true);setError('');try{const result=await call(settings?'members':'list',settings?(query?{search:query}:{}):{kind:records?'consumptions':'materials',pageSize:20,...(cursor?{afterId:cursor}:{}),...(query?{search:query}:{})});if(visible()){setRows(result.rows);setNext(result.nextCursor??null);}}catch(e){if(visible())setError(e.message);}finally{if(visible())setLoading(false);}}
  useEffect(()=>{let cancelled=false;const deadline=Date.now()+10000,timer=setInterval(async()=>{if(sandbox.ready()){clearInterval(timer);try{const value=await call('session',{});if(cancelled)return;setCaps(value);await sandbox.invoke('platform.ui.navigation',{ids:value.business?[...(value.permissions.includes('app.materials.read-stock')?['stock']:[]),...(value.permissions.includes('app.materials.read-records')?['records']:[])]:['stock','records',...(value.leader?['settings']:[])]});}catch(e){if(!cancelled)setError(e.message);}}else if(Date.now()>deadline){clearInterval(timer);setError('应用连接未就绪，请重新打开');}},25);return()=>{cancelled=true;clearInterval(timer);};},[]);
  useEffect(()=>{if(!caps)return;void sandbox.invoke('platform.ui.modal',{open:!!dialog}).catch(()=>setError('弹窗显示状态未同步，请重新打开应用'));},[caps,!!dialog]);
- useEffect(()=>{void load();},[caps,query,cursor]);
+ useEffect(()=>{let active=true;void load(()=>active);return()=>{active=false;};},[caps,query,cursor,route]);
  useEffect(()=>{const timer=setTimeout(()=>{setPages([null]);setQuery(search.trim());},300);return()=>clearTimeout(timer);},[search]);
  useEffect(()=>{
   if(!dialog||!['consume','outbound','correct'].includes(dialog.kind))return;

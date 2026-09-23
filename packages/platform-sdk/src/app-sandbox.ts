@@ -13,8 +13,15 @@ export function createAppSandboxClient(options:{appId:string;platformOrigin:stri
  if(url.origin!==platformOrigin||!['https:','http:'].includes(url.protocol)||appId.length>64||!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(appId)||!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>30000)throw new AppGatewayClientError('INVALID_SANDBOX','not_started');
  const parent=port.parent,send=port.send.bind(port);let session:string|undefined,closed=false,sequence=0;
  const pending=new Map<number,{resolve:(value:unknown)=>void;reject:(error:Error)=>void}>();
+ const routeListeners=new Set<(path:string)=>void>();let pendingRoute:string|undefined;
  let unlisten=()=>{};
- const close=()=>{if(closed)return;closed=true;unlisten();for(const item of pending.values())item.reject(new AppGatewayClientError('ABORTED','unknown'));pending.clear();};
+ const close=()=>{if(closed)return;closed=true;unlisten();routeListeners.clear();for(const item of pending.values())item.reject(new AppGatewayClientError('ABORTED','unknown'));pending.clear();};
+ const deliverRoute=(path:string)=>{
+  if(!routeListeners.size){pendingRoute=path;return;}
+  try{for(const listener of routeListeners)listener(path);}catch{return;}
+  pendingRoute=undefined;
+  setTimeout(()=>{if(!closed&&session)try{send({version:'1.0',type:'route-ready',appId,session,path},platformOrigin);}catch{close();}},0);
+ };
  unlisten=port.listen(event=>{
   if(closed||event.source!==parent||event.origin!==platformOrigin)return;
   const value=event.data;
@@ -24,6 +31,10 @@ export function createAppSandboxClient(options:{appId:string;platformOrigin:stri
   if(frame.type==='init'){
    if(Object.keys(frame).sort().join(',')!=='appId,session,type,version'||typeof frame.session!=='string'||! /^[0-9a-f]{32}$/.test(frame.session))return;
    if(session!==undefined){if(session!==frame.session)close();return;}session=frame.session;return;
+  }
+  if(frame.type==='route'){
+   if(!session||frame.session!==session||Object.keys(frame).sort().join(',')!=='appId,path,session,type,version'||typeof frame.path!=='string'||frame.path.length>256||!(frame.path==='/'||/^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(frame.path)))return;
+   deliverRoute(frame.path);return;
   }
   if(frame.type!=='response'||!session||frame.session!==session||typeof frame.id!=='number')return;
   const item=pending.get(frame.id);if(!item)return;
@@ -49,7 +60,8 @@ export function createAppSandboxClient(options:{appId:string;platformOrigin:stri
    catch{pending.delete(id);reject(new AppGatewayClientError('TRANSPORT_FAILED','unknown'));}
   });}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
  });
- return Object.freeze({invoke:(operation:string,params:AppGatewayJson,signal?:AbortSignal)=>client.invoke(operation,params,signal),ready:()=>!closed&&!!session,close});
+ return Object.freeze({invoke:(operation:string,params:AppGatewayJson,signal?:AbortSignal)=>client.invoke(operation,params,signal),ready:()=>!closed&&!!session,
+  onRouteChange(listener:(path:string)=>void){if(closed)throw new AppGatewayClientError('ABORTED','not_started');routeListeners.add(listener);if(pendingRoute)deliverRoute(pendingRoute);return()=>routeListeners.delete(listener);},close});
 }
 
 /** Invoke a manifest-declared application API through the employee sandbox host. */

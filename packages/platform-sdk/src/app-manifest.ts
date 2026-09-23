@@ -19,8 +19,10 @@ export interface AppArtifact {
   sha256: string;
   bytes: number;
 }
-export type AppUiDeclaration = { mode: 'none' } | {
-  mode: 'sandbox' | 'trusted'; entryArtifactId: string;
+export type AppUiDeclaration = { mode: 'none' } | {mode:'trusted';entryArtifactId:string} | {
+  mode: 'sandbox'; entryArtifactId: string;
+  /** Sandbox app handles host-authorized route changes without recreating its document. */
+  clientRouting?: true;
 };
 export type AppBackendDeclaration = { mode: 'none' } | {
   mode: 'trusted' | 'isolated'; runtime: 'node'; entryArtifactId: string;
