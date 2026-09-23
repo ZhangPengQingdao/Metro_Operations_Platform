@@ -14,8 +14,10 @@ try:
  run('docker','pull',postgres)
  secret=root/'postgres';secret.write_text(password);secret.chmod(0o444)
  run('docker','run','-d','-p','127.0.0.1::3101','--name',db,'--network',network,'--network-alias','database','-v',str(secret)+':/run/secrets/password:ro','-e','POSTGRES_PASSWORD_FILE=/run/secrets/password',postgres)
+ # The image's initialization server only listens on a Unix socket and then exits.
+ # Wait for the final TCP listener before issuing non-replayable role/database DDL.
  for _ in range(60):
-  if run('docker','exec',db,'pg_isready','-U','postgres',check=False).returncode==0:break
+  if run('docker','exec',db,'pg_isready','-h','127.0.0.1','-U','postgres',check=False).returncode==0:break
   time.sleep(1)
  else:raise RuntimeError('Postgres not ready')
  sql=f"CREATE ROLE metro_api LOGIN PASSWORD '{password}' NOSUPERUSER NOCREATEDB NOCREATEROLE; CREATE DATABASE metro_operations_platform OWNER metro_api;"
