@@ -1760,9 +1760,9 @@ function Records({ session, kind }) {
         }
       >
         <colgroup>
-          <col style={{ width: 190 }} />
-          <col style={{ width: 190 }} />
-          <col />
+          <col style={{ width: 'calc((100% - 180px) / 3)' }} />
+          <col style={{ width: 'calc((100% - 180px) / 3)' }} />
+          <col style={{ width: 'calc((100% - 180px) / 3)' }} />
           <col style={{ width: 180 }} />
         </colgroup>
         <TableHeader>
