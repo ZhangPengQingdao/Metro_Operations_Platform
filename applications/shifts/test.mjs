@@ -5,28 +5,28 @@ import {createShiftsHandlers} from './handlers.mjs';
 import {defaults} from './modules.mjs';
 const org='61000000-0000-4000-8000-000000000001',other='61000000-0000-4000-8000-000000000002',person='61000000-0000-4000-8000-000000000003',second='61000000-0000-4000-8000-000000000004';
 function fixture(){
- const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[];let failPush=false,failTransaction=false;
- const employee={personId:person,organizationUnitId:org,businessAuthorization:{revision:randomUUID(),organizations:[{id:org,name:'测试工班'}],grants:['read','submit','config','sign'].map(p=>({permission:'app.shifts.'+p,self:p==='sign',all:p==='config',organizationIds:p==='sign'?[]:[org]}))}};
+ const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[],signed=new Set();let failPush=false,failTransaction=false,failSignatureRead=false;
+ const employee={personId:person,organizationUnitId:org,businessAuthorization:{revision:randomUUID(),organizations:[{id:org,name:'测试工班'}],grants:['read','submit','delete','config','sign'].map(p=>({permission:'app.shifts.'+p,self:p==='sign',all:p==='config',organizationIds:p==='sign'?[]:[org]}))}};
  const gateway={async invoke(op,p){calls.push({op,p});if(op==='platform.app_data.read_batch')return {results:await Promise.all(p.operations.map(async item=>{
   if('id' in item)return {row:structuredClone(tables[item.table].get(item.id)??null)};
-  const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):r[f.column]===f.value;
+  const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):(r[f.column]??null)===f.value;
   let rows=[...tables[item.table].values()].filter(r=>(item.filters??[]).every(f=>match(r,f))&&(!item.anyOf||item.anyOf.some(g=>g.every(f=>match(r,f)))));
   if(item.order)rows.sort((a,b)=>String(a[item.order.column]).localeCompare(String(b[item.order.column]))*(item.order.direction==='desc'?-1:1));
   return {rows:structuredClone(rows.slice(0,item.pageSize)),nextCursor:null};}))};
   if(op==='platform.app_data.get')return {row:structuredClone(tables[p.table].get(p.id)??null)};
-  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>current?.[k]!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations)tables[m.table].set(m.id,{id:m.id,...m.values});if(failTransaction){failTransaction=false;throw Error('ACK_LOST');}return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
-  if(op==='platform.app_data.list'){const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):r[f.column]===f.value;let rows=[...tables[p.table].values()].filter(r=>(p.filters??[]).every(f=>match(r,f))&&(!p.anyOf||p.anyOf.some(g=>g.every(f=>match(r,f)))));if(p.search)rows=rows.filter(r=>String(r[p.search.column]).toLowerCase().includes(p.search.text.toLowerCase()));if(p.range)rows=rows.filter(r=>(!p.range.from||r[p.range.column]>=p.range.from)&&(!p.range.to||r[p.range.column]<=p.range.to));return {rows:rows.slice(0,p.pageSize??20),nextCursor:null};}
+  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>(current?.[k]??null)!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations){const current=tables[m.table].get(m.id);tables[m.table].set(m.id,{...(m.action==='update'?current:{}),id:m.id,...m.values});}if(failTransaction){failTransaction=false;throw Error('ACK_LOST');}return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
+  if(op==='platform.app_data.list'){const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):(r[f.column]??null)===f.value;let rows=[...tables[p.table].values()].filter(r=>(p.filters??[]).every(f=>match(r,f))&&(!p.anyOf||p.anyOf.some(g=>g.every(f=>match(r,f)))));if(p.search)rows=rows.filter(r=>String(r[p.search.column]).toLowerCase().includes(p.search.text.toLowerCase()));if(p.range)rows=rows.filter(r=>(!p.range.from||r[p.range.column]>=p.range.from)&&(!p.range.to||r[p.range.column]<=p.range.to));return {rows:rows.slice(0,p.pageSize??20),nextCursor:null};}
   if(op==='platform.people.organization_context')return {organizations:[{id:p.organizationUnitId,name:'工班',unitType:'workgroup'}]};
   if(op==='platform.people.members')return {rows:[person,second].filter(id=>!p.personId||p.personId===id).filter(id=>!p.personIds||p.personIds.includes(id)).map(id=>({id,name:id===person?'甲':'乙',organizationUnitId:org}))};
   if(op==='platform.signatures.associate')return {associated:true,signers:p.personIds.map(personId=>({personId,status:'unsigned'}))};
-  if(op==='platform.signatures.get')return {associated:true,signers:[]};
-  if(op==='platform.signatures.sign')return {associated:true,signers:[{personId:person,status:'signed'}]};
+  if(op==='platform.signatures.get'){if(failSignatureRead)throw Error('SIGNATURE_READ_FAILED');return {associated:true,signers:signed.has(p.entityId)?[{personId:person,status:'signed'}]:[]};}
+  if(op==='platform.signatures.sign'){signed.add(p.entityId);return {associated:true,signers:[{personId:person,status:'signed'}]};}
   if(op==='platform.webhook.send'){if(failPush)throw Error('WEBHOOK_TIMEOUT');return {sent:true};}
   throw Error('unexpected '+op);
  }};
  const handlers=createShiftsHandlers(gateway);const call=(name,p,e=employee)=>handlers.get(name).execute(p,new AbortController().signal,e);
  const form=(kind='meeting')=>({kind,id:randomUUID(),requestId:randomUUID(),organizationId:org,date:'2026-09-20',time:'08:30',shiftType:'night',hostId:person,participantIds:[second],handoverIds:[],takeoverIds:[person],form:{}});
- return {call,form,employee,tables,calls,setFailPush:()=>{failPush=true;},setFailTransaction:()=>{failTransaction=true;}};
+ return {call,form,employee,tables,calls,setFailPush:()=>{failPush=true;},setFailTransaction:()=>{failTransaction=true;},setSigned:id=>signed.add(id),setFailSignatureRead:()=>{failSignatureRead=true;}};
 }
 test('same day meetings and same shift handovers remain independent; repeated intent saves once',async()=>{const h=fixture();for(const kind of ['meeting','handover'])for(let i=0;i<2;i++){const p=h.form(kind);assert.equal((await h.call('save',p)).ok,true);assert.equal((await h.call('save',p)).ok,true);}assert.equal(h.tables.records.size,4);assert.equal(h.calls.filter(c=>c.op==='platform.app_data.transaction').length,4);});
 test('scope is applied before pagination and cross-organization detail and writes are denied',async()=>{const h=fixture();const p=h.form();assert.equal((await h.call('save',{...p,organizationId:other})).error.code,'ACCESS_DENIED');h.tables.records.set(p.id,{id:p.id,kind:'meeting',organization_id:other,created_by:second,people:[]});assert.equal((await h.call('detail',{id:p.id})).error.code,'ACCESS_DENIED');const page=await h.call('list',{kind:'meeting'});assert.deepEqual(page.result.rows,[]);assert.ok(h.calls.find(c=>c.op==='platform.app_data.list').p.anyOf);});
@@ -34,6 +34,35 @@ test('global template inherits, local override changes only local future snapsho
 test('saved meeting survives notification failure and is available to sign later as current employee',async()=>{const h=fixture();await h.call('configure',{organizationId:org,type:'webhook',value:{mode:'override',url:'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test',meeting:true},revision:0,requestId:randomUUID()});h.setFailPush();const p=h.form();const saved=await h.call('save',p);assert.equal(saved.ok,true);assert.equal(saved.result.notification,'unconfirmed');assert.ok(h.tables.records.has(p.id));assert.equal((await h.call('sign',{id:p.id,image:'data:image/png;base64,test'})).ok,true);assert.equal((await h.call('sign',{id:p.id,image:'x',personId:second})).error.code,'INVALID_INPUT');const outsider={...h.employee,personId:randomUUID()};assert.equal((await h.call('sign',{id:p.id,image:'x'},outsider)).error.code,'ACCESS_DENIED');});
 test('concurrent settings revisions and malformed dates fail before writes',async()=>{const h=fixture();const p={organizationId:org,type:'meeting',value:{mode:'override',modules:defaults.meeting},revision:0,requestId:randomUUID()};assert.equal((await h.call('configure',p)).ok,true);assert.equal((await h.call('configure',{...p,requestId:randomUUID()})).error.code,'CONFLICT');assert.equal((await h.call('save',{...h.form(),date:'2026-99-90'})).error.code,'INVALID_INPUT');});
 test('self read includes meetings attended, but cannot edit another author or replay their intent',async()=>{const h=fixture(),p=h.form();await h.call('save',p);const employee={...h.employee,personId:second,businessAuthorization:{...h.employee.businessAuthorization,grants:[{permission:'app.shifts.read',self:true,all:false,organizationIds:[]}]}};assert.equal((await h.call('list',{kind:'meeting'},employee)).result.rows.length,1);assert.equal((await h.call('detail',{id:p.id},employee)).ok,true);const writer={...h.employee,personId:second,businessAuthorization:{...h.employee.businessAuthorization,grants:h.employee.businessAuthorization.grants.filter(g=>g.permission!=='app.shifts.config')}};assert.equal((await h.call('save',p,writer)).error.code,'ACCESS_DENIED');});
+test('soft deletion keeps record and audit fields but removes it from lists, details and previous',async()=>{
+ const h=fixture(),p=h.form('handover');await h.call('save',p);
+ assert.equal((await h.call('list',{kind:'handover'})).result.rows[0].canDelete,true);
+ assert.equal((await h.call('delete-record',{id:p.id,revision:2,requestId:randomUUID()})).error.code,'CONFLICT');
+ const result=await h.call('delete-record',{id:p.id,revision:1,requestId:randomUUID()});assert.equal(result.ok,true);
+ const retained=h.tables.records.get(p.id);assert.equal(retained.form_data!==undefined,true);assert.equal(retained.deleted_by,person);assert.ok(retained.deleted_at);assert.equal(retained.revision,2);
+ assert.deepEqual((await h.call('list',{kind:'handover'})).result.rows,[]);
+ assert.equal((await h.call('detail',{id:p.id})).error.code,'ACCESS_DENIED');
+ assert.equal((await h.call('previous',{kind:'handover'})).result.row,null);
+ assert.equal((await h.call('bootstrap',{kind:'handover'})).result.previous,null);
+ assert.equal((await h.call('save',{...p,requestId:randomUUID(),revision:2})).error.code,'CONFLICT');
+});
+test('record deletion requires its own scoped grant and refuses signed or unverifiable meetings',async()=>{
+ const h=fixture(),p=h.form();await h.call('save',p);
+ const noDelete={...h.employee,businessAuthorization:{...h.employee.businessAuthorization,grants:h.employee.businessAuthorization.grants.filter(g=>g.permission!=='app.shifts.delete')}};
+ assert.equal((await h.call('list',{kind:'meeting'},noDelete)).result.rows[0].canDelete,false);
+ assert.equal((await h.call('delete-record',{id:p.id,revision:1,requestId:randomUUID()},noDelete)).error.code,'ACCESS_DENIED');
+ const selfDelete={...h.employee,businessAuthorization:{...h.employee.businessAuthorization,grants:h.employee.businessAuthorization.grants.map(g=>g.permission==='app.shifts.delete'?{...g,self:true,all:false,organizationIds:[]}:g)}};
+ h.tables.records.get(p.id).created_by=second;
+ assert.equal((await h.call('list',{kind:'meeting'},selfDelete)).result.rows[0].canDelete,false);
+ assert.equal((await h.call('delete-record',{id:p.id,revision:1,requestId:randomUUID()},selfDelete)).error.code,'ACCESS_DENIED');
+ h.setSigned(p.id);
+ assert.equal((await h.call('detail',{id:p.id})).result.canDelete,false);
+ assert.equal((await h.call('delete-record',{id:p.id,revision:1,requestId:randomUUID()})).error.code,'SIGNED_RECORD');
+ assert.equal(h.tables.records.get(p.id).deleted_at,undefined);
+ const q=h.form();await h.call('save',q);h.setFailSignatureRead();
+ assert.equal((await h.call('delete-record',{id:q.id,revision:1,requestId:randomUUID()})).error.code,'SIGNATURE_UNAVAILABLE');
+ assert.equal(h.tables.records.get(q.id).deleted_at,undefined);
+});
 test('drafts are isolated by person and organization and use optimistic revisions',async()=>{const h=fixture(),value=h.form(),payload={organizationId:org,kind:'meeting',value,revision:0,requestId:randomUUID()};assert.equal((await h.call('save-draft',payload)).result.revision,1);assert.equal((await h.call('load-draft',{organizationId:org,kind:'meeting'})).result.draft.id,value.id);assert.equal((await h.call('load-draft',{organizationId:org,kind:'meeting'},{...h.employee,personId:second})).result.draft,null);assert.equal((await h.call('save-draft',{...payload,requestId:randomUUID()})).error.code,'CONFLICT');assert.equal((await h.call('save-draft',{...payload,revision:1,requestId:randomUUID()})).result.revision,2);});
 test('form bootstrap reads template, private draft and previous record in one storage admission',async()=>{
  const h=fixture(),form=h.form('handover');await h.call('save',form);

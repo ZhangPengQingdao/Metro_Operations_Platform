@@ -32,7 +32,8 @@ export function createShiftsService(gateway){
  }
  async function effective(org,type,signal,chain){return resolveConfig(type,await configRows(org,type,signal,chain));}
  function canRead(employee,row){return grant(employee,'app.shifts.read')?.self&&row.people.some(p=>p.id===employee.personId)||allowed(employee,'app.shifts.read',row.organization_id,row.created_by)||(grant(employee,'app.shifts.sign')&&row.kind==='meeting'&&row.people.some(p=>p.id===employee.personId));}
- async function record(id,employee,signal){if(!uuid(id))throw Error('INVALID_INPUT');const {row}=await data.get('records',id,signal);if(!row||!canRead(employee,row))throw Error('ACCESS_DENIED');return row;}
+ function canDelete(employee,row){return allowed(employee,'app.shifts.delete',row.organization_id,row.created_by);}
+ async function record(id,employee,signal){if(!uuid(id))throw Error('INVALID_INPUT');const {row}=await data.get('records',id,signal);if(!row||row.deleted_at||!canRead(employee,row))throw Error('ACCESS_DENIED');return row;}
  async function member(id,org,signal){if(!uuid(id))throw Error('INVALID_INPUT');const page=await gateway.invoke('platform.people.members',{organizationUnitId:org,personId:id},signal);if(!page.rows[0])throw Error('INVALID_PERSON');return page.rows[0];}
  async function notify(row,signal){
   try{const cfg=(await effective(row.organization_id,'webhook',signal)).value;if(cfg.mode==='disabled'||!cfg[row.kind]||!cfg.url)return 'disabled';
@@ -63,7 +64,7 @@ export function createShiftsService(gateway){
    const operations=[
     {table:'configs',filters:[{column:'config_type',value:k}],anyOf:scopes.map(node=>[{column:'scope_key',value:node.id??'global'}]),pageSize:40},
     {table:'drafts',id:configId(org,employee.personId+':'+k)},
-    ...(canReadPrevious?[{table:'records',...scope(employee,'app.shifts.read'),filters:[{column:'organization_id',value:org},{column:'kind',value:k}],order:{column:'record_order',direction:'desc'},pageSize:1}]:[])
+    ...(canReadPrevious?[{table:'records',...scope(employee,'app.shifts.read'),filters:[{column:'organization_id',value:org},{column:'kind',value:k},{column:'deleted_at',value:null}],order:{column:'record_order',direction:'desc'},pageSize:1}]:[])
    ];
    let results;
    try{({results}=await data.readBatch(operations,signal));}
@@ -86,7 +87,7 @@ export function createShiftsService(gateway){
   async previous(input,employee,signal){
    const org=ownOrganization(input,employee);requireAccess(employee,'app.shifts.submit',org,employee.personId);
    if(!allowed(employee,'app.shifts.read',org,employee.personId))return {row:null};
-   const page=await data.list('records',{...scope(employee,'app.shifts.read'),filters:[{column:'organization_id',value:org},{column:'kind',value:kind(input.kind)}],order:{column:'record_order',direction:'desc'},pageSize:1},signal);
+   const page=await data.list('records',{...scope(employee,'app.shifts.read'),filters:[{column:'organization_id',value:org},{column:'kind',value:kind(input.kind)},{column:'deleted_at',value:null}],order:{column:'record_order',direction:'desc'},pageSize:1},signal);
    const row=page.rows[0];return {row:row?{id:row.id,shiftType:row.shift_type,handoverIds:row.people.filter(p=>p.role==='takeover').map(p=>p.id),form:{other_matters:row.form_data.other_matters??''}}:null};
   },
   async settings(input,employee,signal){
@@ -118,19 +119,28 @@ export function createShiftsService(gateway){
   },
   async 'test-webhook'(input,employee,signal){const org=input.organizationId??null;if(org===null?!grant(employee,'app.shifts.config')?.all:!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');
    const cfg=org?(await effective(org,'webhook',signal)).value:(await readConfig(null,'webhook',signal))?.value;if(!cfg?.url||cfg.mode==='disabled')throw Error('INVALID_INPUT');await webhook.send({url:cfg.url,message:'晨会交接：测试消息',messageType:'text'},signal);return {sent:true};},
-  async list(input,employee,signal){const k=kind(input.kind);const filters=[{column:'kind',value:k}];
+  async list(input,employee,signal){const k=kind(input.kind);const filters=[{column:'kind',value:k},{column:'deleted_at',value:null}];
    if(input.organizationId){requireAccess(employee,'app.shifts.read',input.organizationId,employee.personId);filters.push({column:'organization_id',value:input.organizationId});}
    if(input.from&&!date(input.from)||input.to&&!date(input.to)||input.from&&input.to&&input.from>input.to||input.search!==undefined&&(typeof input.search!=='string'||input.search.length>100))throw Error('INVALID_INPUT');
    if(input.shiftType)filters.push({column:'shift_type',value:input.shiftType});
-   return data.list('records',{...scope(employee,'app.shifts.read'),filters,...(input.search?.trim()?{search:{column:'search_text',text:input.search.trim()}}:{}),order:{column:'record_order',direction:'desc'},...(input.after?{after:input.after}:{}),...(input.from||input.to?{range:{column:'record_date',...(input.from?{from:input.from}:{}),...(input.to?{to:input.to}:{})}}:{}),pageSize:10},signal);
+   const page=await data.list('records',{...scope(employee,'app.shifts.read'),filters,...(input.search?.trim()?{search:{column:'search_text',text:input.search.trim()}}:{}),order:{column:'record_order',direction:'desc'},...(input.after?{after:input.after}:{}),...(input.from||input.to?{range:{column:'record_date',...(input.from?{from:input.from}:{}),...(input.to?{to:input.to}:{})}}:{}),pageSize:10},signal);
+   return {...page,rows:page.rows.map(row=>({...row,canDelete:canDelete(employee,row)}))};
   },
-  async detail(input,employee,signal){const row=await record(input.id,employee,signal);let signatureInfo=null;if(row.kind==='meeting')try{signatureInfo=await signatures.get(row.id,signal);}catch{signatureInfo={unavailable:true};}return {...row,signatureInfo};},
+  async detail(input,employee,signal){
+   const row=await record(input.id,employee,signal);
+   let signatureInfo=null;
+   if(row.kind==='meeting')try{signatureInfo=await signatures.get(row.id,signal);}catch{signatureInfo={unavailable:true};}
+   const signatureReady=row.kind!=='meeting'||Array.isArray(signatureInfo?.signers);
+   const canEdit=employee.organizationUnitId===row.organization_id&&allowed(employee,'app.shifts.submit',row.organization_id,employee.personId)
+    &&(row.created_by===employee.personId||allowed(employee,'app.shifts.config',row.organization_id));
+   return {...row,signatureInfo,canEdit,canDelete:canDelete(employee,row)&&signatureReady&&!signatureInfo?.signers?.some(s=>s.status==='signed')};
+  },
   async save(input,employee,signal){
    const k=kind(input.kind),org=ownOrganization(input,employee);
    requireAccess(employee,'app.shifts.submit',org,employee.personId);
    if(!uuid(input.requestId)||!uuid(input.id)||!date(input.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)||k==='handover'&&!['day','night'].includes(input.shiftType))throw Error('INVALID_INPUT');
    const existing=(await data.get('records',input.id,signal)).row;
-   if(existing){if(existing.organization_id!==org||existing.kind!==k||existing.created_by!==employee.personId&&!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');if(existing.intent_id===input.requestId)return {id:existing.id,saved:true,notification:'unchanged'};if(existing.revision!==input.revision)throw Error('CONFLICT');}
+   if(existing){if(existing.deleted_at)throw Error('CONFLICT');if(existing.organization_id!==org||existing.kind!==k||existing.created_by!==employee.personId&&!allowed(employee,'app.shifts.config',org))throw Error('ACCESS_DENIED');if(existing.intent_id===input.requestId)return {id:existing.id,saved:true,notification:'unchanged'};if(existing.revision!==input.revision)throw Error('CONFLICT');}
    const config=existing?.module_snapshot??(input.modules?validateModules(k,input.modules):(await effective(org,k,signal)).value.modules);
    const personIds=[...new Set(k==='meeting'?[input.hostId,...(input.participantIds??[])]:[employee.personId,...(input.handoverIds??[]),...(input.takeoverIds??[])])];
    if(personIds.length>100||!personIds.length)throw Error('INVALID_INPUT');
@@ -141,6 +151,21 @@ export function createShiftsService(gateway){
    const {id,...values}=row;try{await data.transaction(input.requestId,[{action:existing?'update':'insert',table:'records',id,values,...(existing?{expected:{revision:existing.revision}}:{})}],signal);}finally{invalidateBootstrap(org,k);}
    let signatureStatus='none';if(k==='meeting'){try{await signatures.associate({entityId:id,title:'晨会记录',organizationUnitId:org,personIds:people.map(p=>p.id)},signal);signatureStatus='ready';}catch{signatureStatus='unconfirmed';}}
    return {id,saved:true,signatureStatus,notification:await notify(row,signal)};
+  },
+  async 'delete-record'(input,employee,signal){
+   if(!uuid(input.id)||!uuid(input.requestId)||!Number.isInteger(input.revision)||input.revision<1)throw Error('INVALID_INPUT');
+   const row=await record(input.id,employee,signal);
+   if(!canDelete(employee,row))throw Error('ACCESS_DENIED');
+   if(row.revision!==input.revision)throw Error('CONFLICT');
+   if(row.kind==='meeting'){
+    let signatureInfo;
+    try{signatureInfo=await signatures.get(row.id,signal);}catch{throw Error('SIGNATURE_UNAVAILABLE');}
+    if(!Array.isArray(signatureInfo?.signers))throw Error('SIGNATURE_UNAVAILABLE');
+    if(signatureInfo?.signers?.some(s=>s.status==='signed'))throw Error('SIGNED_RECORD');
+   }
+   const now=new Date().toISOString();
+   try{await data.transaction(input.requestId,[{table:'records',id:row.id,action:'update',values:{deleted_at:now,deleted_by:employee.personId,updated_by:employee.personId,updated_at:now,revision:row.revision+1},expected:{revision:row.revision,deleted_at:null}}],signal);}finally{invalidateBootstrap(row.organization_id,row.kind);}
+   return {id:row.id,deleted:true};
   },
   async 'signature-image'(input,employee,signal){const row=await record(input.id,employee,signal);if(row.kind!=='meeting'||!row.people.some(p=>p.id===input.signerPersonId))throw Error('ACCESS_DENIED');return signatures.get(row.id,signal,input.signerPersonId);},
   async sign(input,employee,signal){const row=await record(input.id,employee,signal);if(row.kind!=='meeting'||!grant(employee,'app.shifts.sign')||!row.people.some(p=>p.id===employee.personId))throw Error('ACCESS_DENIED');await signatures.associate({entityId:row.id,title:'晨会记录',organizationUnitId:row.organization_id,personIds:row.people.map(p=>p.id)},signal);return signatures.sign(row.id,input.image,signal);},

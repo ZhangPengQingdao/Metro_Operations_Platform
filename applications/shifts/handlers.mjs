@@ -1,5 +1,5 @@
 import {createShiftsService} from './service.mjs';
-const local=new Set(['INVALID_INPUT','INVALID_PERSON','FORM_TOO_LARGE','ACCESS_DENIED','CONFLICT']);
+const local=new Set(['INVALID_INPUT','INVALID_PERSON','FORM_TOO_LARGE','ACCESS_DENIED','CONFLICT','SIGNED_RECORD','SIGNATURE_UNAVAILABLE']);
 const reads=new Set(['session','members','template','bootstrap','load-draft','previous','settings','list','detail','signature-image']);
 export function createShiftsHandlers(gateway){const service=createShiftsService(gateway);return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,async execute(payload,signal,employee){
  try{if(!payload||typeof payload!=='object'||Array.isArray(payload)||['employee','personId','permissions','businessAuthorization'].some(key=>key in payload))throw Error('INVALID_INPUT');return {ok:true,result:await execute(payload,employee,signal)};}
