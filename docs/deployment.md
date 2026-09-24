@@ -1,5 +1,7 @@
 # 运行与部署
 
+现有站点的目标地址、签名发行、系统更新与晨会交接独立应用升级步骤见 [现有站点发布与更新记录](production-deployment-runbook.md)。
+
 使用独立 PostgreSQL 数据库、应用目录和密钥。默认端口：前端 3100、API 3101；开发代理保持同源，写接口还校验 Origin。生产 `PUBLIC_BASE_URL` 与 `CORS_ORIGIN` 必须为真实管理端 HTTPS origin，并配置强 SESSION_SECRET、AI_PROVIDER_ENCRYPTION_KEY 与安全 Cookie。
 
 `compose.yaml` 仅提供独立开发数据库。先复制 `.env.example` 到 `.env` 配置数据库密码，再执行 `docker compose up -d`；将 server/.env 的 DATABASE_URL 指向该数据库。不要复用原项目生产数据库。

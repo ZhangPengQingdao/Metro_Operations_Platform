@@ -35,3 +35,12 @@ test('production sandbox applies explicit host theme before CSS and app code, in
   assert.equal(dataset.theme,expected);assert.ok(classes.has('afc-theme-neutral'));
  }
 });
+test('trusted document keeps admission HTML small and references only its verified hash bundle',()=>{
+ const script=part('document.body.textContent="large";');
+ const result=buildSandboxDocument({platformOrigin:'https://platform.example.com',script,trusted:{appId:'materials'}});
+ assert.match(result.html,new RegExp(`/assets/materials/${script.sha256}/ui\\.js`));
+ assert.doesNotMatch(result.html,/document\.body\.textContent/);
+ assert.match(result.headers['Content-Security-Policy'],/script-src 'nonce-[^']+' 'self'/);
+ assert.match(result.headers['Content-Security-Policy'],/sandbox allow-scripts allow-same-origin/);
+ assert.equal(result.headers['Cache-Control'],'no-store');
+});

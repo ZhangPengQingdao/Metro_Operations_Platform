@@ -285,6 +285,15 @@
     .afc-dialog.afc-dialog--md { width: min(calc(100vw - 32px), 520px); }
     .afc-dialog.afc-dialog--lg { width: min(calc(100vw - 32px), 680px); }
     .afc-dialog.afc-dialog--xl { width: min(calc(100vw - 32px), 880px); }
+    .afc-dialog.afc-sidebar-dialog { height: min(600px, 86vh); }
+    .afc-sidebar-dialog > .afc-dialog__body { flex: 1 1 auto; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+    .afc-sidebar-dialog > .afc-dialog__body:last-child { padding-bottom: 0; }
+    .afc-sidebar-dialog__layout { display: grid; grid-template-columns: 164px minmax(0, 1fr); flex: 1 1 auto; min-height: 0; }
+    .afc-sidebar-dialog__nav { display: flex; flex-direction: column; gap: 6px; overflow: auto; border-right: 1px solid var(--afc-color-line); padding: 18px 12px 24px; }
+    .afc-sidebar-dialog__nav .afc-button { justify-content: flex-start; flex: 0 0 auto; min-height: 42px; padding-inline: 12px; white-space: nowrap; }
+    .afc-sidebar-dialog__nav .afc-button[aria-current="page"] { background: var(--afc-color-primary-soft); color: var(--afc-color-ink); }
+    .afc-sidebar-dialog__content { min-width: 0; min-height: 0; overflow-y: auto; padding: 22px 24px 24px; background: var(--afc-color-canvas); }
+    .afc-sidebar-dialog__title { margin: 0 40px 24px 0; font-size: 16px; font-weight: 650; }
 
     .afc-dialog__header {
         min-height: 52px;
@@ -384,6 +393,9 @@
         .afc-dialog__header { min-height: 66px; padding: 11px 11px 11px 15px; }
         .afc-dialog__body { padding: 16px 14px; }
         .afc-dialog__footer { padding: 10px 12px; }
+        .afc-sidebar-dialog__layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+        .afc-sidebar-dialog__nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--afc-color-line); padding: 8px 12px; }
+        .afc-sidebar-dialog__content { padding: 18px 14px; }
     }
 
     /* Button soft variant and ButtonGroup */

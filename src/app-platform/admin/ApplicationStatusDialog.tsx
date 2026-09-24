@@ -1,8 +1,7 @@
 import {applicationStatus} from './application-status';
 import {AppMigrationStatus} from './AppMigrationStatus';
 import React,{useEffect,useState} from 'react';
-import {Button,DataList,PlatformIcon} from '../../components/ui';
-import {AdminDialog} from './AdminShell';
+import {Button,DataList,PlatformIcon,SidebarDialog} from '../../components/ui';
 import {adminRequest,AdminRequestError} from './client';
 import type {Installation} from './AdminApp';
 interface RuntimeStatus {installation:Installation;owned:boolean;serving:boolean;pendingWork?:{records:{id:string;startedAt:string;context?:{kind:string;requestId?:string;apiId?:string}|null}[];hasMore:boolean}}
@@ -32,13 +31,7 @@ export function ApplicationStatusDialog({appId,onClose,onChange}:{appId:string;o
   {id:'calls' as const,label:'未完成调用',icon:'clock' as const},
   ...(runtime?.installation.manifest.storage.mode==='managed'?[{id:'migrations' as const,label:'存储迁移',icon:'database' as const},{id:'writes' as const,label:'数据写入',icon:'database' as const}]:[]),
  ];
- return <AdminDialog className="afc-profile-dialog afc-sidebar-dialog" title="应用状态" onClose={()=>{if(!busy)onClose();}}>
-  <div className="afc-profile-layout">
-   <nav className="afc-profile-nav" aria-label="应用状态">
-    {sections.map(item=><Button key={item.id} variant="ghost" shape="rounded" disabled={busy} aria-current={section===item.id?'page':undefined} leadingIcon={<PlatformIcon name={item.icon} size={18}/>} onClick={()=>setSection(item.id)}>{item.label}</Button>)}
-   </nav>
-   <section className="afc-profile-content" aria-label={sections.find(item=>item.id===section)?.label}>
-    <h3 className="afc-profile-section-title">{sections.find(item=>item.id===section)?.label}</h3>
+ return <SidebarDialog open title="应用状态" onClose={()=>{if(!busy)onClose();}} sections={sections.map(item=>({...item,icon:<PlatformIcon name={item.icon} size={18}/>,disabled:busy}))} activeSection={section} onSectionChange={setSection}>
     {error&&<p role="alert" className="afc-error">{error}</p>}
     {!runtime&&!error&&<p role="status">正在读取状态…</p>}
     {runtime&&<>
@@ -62,7 +55,5 @@ export function ApplicationStatusDialog({appId,onClose,onChange}:{appId:string;o
      </>}
      {(section==='migrations'||section==='writes')&&<AppMigrationStatus key={section} kind={section} appId={appId} onBusy={setBusy} onChange={()=>{onChange();setSerial(v=>v+1);}}/>}
     </>}
-   </section>
-  </div>
- </AdminDialog>;
+ </SidebarDialog>;
 }

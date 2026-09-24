@@ -17,6 +17,12 @@ test('SDK sandbox adapter interoperates with actual broker and rejects spoofed p
  await assert.rejects(f.client.invoke('database.query',{}),/UNKNOWN_METHOD/);assert.equal(f.calls(),1);
  f.client.close();f.broker.close();
 });
+test('retained sandbox keeps accepting requests after 128 completed calls',async()=>{
+ const f=fixture();f.init();
+ for(let i=0;i<130;i++)assert.deepEqual({...await f.client.invoke('sample.echo',{index:i}) as object},{index:i});
+ assert.equal(f.calls(),130);
+ f.client.close();f.broker.close();
+});
 test('changed session closes old client rather than adopting another app generation',async()=>{
  const f=fixture();f.init();f.receive({version:'1.0',type:'init',appId:'sample',session:'b'.repeat(32)});assert.equal(f.client.ready(),false);
  await assert.rejects(f.client.invoke('sample.echo',{}),/SANDBOX_NOT_READY/);f.broker.close();

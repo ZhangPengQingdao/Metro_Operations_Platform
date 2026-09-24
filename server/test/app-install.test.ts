@@ -56,6 +56,14 @@ for(const mode of ['trusted','sandbox'] as const)test(`actual ${mode} lifecycle 
  const binding=await f.journal.get(f.manifest.id);assert.ok(binding);assert.deepEqual(await createInstalledArtifactReader(binding)(record.manifest,'entry',record.manifest.artifacts[0].bytes),await readFile(join(f.input,'entry.js')));
  await writeFile(join(f.input,'manifest.json'),JSON.stringify({...f.manifest,version:'1.0.1'}));await assert.rejects(f.installer.install(f.actor,request),/INSTALL_EXISTS/);
 }));
+test('administrator-selected frontend mode is stored outside the signed manifest',async()=>fixture('sandbox',async f=>{
+ const input={directory:f.input,signatureFile:f.sig,requestId:'installation-request-one',frontendRunMode:'trusted' as const};
+ await assert.rejects(f.installer.install(f.actor,input),/INVALID_FRONTEND_MODE/);
+ const installer=new AppInstaller({...f.options,supportsTrusted:true});
+ await installer.install(f.actor,input);
+ const record=await f.registry.get(f.actor,f.manifest.id);
+ assert.equal(record.frontendRunMode,'trusted');assert.equal((record.manifest as unknown as Record<string,unknown>).frontendRunMode,undefined);
+}));
 test('failure is durable across service recreation; recovery disables without retrying install',async()=>fixture('sandbox',async f=>{
  f.setFail(true);const input={directory:f.input,signatureFile:f.sig,requestId:'installation-request-one'};
  await assert.rejects(f.installer.install(f.actor,input),/RECOVERY_REQUIRED/);

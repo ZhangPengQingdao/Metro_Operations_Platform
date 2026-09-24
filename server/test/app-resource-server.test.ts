@@ -29,3 +29,21 @@ test('resource origin requires distinct HTTPS host',async()=>{
   await assert.rejects(()=>createSandboxResourceServer('https://ops.example.com',origin,0,'127.0.0.1'));
  }
 });
+test('trusted app origins isolate documents and immutable artifacts by app and hash',async()=>{
+ const script='window.appBoot=1;',hash=createHash('sha256').update(script).digest('hex');
+ const server=await createSandboxResourceServer('https://ops.example.com','https://apps.example.net',0,'127.0.0.1',async(appId,requestedHash)=>appId==='materials'&&requestedHash===hash?Buffer.from(script):null);
+ const get=(path:string,host:string)=>new Promise<{status:number;headers:Record<string,unknown>;body:string}>((resolve,reject)=>{
+  const req=request({hostname:'127.0.0.1',port:server.port,path,headers:{Host:host}},res=>{let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve({status:res.statusCode!,headers:res.headers,body}));});req.on('error',reject);req.end();
+ });
+ try{
+  const document=buildSandboxDocument({platformOrigin:'https://ops.example.com',script:{text:script,bytes:Buffer.byteLength(script),sha256:hash},trusted:{appId:'materials'}});
+  const url=server.publish(document,async()=>{},'materials').url;
+  assert.equal(new URL(url).origin,'https://materials.apps.example.net');
+  assert.equal((await get(new URL(url).pathname,'shifts.apps.example.net')).status,404);
+  const html=await get(new URL(url).pathname,'materials.apps.example.net');assert.equal(html.status,200);assert.match(html.body,/assets\/materials/);
+  assert.equal((await get(`/assets/materials/${hash}/ui.js`,'shifts.apps.example.net')).status,404);
+  assert.equal((await get(`/assets/materials/${'0'.repeat(64)}/ui.js`,'materials.apps.example.net')).status,404);
+  const asset=await get(`/assets/materials/${hash}/ui.js`,'materials.apps.example.net');assert.equal(asset.status,200);assert.equal(asset.body,script);
+  assert.equal(asset.headers['cache-control'],'public, max-age=31536000, immutable');
+ }finally{await server.close();}
+});

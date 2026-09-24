@@ -1,8 +1,7 @@
 import {AppSubmissions} from '../submissions/AppSubmissions';
 import {ShieldCheck,ShieldSlash,Plus} from '@phosphor-icons/react';
 import React,{useEffect,useState,type ReactNode} from 'react';
-import {Button,Input,DataList,PlatformIcon,TableActionButton} from '../../components/ui';
-import {AdminDialog} from './AdminShell';
+import {Button,Input,DataList,PlatformIcon,TableActionButton,SidebarDialog} from '../../components/ui';
 import {adminRequest} from './client';
 type Key={keyId:string;publisherId:string;publicKeyPem:string;revoked:boolean;appIds:string[];validFrom:string;validUntil:string};
 type Policy={revision:number;policy:{keys:Key[]};approvedManifestDigests:string[]};
@@ -26,13 +25,7 @@ export function PublisherPolicyDialog({onClose,installConfigured=true}:{onClose:
   const added=await save([...data.policy.keys,{publisherId:publisher,keyId,publicKeyPem:pem.trim(),appIds:apps.split(',').map(v=>v.trim()).filter(Boolean),revoked:false,validFrom:new Date().toISOString(),validUntil:new Date(until).toISOString()}]);
   if(added){setFormOpen(false);setPublisher('');setKeyId('');setApps('');setUntil('');}}
  const label=(text:string,node:ReactNode)=><label>{text}{node}</label>;
- return <AdminDialog className="afc-profile-dialog afc-sidebar-dialog" title="审核与发布" onClose={()=>{if(!blocked)onClose();}}>
-  <div className="afc-profile-layout">
-   <nav className="afc-profile-nav" aria-label="审核与发布">
-    {SECTIONS.map(item=><Button key={item.id} variant="ghost" shape="rounded" disabled={blocked||(!installConfigured&&item.id!=='submissions')} aria-current={section===item.id?'page':undefined} leadingIcon={item.icon} onClick={()=>setSection(item.id)}>{item.label}</Button>)}
-   </nav>
-   <section className="afc-profile-content" aria-label={SECTIONS.find(item=>item.id===section)?.label}>
-    <h3 className="afc-profile-section-title">{section==='submissions'?'上架与更新审核':SECTIONS.find(item=>item.id===section)?.label}</h3>
+ return <SidebarDialog open title="审核与发布" onClose={()=>{if(!blocked)onClose();}} sections={SECTIONS.map(item=>({...item,disabled:blocked||(!installConfigured&&item.id!=='submissions')}))} activeSection={section} onSectionChange={setSection} sectionTitle={section==='submissions'?'上架与更新审核':undefined}>
     {section==='submissions'&&<AppSubmissions admin embedded onClose={onClose} onBusyChange={setReviewBusy}/>}
     {section!=='submissions'&&error&&<p role="alert" className="afc-error">{error}</p>}
     <div hidden={section!=='keys'}>
@@ -56,7 +49,5 @@ export function PublisherPolicyDialog({onClose,installConfigured=true}:{onClose:
       ?data.approvedManifestDigests.map(d=><div className="admin-actions" key={d}><code style={{overflowWrap:'anywhere'}}>{d}</code><Button variant="secondary" disabled={busy} onClick={()=>void revoke(d)}>撤销审批</Button></div>)
       :<p className="afc-muted">暂无已批准的版本摘要。安装应用并批准后会在这里登记。</p>}
     </div>
-   </section>
-  </div>
- </AdminDialog>;
+ </SidebarDialog>;
 }

@@ -7,7 +7,7 @@ import { validateScope, type AuthorizationService, type DataScope } from '../../
 import type { AppGrantResolver, ResolvePlatformActorInput } from '../../platform/context/index.js';
 import { isNativeManagementActor, managementActorId, type PlatformManagementContext } from '../../platform/context/index.js';
 import { checkAppManifestCompatibility, validateAppManifest, type AppManifestHost } from '../manifest/index.js';
-import { AppRegistryError, type AppLifecycleAction, type AppInstallation, type AppInstallationHistory, type InstallationGrant, type StoredAppInstallation } from './model.js';
+import { AppRegistryError, frontendRunMode, type AppFrontendRunMode, type AppLifecycleAction, type AppInstallation, type AppInstallationHistory, type InstallationGrant, type StoredAppInstallation } from './model.js';
 import type { AppRegistryRepository } from './repository.js';
 export * from './model.js';
 export * from './repository.js';
@@ -33,14 +33,17 @@ export class AppRegistryService {
   /** Expose the existing boundary for atomic first-install identity and package binding. */
   get atomic() { return this.repository.atomic; }
 
-  async register(context: PlatformManagementContext, manifestInput: unknown, reason?: string): Promise<AppInstallation> {
+  async register(context: PlatformManagementContext, manifestInput: unknown, reason?: string, frontendMode:AppFrontendRunMode='standard'): Promise<AppInstallation> {
     const parsed = validateAppManifest(manifestInput);
     return runAtomicOperation([this.repository], async () => {
       await admin(context, 'manage');
       if (!parsed.ok) throw new AppRegistryError('INVALID_MANIFEST');
+      if (frontendMode !== 'standard' && frontendMode !== 'trusted') throw new AppRegistryError('INVALID_FRONTEND_MODE');
+      if(frontendMode==='trusted'&&parsed.manifest.id.length>63)throw new AppRegistryError('TRUSTED_APP_ID_TOO_LONG');
+      if(frontendMode==='trusted'&&parsed.manifest.ui.mode!=='sandbox')throw new AppRegistryError('FRONTEND_MODE_REQUIRES_UI');
       if (!checkAppManifestCompatibility(parsed.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       const now = this.clock().toISOString();
-      const record: StoredAppInstallation = { id: randomUUID(), appId: parsed.manifest.id, manifest: parsed.manifest, enabled: false, revision: 1, grants: [], serviceIdentityId: null, credentialDigest: null, createdAt: now, updatedAt: now };
+      const record: StoredAppInstallation = { id: randomUUID(), appId: parsed.manifest.id, manifest: parsed.manifest, enabled: false, frontendRunMode:frontendMode, revision: 1, grants: [], serviceIdentityId: null, credentialDigest: null, createdAt: now, updatedAt: now };
       await this.repository.insert(record);
       await this.audit(context, record, 'registered', reason);
       return publicRecord(record);
@@ -117,6 +120,15 @@ export class AppRegistryService {
       if (typeof enabled !== 'boolean') throw new AppRegistryError('INVALID_ENABLED');
       if (enabled && !checkAppManifestCompatibility(record.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       record.enabled = enabled;
+    });
+  }
+  setFrontendRunMode(context:PlatformManagementContext,appId:string,revision:number,mode:AppFrontendRunMode){
+    if(mode!=='standard'&&mode!=='trusted')return Promise.reject(new AppRegistryError('INVALID_FRONTEND_MODE'));
+    if(mode==='trusted'&&appId.length>63)return Promise.reject(new AppRegistryError('TRUSTED_APP_ID_TOO_LONG'));
+    return this.change(context,appId,revision,'frontend-mode-changed',`Frontend mode: ${mode}`,async record=>{
+      if(frontendRunMode(record)===mode)throw new AppRegistryError('FRONTEND_MODE_UNCHANGED');
+      if(mode==='trusted'&&record.manifest.ui.mode!=='sandbox')throw new AppRegistryError('FRONTEND_MODE_REQUIRES_UI');
+      record.frontendRunMode=mode;
     });
   }
   approveGrant(context: PlatformManagementContext, appId: string, expectedRevision: number, input: ApproveAppGrantInput, reason?: string) {

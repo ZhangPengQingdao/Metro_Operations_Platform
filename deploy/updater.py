@@ -240,6 +240,7 @@ class Deployment:
    api['volumes'].append(str(maintenance)+':/run/mop-maintenance')
    api['environment'].update({'MOP_MAINTENANCE_SOCKET':'/run/mop-maintenance/control.sock','MOP_MAINTENANCE_STATE':'/run/mop-maintenance/state.json'})
   if self.config.get('applications'):
+   if self.config.get('proxyMode')=='external':api['environment']['MOP_APP_TRUSTED_ORIGINS_ENABLED']='true'
    apps=root+'/apps'
    db['networks']=['internal','edge']
    # Shared network namespace keeps both database identities on verified loopback.
@@ -482,7 +483,7 @@ def install(root,v,key):
   require(not applications or (resource_domain!=domain and re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',resource_domain)),'INVALID_RESOURCE_DOMAIN')
   if external:
    print(f'请在 1Panel 配置 https://{domain} → http://127.0.0.1:{http_port}，保留 Host 请求头。')
-   if applications:print(f'应用资源配置 https://{resource_domain} → http://127.0.0.1:{resource_port}，保留 Host；该域名只用于应用资源，不设置平台 Cookie。')
+   if applications:print(f'应用资源配置 https://{resource_domain} 与 https://*.{resource_domain} → http://127.0.0.1:{resource_port}，配置 wildcard DNS/TLS，保留原始 Host；该域名只用于应用资源，不设置平台 Cookie。')
   username=input('首位管理员用户名：').strip();require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{2,63}',username),'INVALID_USERNAME')
   password=getpass.getpass('管理员密码（至少 12 字符）：');require(12<=len(password) and len(password.encode())<=72 and password==getpass.getpass('再次输入密码：'),'INVALID_PASSWORD')
   token=getpass.getpass('GitHub 私有仓库只读令牌：').strip();require(10<len(token)<512 and not any(c.isspace() for c in token),'INVALID_GITHUB_TOKEN')
@@ -501,6 +502,7 @@ def install(root,v,key):
    api['MOP_APP_STORAGE_ADMIN_DATABASE_URL']=f'postgresql://postgres:{postgres_password}@127.0.0.1:5432/metro_operations_platform'
    api['MOP_APP_MANAGEMENT_CONFIG']='/run/secrets/app-management.json'
    api['MOP_APP_RESOURCE_ORIGIN']='https://'+resource_domain
+   if external:api['MOP_APP_TRUSTED_ORIGINS_ENABLED']='true'
   atomic(secretsdir/'api.json',api,0o400);os.chown(secretsdir/'api.json',1000,1000)
   atomic(root/'config.json',{'domain':domain,'socketGid':gid,'bootstrapUsername':username.lower(),'proxyMode':'external' if external else 'direct','httpPort':http_port,'applications':applications,'resourceDomain':resource_domain,'resourcePort':resource_port})
   shutil.copyfile(key,root/'release-public.pem');(root/'release-public.pem').chmod(0o600)

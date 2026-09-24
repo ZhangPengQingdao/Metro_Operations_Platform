@@ -47,7 +47,7 @@ export function createAppSandboxClient(options:{appId:string;platformOrigin:stri
  });
  const client=createAppGatewayClient(async(request,signal)=>{
   if(closed||!session)throw new AppGatewayClientError('SANDBOX_NOT_READY','not_started');
-  if(pending.size>=8||sequence>=128)throw new AppGatewayClientError('LIMIT_EXCEEDED','not_started');
+  if(pending.size>=8||sequence>=2147483647)throw new AppGatewayClientError('LIMIT_EXCEEDED','not_started');
   const id=++sequence;
   let timer:ReturnType<typeof setTimeout>|undefined;
   let abort=()=>{};

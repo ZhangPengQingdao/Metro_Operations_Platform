@@ -47,6 +47,19 @@ async function store(kind:'memory'|'postgres') {
   return {repository:new PostgresAppRegistryRepository(client),close:()=>db.close()};
 }
 for(const kind of ['memory','postgres'] as const) {
+  test(`${kind}: frontend run mode is platform-owned, revisioned and audited`,async()=>{
+    const s=await store(kind);try{
+      const f=await setup(s.repository);
+      const m=manifest();m.ui={mode:'sandbox',entryArtifactId:'entry'};m.artifacts=[{id:'entry',kind:'frontend',path:'entry.js',bytes:1,sha256:'0'.repeat(64)}];
+      let app=await f.registry.register(f.admin,m);assert.equal(app.frontendRunMode,'standard');
+      app=await f.registry.setFrontendRunMode(f.admin,app.appId,app.revision,'trusted');
+      assert.equal(app.frontendRunMode,'trusted');assert.equal(app.revision,2);
+      await assert.rejects(f.registry.setFrontendRunMode(f.admin,app.appId,1,'standard'),/STALE_REVISION/);
+      await assert.rejects(f.registry.setFrontendRunMode(f.application,app.appId,2,'standard'),/REGISTRY_ACCESS_DENIED/);
+      app=await f.registry.setFrontendRunMode(f.admin,app.appId,app.revision,'standard');assert.equal(app.frontendRunMode,'standard');
+      assert.deepEqual((await f.registry.listHistory(f.admin,app.appId)).map(item=>item.action),['registered','frontend-mode-changed','frontend-mode-changed']);
+    }finally{await s.close();}
+  });
   test(`${kind}: default disabled, immutable detached manifest, native administration and actual L3 intersection`,async()=>{
     const s=await store(kind); try {
       const f=await setup(s.repository), m=manifest();

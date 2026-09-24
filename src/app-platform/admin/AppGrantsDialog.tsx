@@ -1,8 +1,7 @@
 import {Plus,ShieldSlash} from '@phosphor-icons/react';
 import {AppOwner} from './AppOwner';
-import {Alert,Badge,Button,PlatformIcon} from '../../components/ui';
+import {Alert,Badge,Button,PlatformIcon,SidebarDialog} from '../../components/ui';
 import React, {useEffect, useState, type ReactNode} from 'react';
-import {AdminDialog} from './AdminShell';
 import {adminRequest} from './client';
 import type {Installation} from './AdminApp';
 
@@ -61,7 +60,6 @@ export function AppGrantsDialog({appId, onClose, onChange}: {appId:string; onClo
   {id:'grants',label:'平台能力',icon:<PlatformIcon name="lock" size={18}/>},
  ];
  const active=sections.some(item=>item.id===section)?section:'grants';
- const activeLabel=sections.find(item=>item.id===active)?.label??'';
  function renderCard(cap:Capability){
   if(!app)return null;
   const grants=app.grants.filter(g=>g.permissionCode===cap.code&&g.status==='active');
@@ -98,13 +96,7 @@ export function AppGrantsDialog({appId, onClose, onChange}: {appId:string; onClo
  const capabilities=app?capabilityList(app):[];
  const platformCaps=capabilities;
 
- return <AdminDialog className="afc-profile-dialog afc-sidebar-dialog" title="应用接入管理" onClose={()=>{if(!busy)onClose();}}>
-  <div className="afc-profile-layout">
-   <nav className="afc-profile-nav" aria-label="应用授权">
-    {sections.map(item=><Button key={item.id} variant="ghost" shape="rounded" disabled={busy} aria-current={active===item.id?'page':undefined} leadingIcon={item.icon} onClick={()=>setSection(item.id)}>{item.label}</Button>)}
-   </nav>
-   <section className="afc-profile-content" aria-label={activeLabel}>
-    <h3 className="afc-profile-section-title">{activeLabel}</h3>
+ return <SidebarDialog open title="应用接入管理" onClose={()=>{if(!busy)onClose();}} navigationLabel="应用授权" sections={sections.map(item=>({...item,disabled:busy}))} activeSection={active} onSectionChange={setSection}>
     {error&&<p className="afc-error" role="alert">{error}</p>}
     <div hidden={active!=='owner'}><AppOwner appId={appId}/></div>
 
@@ -115,7 +107,5 @@ export function AppGrantsDialog({appId, onClose, onChange}: {appId:string; onClo
 
      </>}
     </div>
-   </section>
-  </div>
- </AdminDialog>;
+ </SidebarDialog>;
 }

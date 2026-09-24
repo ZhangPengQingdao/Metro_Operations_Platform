@@ -626,11 +626,28 @@ body {
   justify-content: space-between;
   margin-top: 24px;
   z-index: 20;
+  gap: 16px;
+  flex-wrap: wrap;
 }
+.bottom-bar-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.bottom-bar-status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #52525b;
+}
+.bottom-bar-status.error { color: #991b1b; }
+.bottom-bar-status.success { color: #166534; }
 .bottom-bar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* Records List & Tags */
@@ -1032,6 +1049,16 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
     }
   }
 
+  const saved = notice.startsWith('记录已保存');
+  let saveStatus = error || notice;
+  if (!ready) saveStatus = error ? `表单加载失败：${error}` : '正在加载表单，完成后可保存';
+  else if (busy) saveStatus = '正在保存，请稍候…';
+  else if (uncertain && !saved) saveStatus = '保存结果未确认，请先核对记录，避免重复提交';
+  let saveLabel = kind === 'meeting' ? '保存晨会记录' : '确认交接并保存';
+  if (!ready) saveLabel = error ? '加载失败' : '正在加载…';
+  else if (busy) saveLabel = '保存中…';
+  else if (uncertain) saveLabel = saved ? '已保存' : '请先核对记录';
+
   return (
     <form onSubmit={save} className="shifts-form">
       {!ready && <div className="notice-banner" role="status">{error ? <>表单尚未加载完整。<Button type="button" onClick={() => setLoadAttempt(n => n + 1)}>重新加载</Button></> : '正在加载表单模块和上一班记录…'}</div>}
@@ -1355,25 +1382,29 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
 
       {/* Bottom Sticky Actions Bar */}
       <div className="bottom-bar">
-        <div className="bottom-bar-actions">
-          {!initial && (
-            <>
-              <Button type="button" variant="ghost" shape="pill" size="sm" disabled={busy || uncertain} onClick={stash}>
-                暂存草稿
+        <div className="bottom-bar-feedback">
+          {saveStatus && <div className={`bottom-bar-status ${error ? 'error' : saved ? 'success' : ''}`} role={error ? 'alert' : 'status'}>{saveStatus}</div>}
+          <div className="bottom-bar-actions">
+            {!initial && (
+              <>
+                <Button type="button" variant="ghost" shape="pill" size="sm" disabled={busy || uncertain} onClick={stash}>
+                  暂存草稿
+                </Button>
+                <Button type="button" variant="ghost" shape="pill" size="sm" disabled={busy || uncertain} onClick={restore}>
+                  恢复草稿
+                </Button>
+              </>
+            )}
+            {!ready && error && <Button type="button" variant="secondary" shape="pill" size="sm" onClick={() => setLoadAttempt(n => n + 1)}>重新加载</Button>}
+            {saved && !initial && (
+              <Button type="button" variant="secondary" shape="pill" size="sm" onClick={() => window.location.reload()}>
+                新建一条
               </Button>
-              <Button type="button" variant="ghost" shape="pill" size="sm" disabled={busy || uncertain} onClick={restore}>
-                恢复草稿
-              </Button>
-            </>
-          )}
-          {notice.startsWith('记录已保存') && !initial && (
-            <Button type="button" variant="secondary" shape="pill" size="sm" onClick={() => window.location.reload()}>
-              新建一条
-            </Button>
-          )}
+            )}
+          </div>
         </div>
         <Button type="submit" variant="primary" shape="pill" disabled={busy || uncertain || !ready}>
-          {busy ? '保存中…' : kind === 'meeting' ? '保存晨会记录' : '确认交接并保存'}
+          {saveLabel}
         </Button>
       </div>
     </form>
