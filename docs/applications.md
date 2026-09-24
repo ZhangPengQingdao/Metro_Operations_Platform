@@ -46,6 +46,8 @@ CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默�
 
 标准沙箱保持 `sandbox="allow-scripts"`、opaque Origin、单次 `/document/<token>` 文档和内联已校验的 `ui.js`。可信应用由平台安装记录中的 `frontendRunMode` 决定，使用 `sandbox="allow-scripts allow-same-origin"`。旧安装记录没有此字段时一律按标准沙箱处理；应用 manifest 无法声明或提升运行模式。旧契约中的 `ui.mode: trusted` 仍不属于可安装 UI 类型，签名包应声明 `ui.mode: sandbox`，是否可信只由管理员选择。应用管理的“设置”可修改模式，修改会提升安装 revision、记入历史并使员工 admission key 失效；工作台下一次状态刷新会卸载旧 retained/prewarm iframe，按新模式重新创建。服务端业务、员工、Gateway、存储、审批和审计检查不因可信模式放宽。
 
+两种运行模式都没有 `allow-forms`。应用应由普通按钮的点击事件调用 SDK/Bridge 保存，不要依赖原生 `<form onSubmit>` 或 `type="submit"`：浏览器会在触发 `submit` 事件前阻止沙箱表单提交。涉及保存的应用应在 `sandbox="allow-scripts"` 的真实 iframe 中验证按钮事件和 Bridge 请求。
+
 生产可信模式要求 `MOP_APP_RESOURCE_ORIGIN=https://apps.example.net`，且反向代理将 `apps.example.net` 和 `*.apps.example.net` 都转发到资源服务端口，原样保留 Host，不转发 Cookie/Authorization，不在资源域设置平台 Cookie。平台域名不得等于资源域或位于其子域下；每个 App 的稳定 Origin 为 `https://<appId>.apps.example.net`，不同 App 不共用 Origin。为 `*.apps.example.net` 配置 DNS 记录与 wildcard TLS 证书，再设 `MOP_APP_TRUSTED_ORIGINS_ENABLED=true` 开放可信模式。外部反向代理安装模式会写入该开关；内置 Caddy 的直接 HTTPS 模式没有自动获取 wildcard 证书的 DNS challenge 配置，只提供标准沙箱，不应开启该开关。切换代理或证书前先验证基础域和至少两个不同 App 子域能到达同一个资源服务，且 Host 保持原值。
 
 可信应用的 `/document/<token>` 仍是单次、`no-store`，消费时重新校验 admission；HTML 只含主题/bootstrap 和指向 `/assets/<appId>/<sha256>/ui.js` 的脚本标签。资源服务只接受与 Host 的 App ID 一致、当前已安装且启用、审批有效的 frontend artifact，读取时核对字节数与 SHA-256；未知 hash、其他 App Host、路径或已停用版本返回 404。成功响应为 `public, max-age=31536000, immutable`。bundle 是签名安装包的静态代码，不注入员工身份、会话、权限或 bearer secret。CSP 仍禁止网络连接、worker、表单与嵌入，并只允许 nonce 脚本和同源 bundle；Bridge 精确校验该 App Origin，业务调用仍经平台 admission。
