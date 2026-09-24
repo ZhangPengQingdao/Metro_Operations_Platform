@@ -997,8 +997,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
 
   const patch = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  async function save(e) {
-    e.preventDefault();
+  async function save() {
     if (busy || uncertain || !ready) return;
     setBusy(true);
     setError('');
@@ -1060,7 +1059,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
   else if (uncertain) saveLabel = saved ? '已保存' : '请先核对记录';
 
   return (
-    <form onSubmit={save} className="shifts-form">
+    <div className="shifts-form">
       {!ready && <div className="notice-banner" role="status">{error ? <>表单尚未加载完整。<Button type="button" onClick={() => setLoadAttempt(n => n + 1)}>重新加载</Button></> : '正在加载表单模块和上一班记录…'}</div>}
       {error && <div className="notice-banner error" role="alert">{error}</div>}
       {notice && <div className="notice-banner success" role="status">{notice}</div>}
@@ -1403,11 +1402,11 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
             )}
           </div>
         </div>
-        <Button type="submit" variant="primary" shape="pill" disabled={busy || uncertain || !ready}>
+        <Button type="button" variant="primary" shape="pill" disabled={busy || uncertain || !ready} onClick={() => void save()}>
           {saveLabel}
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 
