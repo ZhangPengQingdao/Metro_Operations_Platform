@@ -103,8 +103,14 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    const db=await options.pool.connect();
    try {const result=await db.query('SELECT id,actor_id AS "actorId",action,target_id AS "targetId",occurred_at AS "createdAt" FROM platform_admin_audit ORDER BY occurred_at DESC,id DESC LIMIT 100');return {entries:(result as {rows:unknown[]}).rows};}finally{db.release();}
   });
-  scoped.get('/apps',async req=>withRegistry(req,async(service,context)=>({applications:await service.list(context),runtimeConfigured:!!options.lifecycle,installConfigured:!!options.install})));
+  scoped.get('/apps',async req=>withRegistry(req,async(service,context)=>({applications:await service.list(context),runtimeConfigured:!!options.lifecycle,installConfigured:!!options.install,trustedAvailable:options.management?.trustedAvailable()??false})));
   scoped.get<{Params:{appId:string}}>('/apps/:appId',async req=>withRegistry(req,(service,context)=>service.get(context,req.params.appId)));
+  scoped.put<{Params:{appId:string}}>('/apps/:appId/frontend-mode',{bodyLimit:1024},async req=>{
+   const body=z.object({revision:z.number().int().positive(),mode:z.enum(['standard','trusted'])}).strict().parse(req.body);
+   if(body.mode==='trusted'&&!options.management?.trustedAvailable())throw new AdminIdentityError(503,'APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
+   const result=await withRegistry(req,(service,context)=>service.setFrontendRunMode(context,req.params.appId,body.revision,body.mode));
+   options.management?.invalidateEmployeeSessions();return result;
+  });
   scoped.get('/overview',async req=>withRegistry(req,async(service,context)=>{
    const apps=await service.list(context);
    return {installed:apps.length,enabled:apps.filter(a=>a.enabled).length,attention:apps.filter(a=>a.lifecycle&&a.lifecycle.status!=='completed').length,runtimeConfigured:!!options.lifecycle,installConfigured:!!options.install};
@@ -223,7 +229,10 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.post('/install',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
    if(!options.install)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
    const context=await createAdministratorContext(req,options.identity);
-   return withInstallUpload(req.body,options.install.uploadRoot,input=>options.install!.installer.install(context,input));
+   const body=req.body as {package?:unknown;frontendRunMode?:unknown}|null;
+   const wrapped=!!body&&typeof body==='object'&&Object.prototype.hasOwnProperty.call(body,'package');
+   if(wrapped&&(Object.keys(body).some(key=>!['package','frontendRunMode'].includes(key))||!['standard','trusted'].includes(String(body.frontendRunMode))))throw new AdminIdentityError(400,'INVALID_FRONTEND_MODE');
+   return withInstallUpload(wrapped?body.package:req.body,options.install.uploadRoot,input=>options.install!.installer.install(context,{...input,frontendRunMode:wrapped?body.frontendRunMode as 'standard'|'trusted':'standard'}));
   });
  },{prefix:'/api/admin'});
 }

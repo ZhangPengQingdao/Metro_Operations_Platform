@@ -39,6 +39,14 @@ test('sandbox bridge rejects foreign sources origins apps sessions protocols and
   await f.receive(f.request(3)); await f.receive(f.request(3)); await f.receive(f.request(2));
   assert.equal(f.executions(), 1); assert.equal(f.responses.length, 1);
 });
+test('trusted bridge accepts only the admitted app origin',async()=>{
+ const source={},responses:SandboxBridgeResponse[]=[];
+ const broker=new SandboxBridgeBroker({appId:'sample-app',session,source,origin:'https://sample-app.apps.example.net',send:response=>responses.push(response),operations:new Map([['demo.read',{validate:()=>true,authorize:async()=>true,execute:async()=>({ok:true})}]])});
+ const data={version:'1.0',type:'request',appId:'sample-app',session,id:1,method:'demo.read',params:null};
+ await broker.receive({source,origin:'null',data});await broker.receive({source,origin:'https://other.apps.example.net',data});
+ assert.equal(responses.length,0);
+ await broker.receive({source,origin:'https://sample-app.apps.example.net',data});assert.equal(responses.length,1);
+});
 
 test('sandbox bridge allows only registered methods and fresh scope authorization', async () => {
   let allowed = false;
@@ -93,7 +101,7 @@ test('sandbox bridge freezes input before awaits and suppresses stale privilege 
   assert.deepEqual(f.responses.map((r) => r.ok === false ? r.error : 'leaked'), ['DENIED']);
 });
 
-test('sandbox bridge caps concurrency and lifetime request count', async () => {
+test('sandbox bridge caps concurrency while retained frames continue past 128 requests', async () => {
   const gate = deferred<boolean>();
   const f = fixture({ authorize: async () => gate.promise });
   const pending = Array.from({ length: 8 }, (_, i) => f.receive(f.request(i + 1)));
@@ -101,7 +109,7 @@ test('sandbox bridge caps concurrency and lifetime request count', async () => {
   if (f.responses[0].ok === false) assert.equal(f.responses[0].error, 'LIMIT_EXCEEDED');
   gate.resolve(true); await Promise.all(pending);
   for (let id = 10; id <= 130; id++) await f.receive(f.request(id));
-  assert.equal(f.responses.length, 128); assert.equal(f.executions(), 127);
+  assert.equal(f.responses.length, 130); assert.equal(f.executions(), 129);
 });
 
 test('sandbox bridge close aborts in-flight handlers and suppresses late results and reentrant calls', async () => {

@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {PlatformMaintenance} from '../updates/maintenance.js';
 import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from './platform-grants.js';
 import {previewVerifiedPackage} from './preview.js';
@@ -8,7 +9,7 @@ import {Client} from 'pg';
 import {getDatabasePool} from '../../core/database/index.js';
 import {PLATFORM_CAPABILITY_CATALOG} from '@metro/platform-sdk';
 import {getCoreConfig} from '../../core/config/index.js';
-import {AppRegistryService,PostgresAppRegistryRepository} from '../registry/index.js';
+import {AppRegistryService,PostgresAppRegistryRepository,frontendRunMode} from '../registry/index.js';
 import {AppInstaller} from '../install/service.js';
 import {PostgresInstallJournal} from '../install/journal.js';
 import {AppVersionService,PostgresAppVersionJournal,createVersionedArtifactReader} from '../install/version-service.js';
@@ -83,7 +84,8 @@ export async function createAppManagement(configFile:string,origin:string){
   if(fresh.revision!==approval.revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
   await approveInstalledPlatformGrants(registry,context,appId);
  }
- const installer=new AppInstaller({beforeInstall:(context,record)=>applyApprovedCapabilities(context,record.appId),registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
+ const trustedConfigured=!!process.env.MOP_APP_RESOURCE_ORIGIN&&process.env.MOP_APP_TRUSTED_ORIGINS_ENABLED==='true';
+ const installer=new AppInstaller({supportsTrusted:trustedConfigured,beforeInstall:(context,record)=>applyApprovedCapabilities(context,record.appId),registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
  const versions=new AppVersionService({afterUpdate:applyApprovedCapabilities,registry,journal:versionJournal,installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:appId=>runtime.getHost(appId)});
  async function assertRuntimeApproval(context:PlatformManagementContext|undefined,appId:string){
   const current=context?await registry.get(context,appId):await registry.runtimeSnapshot(appId),binding=await installJournal.get(appId);
@@ -110,7 +112,19 @@ export async function createAppManagement(configFile:string,origin:string){
   });
  }
 
- if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN);
+ if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN,3103,'0.0.0.0',async(appId,hash)=>{
+  const current=await registry.runtimeSnapshot(appId);
+  if(!current.enabled||frontendRunMode(current)!=='trusted')return null;
+  await assertRuntimeApproval(undefined,appId);
+  const manifest=current.manifest,artifact=manifest.artifacts.find(a=>manifest.ui.mode==='sandbox'&&a.id===manifest.ui.entryArtifactId);
+  if(!artifact||artifact.kind!=='frontend'||artifact.sha256!==hash)return null;
+  const bytes=await readArtifact(manifest,artifact.id,artifact.bytes);
+  if(bytes.length!==artifact.bytes||createHash('sha256').update(bytes).digest('hex')!==hash)return null;
+  const fresh=await registry.runtimeSnapshot(appId);
+  if(fresh.id!==current.id||fresh.revision!==current.revision||!fresh.enabled||frontendRunMode(fresh)!=='trusted')return null;
+  await assertRuntimeApproval(undefined,appId);
+  return bytes;
+ });
  const preview=(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>previewVerifiedPackage(context,input,{
   state:()=>approvals.get(context),installed:id=>repository.findByAppId(id),
   supported:async manifest=>isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,await loadAppManagementConfig(configFile)),
@@ -132,6 +146,7 @@ export async function createAppManagement(configFile:string,origin:string){
  },process.env.MOP_MAINTENANCE_STATE):undefined;
  await maintenance?.initialize();
  return {
+  trustedAvailable:()=>!!resources&&trustedConfigured,
   invalidateEmployeeSessions:invalidateAppSessions,
   maintenanceActive:()=>maintenanceBlocked,
   maintenanceStatus:()=>maintenance?.status()??null,
@@ -139,7 +154,7 @@ export async function createAppManagement(configFile:string,origin:string){
   restoreMaintenance:(context:PlatformManagementContext,taskId:string)=>managementQueue.run(async()=>{if(!maintenance)throw Error('MAINTENANCE_NOT_CONFIGURED');maintenanceContext=context;return maintenance.restore(taskId);}),
   approvalPolicy:(context:PlatformManagementContext)=>approvals.get(context),
   savePublisherPolicy:(context:PlatformManagementContext,revision:number,keys:Parameters<AppApprovalStore['save']>[2]['keys'])=>queue.run(async()=>{const result=await approvals.save(context,revision,{keys});invalidateAppSessions();return result;}),
-  previewPackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>queue.run(()=>preview(context,input)),
+  previewPackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>queue.run(async()=>({...await preview(context,input),trustedAvailable:trustedConfigured})),
   approvePackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string},revision:number,digest:string,platformCapabilities=false)=>queue.run(async()=>{
    const result=await preview(context,input);
    if(result.digest!==digest||result.policyRevision!==revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
@@ -154,7 +169,8 @@ export async function createAppManagement(configFile:string,origin:string){
    for(let index=0;index<candidates.length;index+=4){
     const group=await Promise.all(candidates.slice(index,index+4).map(async({appId})=>{
      try{const admitted=await admitEmployee(appId,async()=>identity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;
-      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes}:null;
+      const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);
+      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes,runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
      }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
     }));
     for(const app of group)if(app)applications.push(app);
@@ -168,10 +184,12 @@ export async function createAppManagement(configFile:string,origin:string){
    const canonical=new URL(origin);if(!resources&&(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname)))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
    const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);if(!artifact)throw new AppManagementError('APP_UI_ARTIFACT_MISSING');
    const bytes=await readArtifact(m,artifact.id,artifact.bytes);
-   const document=buildSandboxDocument({platformOrigin:origin,route:path,script:{text:Buffer.from(bytes).toString('utf8'),bytes:artifact.bytes,sha256:artifact.sha256}});
+   const trusted=frontendRunMode(first.installation)==='trusted';
+   if(trusted&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');
+   const document=buildSandboxDocument({platformOrigin:origin,route:path,script:{text:Buffer.from(bytes).toString('utf8'),bytes:artifact.bytes,sha256:artifact.sha256},...(trusted?{trusted:{appId}}:{})});
    const fresh=await admitEmployee(appId,resolveIdentity);
    if(fresh.identity.userId!==first.identity.userId||fresh.access.revision!==first.access.revision||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
-   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),clientRouting:m.ui.clientRouting===true,admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));}):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
+   return {appId,name:m.name,api:m.api.map(({id,method,path})=>({id,method,path})),clientRouting:m.ui.clientRouting===true,admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));},trusted?appId:undefined):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
   },
   async employeeUiAdmission(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
@@ -230,7 +248,7 @@ export async function createAppManagement(configFile:string,origin:string){
     prepareCredential:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.prepareCredential(context,revision)),
    };
   },
-  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();}):undefined});}),
+  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);if(frontendRunMode(await registry.get(context,appId))==='trusted'&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize,trustedAppId)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();},trustedAppId):undefined});}),
   close:()=>queue.close(async()=>{await resources?.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
  };
  }catch(error){await resources?.close();await storage?.closeRuntimeConnections();db.release();throw error;}

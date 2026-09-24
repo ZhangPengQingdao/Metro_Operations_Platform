@@ -13,6 +13,7 @@ export interface SandboxBridgeOptions {
   appId: string;
   session: string;
   source: object;
+  origin?: string;
   send(response: SandboxBridgeResponse): void;
   operations: ReadonlyMap<string, SandboxBridgeOperation>;
 }
@@ -90,7 +91,6 @@ export class SandboxBridgeBroker {
   private readonly active = new Set<AbortController>();
   private closed = false;
   private lastId = 0;
-  private accepted = 0;
 
   constructor(options: SandboxBridgeOptions) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(options.appId) || !/^[a-f0-9]{32}$/.test(options.session)
@@ -113,7 +113,7 @@ export class SandboxBridgeBroker {
   }
 
   async receive(event: { source: unknown; origin: string; data: unknown }): Promise<void> {
-    if (this.closed || event.source !== this.options.source || event.origin !== 'null') return;
+    if (this.closed || event.source !== this.options.source || event.origin !== (this.options.origin??'null')) return;
     const data = event.data;
     let id: number;
     try {
@@ -121,10 +121,10 @@ export class SandboxBridgeBroker {
         || own(data, 'appId') !== this.options.appId || own(data, 'session') !== this.options.session) return;
       const candidate = own(data, 'id');
       if (typeof candidate !== 'number' || !Number.isInteger(candidate) || candidate < 1 || candidate > 2147483647
-        || candidate <= this.lastId || this.accepted >= 128) return;
+        || candidate <= this.lastId) return;
       id = candidate;
     } catch { return; }
-    this.lastId = id; this.accepted++;
+    this.lastId = id;
     const base = { version: '1.0', type: 'response', appId: this.options.appId, session: this.options.session, id } as const;
     const reject = (error: SandboxBridgeError) => this.respond({ ...base, ok: false, error });
     let params: SandboxJson;

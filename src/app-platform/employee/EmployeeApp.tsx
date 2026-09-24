@@ -13,7 +13,7 @@ import type {SandboxJson} from '../host/sandbox/bridge';
 import {rememberApp,type RetainedApp} from './retained-apps';
 
 type Account={id:string;personId:string;username:string;name?:string};
-type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
+type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;runtimeRevision:number;frontendRunMode:'standard'|'trusted';bundleUrl?:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
 type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;resource:SandboxFrameResource;initialRoute:string};
 function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{account:Account;path:string;visible:boolean;prefetch:boolean;onNavigation:(appId:string,ids:string[])=>void}){
  const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0),[activeRoute,setActiveRoute]=useState('/'),[pending,setPending]=useState(true);
@@ -66,6 +66,7 @@ export default function EmployeeApp(){
  const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
  const {pathname}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [retainedApps,setRetainedApps]=useState<RetainedApp[]>([]);
+ const prefetchLinks=React.useRef(new Map<string,HTMLLinkElement>());
  const activeApp=pathname.startsWith('/employee/app/')&&!/^\/employee\/app\/[^/]+\/~management$/.test(pathname);
  const activeAppId=activeApp?pathname.split('/')[3]:null;
  useEffect(()=>{if(activeAppId&&account){setRetainedApps(current=>rememberApp(current,{accountId:account.id,appId:activeAppId,path:pathname,prefetch:false}));try{window.localStorage.setItem(`mop:last-app:${account.id}`,pathname);}catch{}}},[activeAppId,pathname,account?.id]);
@@ -81,6 +82,21 @@ export default function EmployeeApp(){
  },[account?.id,activeApp,pathname,retainedApps,apps]);
  useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/profile').then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
  useEffect(()=>{if(!account)return;const accountId=account.id;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){const allowed=new Set(value.applications.map(app=>app.appId));setRetainedApps(current=>current.every(item=>item.accountId===accountId&&allowed.has(item.appId))?current:current.filter(item=>item.accountId===accountId&&allowed.has(item.appId)));setOwned(managed.applications);setApps(value.applications);setAppsLoaded(true);setError('');}}catch(e){if(active){setApps([]);setAppsLoaded(false);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
+ useEffect(()=>{
+  const desired=new Set<string>();
+  if(pathname!=='/employee'||!appsLoaded||!account){for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();return;}
+  for(const app of apps){
+   if(app.frontendRunMode!=='trusted'||!app.bundleUrl||retainedApps.some(item=>item.accountId===account.id&&item.appId===app.appId))continue;
+   let url:URL;
+   try{url=new URL(app.bundleUrl);}catch{continue;}
+   if(url.protocol!=='https:'||url.origin===window.location.origin||!/^\/assets\/[a-z][a-z0-9-]*\/[a-f0-9]{64}\/ui\.js$/.test(url.pathname))continue;
+   desired.add(url.href);
+   if(prefetchLinks.current.has(url.href))continue;
+   const link=document.createElement('link');link.rel='prefetch';link.as='script';link.href=url.href;link.referrerPolicy='no-referrer';document.head.appendChild(link);prefetchLinks.current.set(url.href,link);
+  }
+  for(const [url,link] of prefetchLinks.current)if(!desired.has(url)){link.remove();prefetchLinks.current.delete(url);}
+ },[pathname,appsLoaded,apps,retainedApps,account?.id]);
+ useEffect(()=>()=>{for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();},[]);
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" replace/>;
@@ -90,7 +106,7 @@ export default function EmployeeApp(){
  {error&&<p role="alert" className="afc-error">{error}</p>}
  {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
  {activeAppId&&!retainedApps.some(item=>item.accountId===account.id&&item.appId===activeAppId)&&<p role="status">{appsLoaded&&!apps.some(app=>app.appId===activeAppId)?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
- {retainedApps.filter(item=>item.accountId===account.id).sort((a,b)=>a.appId.localeCompare(b.appId)).map(item=>{const visible=activeAppId===item.appId;return <div key={`${account.id}:${item.appId}`} style={visible?undefined:{display:'none'}}><EmployeeApplication account={account} path={visible?pathname:item.path} visible={visible} prefetch={!visible&&item.prefetch} onNavigation={onNavigation}/></div>;})}
+ {retainedApps.filter(item=>item.accountId===account.id).sort((a,b)=>a.appId.localeCompare(b.appId)).map(item=>{const visible=activeAppId===item.appId;const runtimeRevision=apps.find(app=>app.appId===item.appId)?.runtimeRevision??0;return <div key={`${account.id}:${item.appId}:${runtimeRevision}`} style={visible?undefined:{display:'none'}}><EmployeeApplication account={account} path={visible?pathname:item.path} visible={visible} prefetch={!visible&&item.prefetch} onNavigation={onNavigation}/></div>;})}
  </AdminShell>;
 }
 function EmployeeProfile(){

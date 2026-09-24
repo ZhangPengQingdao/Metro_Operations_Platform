@@ -2,7 +2,7 @@ import {readThemePreference} from '../../identity/theme';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation } from './bridge.js';
 
-export type SandboxFrameResource = { mode: 'isolated-origin'; url: string; platformOrigin: string }
+export type SandboxFrameResource = { mode: 'isolated-origin'; url: string; platformOrigin: string; frontendRunMode?:'trusted' }
   | { mode: 'local-demo'; html: string; platformOrigin: string };
 export interface SandboxFrameProps {
   appId: string;
@@ -29,7 +29,8 @@ export function validateSandboxResource(resource: SandboxFrameResource): boolean
       && typeof resource.html === 'string' && resource.html.length <= 2*1024*1024;
     const target = new URL(resource.url);
     return parent.protocol === 'https:' && target.protocol === 'https:' && target.hostname !== parent.hostname
-      && !target.username && !target.password && !target.hash && !target.search && resource.url === target.href;
+      && !target.username && !target.password && !target.hash && !target.search && resource.url === target.href
+      && /^\/document\/[a-f0-9]{64}$/.test(target.pathname);
   } catch { return false; }
 }
 
@@ -48,6 +49,9 @@ export function SandboxFrame(props: SandboxFrameProps) {
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
 function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
+  const trusted=resource.mode==='isolated-origin'&&resource.frontendRunMode==='trusted';
+  const frameOrigin=trusted?new URL(resource.url).origin:'null';
+  const targetOrigin=trusted?frameOrigin:'*';
   const frame=useRef<HTMLIFrameElement>(null);
   const broker=useRef<SandboxBridgeBroker | null>(null);
   const loaded=useRef(false);
@@ -79,7 +83,7 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
     if(config.current.resource!==resource || config.current.operations!==operations){setFailed(true);return;}
     active.current=true;
     const onMessage=(event:MessageEvent)=>{
-      if(event.source===frame.current?.contentWindow&&event.origin==='null'){
+      if(event.source===frame.current?.contentWindow&&event.origin===frameOrigin){
        const value=event.data;
        if(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')==='appId,path,session,type,version'
         &&value.version==='1.0'&&value.type==='route-ready'&&value.appId===appId&&value.session===session
@@ -91,7 +95,7 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
     return ()=>{ active.current=false;window.removeEventListener('message',onMessage); broker.current?.close();broker.current=null; };
   },[resource,operations]);
   useEffect(()=>{
-    if(route&&route!==lastSentRoute.current&&broker.current){frame.current?.contentWindow?.postMessage({version:'1.0',type:'route',appId,session,path:route},'*');lastSentRoute.current=route;}
+    if(route&&route!==lastSentRoute.current&&broker.current){frame.current?.contentWindow?.postMessage({version:'1.0',type:'route',appId,session,path:route},targetOrigin);lastSentRoute.current=route;}
   },[route,initialRoute,appId,session]);
   const onLoad=()=>{
     if(!active.current)return;
@@ -110,17 +114,17 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
       authorize:async()=>true,
       execute:async params=>{setModalOpen((params as {open:boolean}).open);return {ok:true};},
     });
-    broker.current=new SandboxBridgeBroker({appId,session,source:target,operations:frameOperations,
-      send:response=>target.postMessage(response,'*')});
-    // Opaque target cannot be named by origin. Bootstrap carries no platform identity or bearer secret.
-    target.postMessage({version:'1.0',type:'init',appId,session},'*');
-    if(routeRef.current&&routeRef.current!==lastSentRoute.current){target.postMessage({version:'1.0',type:'route',appId,session,path:routeRef.current},'*');lastSentRoute.current=routeRef.current;}
+    broker.current=new SandboxBridgeBroker({appId,session,source:target,origin:frameOrigin,operations:frameOperations,
+      send:response=>target.postMessage(response,targetOrigin)});
+    // Bootstrap contains no platform identity or bearer secret.
+    target.postMessage({version:'1.0',type:'init',appId,session},targetOrigin);
+    if(routeRef.current&&routeRef.current!==lastSentRoute.current){target.postMessage({version:'1.0',type:'route',appId,session,path:routeRef.current},targetOrigin);lastSentRoute.current=routeRef.current;}
     frameLoadRef.current?.();
   };
   const isDark=initialTheme==='dark';
   // Keep the actual frame element stable while the host hides or shows a retained application.
   // Re-applying srcDoc on a parent render navigates some browsers and invalidates the channel.
-  const frameElement=useMemo(()=><iframe ref={frame} title={title} sandbox="allow-scripts" referrerPolicy="no-referrer"
+  const frameElement=useMemo(()=><iframe ref={frame} title={title} sandbox={trusted?'allow-scripts allow-same-origin':'allow-scripts'} referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
     src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}

@@ -23,12 +23,12 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 1. 在“应用管理 → 审核与发布 → 已登记密钥”录入经过独立核实的发布者公钥；安装包不能自行提供可信根，私钥禁止录入。同一发布者/密钥 ID 的公钥材料不可替换或删除，只能撤销；轮换公钥须使用新的密钥 ID。
 2. 上传包并选择“校验并预览”。平台核对签名和全部产物摘要，展示应用/版本/发布者、申请及自定义权限、运行方式、存储、新增迁移、权限变化、扩展及外联声明。
-3. 选择“批准此版本并安装/更新”。批准精确 manifest 摘要（含产物摘要），再次验证包与审批版本；并发修改、换包、撤销信任、未接通能力或不兼容存储变更均不能绕过。失败不自动重试，应核对状态后重新预览。
+3. 首次安装时选择“前端运行模式”：默认标准沙箱；仅管理员确认正式内部应用后选择可信应用。更新页面显示并继承现有模式，模式不是 manifest 的一部分，同一签名包可在不同环境以不同模式安装。再选择“批准此版本并安装/更新”。批准精确 manifest 摘要（含产物摘要），再次验证包与审批版本；并发修改、换包、撤销信任、未接通能力或不兼容存储变更均不能绕过。失败不自动重试，应核对状态后重新预览。
 4. 安装状态、运行状态和已批准的数据权限分别查看；版本审批不自动赋予员工使用权或数据权限。员工使用范围仍在应用授权中分配。
 
 发布者策略和版本审批保存为不可覆盖的历史版本，并在同一事务写管理员审计。撤销版本审批不卸载、不删除数据；后续安装/启用和员工入口重新检查审批。已运行后端的服务停止仍需显式停用应用，不能将撤销版本审批等同于已停止进程。
 
-管理 API：`GET/PUT /api/admin/publisher-policy`；PUT 接受 `{revision,keys}`。`POST /api/admin/install-preview` 接收安装包；`POST /api/admin/install-approve` 接收 `{revision,digest,package}`；`POST /api/admin/version-approval/revoke` 接收 `{revision,digest}`。所有写操作要求管理员会话及同源 Origin。新增 `app-management-approval-expand` 迁移须显式初始化。
+管理 API：`GET/PUT /api/admin/publisher-policy`；PUT 接受 `{revision,keys}`。`POST /api/admin/install-preview` 接收安装包；`POST /api/admin/install-approve` 接收 `{revision,digest,package}`；`POST /api/admin/install` 接收 `{package,frontendRunMode}`，其中 `frontendRunMode` 只能为 `standard` 或 `trusted`，未提供时默认为标准；`PUT /api/admin/apps/:appId/frontend-mode` 接收 `{revision,mode}` 并要求管理员权限与当前 revision。`POST /api/admin/version-approval/revoke` 接收 `{revision,digest}`。所有写操作要求管理员会话及同源 Origin。新增 `app-management-approval-expand` 迁移须显式初始化。
 
 ## 生命周期
 
@@ -38,9 +38,19 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get/list` 与 `platform.assets.get/list`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
 
-员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，每次请求核验员工登录态。员工应用准入与业务授权在单进程内最多复用 30 秒；本进程通过员工账号、应用使用授权、应用业务授权、审批和应用生命周期操作后立即失效，其他进程或直接改库的变化可能延迟最多 30 秒生效。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件、外联和 trusted UI 仍拒绝。物料的实际 Docker 托管全链路尚待验收。
+员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，每次请求核验员工登录态。员工应用准入与业务授权在单进程内最多复用 30 秒；本进程通过员工账号、应用使用授权、应用业务授权、审批和应用生命周期操作后立即失效，其他进程或直接改库的变化可能延迟最多 30 秒生效。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件和外联仍拒绝。物料的实际 Docker 托管全链路尚待验收。
 
 CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默认管理端不挂载该入口；本版通过管理端上传导出的签名 JSON 包安装。
+
+## 前端运行模式与资源域名
+
+标准沙箱保持 `sandbox="allow-scripts"`、opaque Origin、单次 `/document/<token>` 文档和内联已校验的 `ui.js`。可信应用由平台安装记录中的 `frontendRunMode` 决定，使用 `sandbox="allow-scripts allow-same-origin"`。旧安装记录没有此字段时一律按标准沙箱处理；应用 manifest 无法声明或提升运行模式。旧契约中的 `ui.mode: trusted` 仍不属于可安装 UI 类型，签名包应声明 `ui.mode: sandbox`，是否可信只由管理员选择。应用管理的“设置”可修改模式，修改会提升安装 revision、记入历史并使员工 admission key 失效；工作台下一次状态刷新会卸载旧 retained/prewarm iframe，按新模式重新创建。服务端业务、员工、Gateway、存储、审批和审计检查不因可信模式放宽。
+
+生产可信模式要求 `MOP_APP_RESOURCE_ORIGIN=https://apps.example.net`，且反向代理将 `apps.example.net` 和 `*.apps.example.net` 都转发到资源服务端口，原样保留 Host，不转发 Cookie/Authorization，不在资源域设置平台 Cookie。平台域名不得等于资源域或位于其子域下；每个 App 的稳定 Origin 为 `https://<appId>.apps.example.net`，不同 App 不共用 Origin。为 `*.apps.example.net` 配置 DNS 记录与 wildcard TLS 证书，再设 `MOP_APP_TRUSTED_ORIGINS_ENABLED=true` 开放可信模式。外部反向代理安装模式会写入该开关；内置 Caddy 的直接 HTTPS 模式没有自动获取 wildcard 证书的 DNS challenge 配置，只提供标准沙箱，不应开启该开关。切换代理或证书前先验证基础域和至少两个不同 App 子域能到达同一个资源服务，且 Host 保持原值。
+
+可信应用的 `/document/<token>` 仍是单次、`no-store`，消费时重新校验 admission；HTML 只含主题/bootstrap 和指向 `/assets/<appId>/<sha256>/ui.js` 的脚本标签。资源服务只接受与 Host 的 App ID 一致、当前已安装且启用、审批有效的 frontend artifact，读取时核对字节数与 SHA-256；未知 hash、其他 App Host、路径或已停用版本返回 404。成功响应为 `public, max-age=31536000, immutable`。bundle 是签名安装包的静态代码，不注入员工身份、会话、权限或 bearer secret。CSP 仍禁止网络连接、worker、表单与嵌入，并只允许 nonce 脚本和同源 bundle；Bridge 精确校验该 App Origin，业务调用仍经平台 admission。
+
+员工工作台保留最近 App 自动预热与最多两个 retained iframe。列表里其余可信应用只通过 `rel=prefetch` 预取当前 hash 的 bundle，不创建 iframe，不运行 React/bootstrap，也不读取业务数据；标准沙箱仍按需冷启动。升级改变 hash 后浏览器自然请求新 URL。浏览器可忽略资源提示；当平台和资源域不属于同一 site 时，Chromium 的 HTTP 缓存分区也可能使顶层页面的预取无法供 App iframe 复用，需用真实目标域名检查网络缓存命中。本阶段不共享 React、ReactDOM 或 SDK 前端运行时依赖。
 
 ## 独立开发工具
 
@@ -80,6 +90,8 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 ## 公开 L2 界面组件（0.5.0）
 
 React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+
+常见组合优先使用 `QueryList`（查询工具栏、表格、分页）、`SidebarDialog`（分区导航弹窗）、`OrganizationPicker` 或 `OrganizationPeoplePicker`（组织及人员选择）。使用示例见 [共享查询列表](shared-list-ui.md) 和 [L2 弹窗与组织选择](shared-dialog-directory-ui.md)。
 
 沙箱应用打开 L2 弹窗时，调用 `sandbox.invoke("platform.ui.modal", {open:true})`，关闭时传 `false`。宿主只接受当前沙箱通道的布尔状态，用于模糊侧边栏和页头并暂停其交互；应用内背景由共享 Dialog 的透明模糊遮罩处理。通道失效或应用卸载时自动恢复。此接口不传递身份、不授予业务权限，也不解除沙箱隔离。
 

@@ -6,12 +6,18 @@ import { SandboxFrame, validateSandboxResource } from '../../src/app-platform/ho
 test('sandbox frame enforces isolated origin and opaque sandbox, local fixture cannot become production fallback',()=>{
   assert.equal(validateSandboxResource({mode:'isolated-origin',platformOrigin:'https://platform.example.com',url:'https://platform.example.com:444/app'}),false);
   assert.equal(validateSandboxResource({mode:'local-demo',platformOrigin:'https://platform.example.com',html:'x'}),false);
-  assert.equal(validateSandboxResource({mode:'isolated-origin',platformOrigin:'https://platform.example.com',url:'https://sandbox.example.net/app'}),true);
+  assert.equal(validateSandboxResource({mode:'isolated-origin',platformOrigin:'https://platform.example.com',url:`https://sandbox.example.net/document/${'a'.repeat(64)}`}),true);
   const props={appId:'demo',instanceKey:'1',enabled:true,title:'Sandbox',operations:new Map(),resource:{mode:'local-demo' as const,platformOrigin:'http://127.0.0.1:5173',html:'<!doctype html><p>demo</p>'}};
   const html=renderToString(<SandboxFrame {...props}/>);
   assert.match(html,/sandbox="allow-scripts"/);assert.doesNotMatch(html,/allow-same-origin|allow-popups|allow-forms|allow-top-navigation/);
   assert.match(html,/referrerPolicy="no-referrer"/i);
   assert.doesNotMatch(renderToString(<SandboxFrame {...props} enabled={false}/>),/<iframe/);
+});
+test('trusted frame uses its independent origin and same-origin sandbox flag',()=>{
+ const html=renderToString(<SandboxFrame appId="demo" instanceKey="1" enabled title="demo" operations={new Map()}
+  resource={{mode:'isolated-origin',platformOrigin:'https://platform.example.com',url:`https://demo.apps.example.net/document/${'a'.repeat(64)}`,frontendRunMode:'trusted'}}/>);
+ assert.match(html,/sandbox="allow-scripts allow-same-origin"/);
+ assert.match(html,/demo\.apps\.example\.net/);
 });
 test('frame refuses forged loopback configuration when actual parent origin is production',()=>{
   const previous=Object.getOwnPropertyDescriptor(globalThis,'window');

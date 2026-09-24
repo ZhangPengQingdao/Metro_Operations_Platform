@@ -2,6 +2,7 @@ export { Button, IconButton, ButtonGroup, NavItem, NavSubItem, type ButtonProps,
 export { Checkbox, type CheckboxProps } from './Checkbox';
 export { Field, Input, QuantityInput, Select, Textarea } from './FormControls';
 export { Dialog, type DialogProps } from './Dialog';
+export { SidebarDialog, type SidebarDialogProps, type SidebarDialogSection } from './SidebarDialog';
 export { DialogCloseButton, type DialogCloseButtonProps } from './DialogCloseButton';
 export { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog';
 export { EmptyState, Surface, type EmptyStateProps, type SurfaceProps } from './Surface';
@@ -58,6 +59,7 @@ export {
 export { PlatformIcon, PLATFORM_ICON_NAMES, type PlatformIconName, type PlatformIconProps } from './PlatformIcon';
 export { SearchField } from './SearchField';
 export {DataList,TableActions,ListPagination,type DataListProps,type ListPaginationProps} from './DataList';
+export {QueryList,type QueryListProps} from './QueryList';
 
 export {OrganizationPicker,organizationPath,type OrganizationOption,type OrganizationPickerProps} from './OrganizationPicker';
 export {OrganizationPeoplePicker,type OrganizationPeoplePickerProps,type PickerOrganization,type PickerPerson} from './OrganizationPeoplePicker';
