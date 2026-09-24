@@ -5,7 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {
   Button,Input,Select,Field,Dialog,DataList,FilterBar,DatePicker,TimePicker,
   TagDropdownPicker,HandwrittenSignaturePad,TableHeader,TableBody,
-  TableRow,TableHead,TableCell,ListPagination,Trash,Plus,PencilSimpleLine
+  TableRow,TableHead,TableCell,TableActions,TableActionButton,ListPagination,Trash,Plus,PencilSimpleLine
 } from '@metro/platform-sdk/ui';
 import {platformUiCss} from '@metro/platform-sdk/ui-styles';
 import {createAppSandboxClient,createAppApiClient} from '@metro/platform-sdk/app-sandbox';
@@ -51,6 +51,7 @@ body {
   max-width: 1040px;
   margin: 0 auto;
 }
+.shifts-records-table { table-layout: fixed; min-width: 720px; }
 
 /* Page Header Banner */
 .page-header {
@@ -733,6 +734,8 @@ function getModuleMeta(id, label) {
 // Crisp inline SVG Icons in pure neutral style
 function AppIcon({ name, size = 18 }) {
   switch (name) {
+    case 'eye':
+      return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>;
     case 'calendar':
       return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
     case 'clock':
@@ -769,6 +772,8 @@ const labels = {
   INVALID_PERSON: '所选人员已变化，请重新选择',
   FORM_TOO_LARGE: '填写内容过长，请精简',
   CONFLICT: '记录已更新，请重新打开',
+  SIGNED_RECORD: '已有人员签署，此记录不能删除',
+  SIGNATURE_UNAVAILABLE: '暂时无法核对签名状态，请稍后重试',
   READ_FAILED: '读取失败，请重试；尚未提交任何更改',
   OPERATION_UNCONFIRMED: '操作结果未确认，请先核对记录'
 };
@@ -1610,6 +1615,10 @@ function Records({ session, kind }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteUncertain, setDeleteUncertain] = useState(false);
   const [editing, setEditing] = useState(false);
   const [signing, setSigning] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -1654,8 +1663,8 @@ function Records({ session, kind }) {
   }, [from, to, org, shift, pages, refresh, query]);
 
   useEffect(() => {
-    void sandbox.invoke('platform.ui.modal', { open: !!detail }).catch(() => {});
-  }, [!!detail]);
+    void sandbox.invoke('platform.ui.modal', { open: !!detail || !!deleteTarget }).catch(() => {});
+  }, [!!detail, !!deleteTarget]);
 
   async function open(row) {
     try {
@@ -1665,6 +1674,38 @@ function Records({ session, kind }) {
       setSignatureImage(null);
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  function closeDelete() {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteError('');
+    if (deleteUncertain) setRefresh(v => v + 1);
+    setDeleteUncertain(false);
+  }
+
+  function showDelete(row) {
+    setDetail(null);
+    setDeleteTarget(row);
+    setDeleteError('');
+    setDeleteUncertain(false);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleting || deleteUncertain) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await call('delete-record', { id: deleteTarget.id, revision: deleteTarget.revision, requestId: crypto.randomUUID() });
+      setDeleteTarget(null);
+      setPages([null]);
+      setRefresh(v => v + 1);
+    } catch (e) {
+      setDeleteError(e.message);
+      if (e.unknown) setDeleteUncertain(true);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1688,6 +1729,7 @@ function Records({ session, kind }) {
       {error && <div className="notice-banner error" role="alert">{error}</div>}
 
       <DataList
+        className="shifts-records-table"
         toolbar={
           <FilterBar
             searchValue={search}
@@ -1717,12 +1759,18 @@ function Records({ session, kind }) {
           />
         }
       >
+        <colgroup>
+          <col style={{ width: 190 }} />
+          <col style={{ width: 190 }} />
+          <col />
+          <col style={{ width: 180 }} />
+        </colgroup>
         <TableHeader>
           <TableRow>
             <TableHead>填报日期 / 时间</TableHead>
             <TableHead>所属工班</TableHead>
             <TableHead>{kind === 'meeting' ? '主持人' : '接班人员'}</TableHead>
-            <TableHead style={{ width: 100, textAlign: 'right' }}>操作</TableHead>
+            <TableHead>操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1743,10 +1791,15 @@ function Records({ session, kind }) {
               <TableCell>
                 {row.people.filter(p => p.role === (kind === 'meeting' ? 'host' : 'takeover')).map(p => p.name).join('、') || '—'}
               </TableCell>
-              <TableCell style={{ textAlign: 'right' }}>
-                <Button size="sm" variant="secondary" shape="pill" onClick={() => open(row)}>
-                  查看详情
-                </Button>
+              <TableCell>
+                <TableActions>
+                  <TableActionButton icon={<AppIcon name="eye" size={18} />} onClick={() => void open(row)}>
+                    查看详情
+                  </TableActionButton>
+                  <TableActionButton icon={<Trash size={18} />} disabled={!row.canDelete} title={row.canDelete ? undefined : '没有此记录的删除权限'} onClick={() => showDelete(row)}>
+                    删除
+                  </TableActionButton>
+                </TableActions>
               </TableCell>
             </TableRow>
           ))}
@@ -1788,12 +1841,18 @@ function Records({ session, kind }) {
                     </span>
                   )}
                 </div>
-                {session.grants.some(g => g.permission === 'app.shifts.submit') && (
-                  <Button variant="secondary" shape="pill" size="sm" onClick={() => setEditing(true)}>
-                    <PencilSimpleLine size={13} />
-                    <span>修改</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {detail.canEdit && (
+                    <Button variant="secondary" shape="pill" size="sm" onClick={() => setEditing(true)}>
+                      <PencilSimpleLine size={13} />
+                      <span>修改</span>
+                    </Button>
+                  )}
+                  <Button variant="secondary" shape="pill" size="sm" disabled={!detail.canDelete} title={detail.canDelete ? undefined : '没有删除权限，或此晨会记录已签署'} onClick={() => showDelete(detail)}>
+                    <Trash size={13} />
+                    <span>删除</span>
                   </Button>
-                )}
+                </div>
               </div>
 
               {/* Personnel */}
@@ -1900,6 +1959,20 @@ function Records({ session, kind }) {
             </div>
           )
         )}
+      </Dialog>
+
+      <Dialog
+        open={!!deleteTarget}
+        title="删除台账记录"
+        size="sm"
+        onClose={closeDelete}
+        footer={<>
+          <Button variant="secondary" onClick={closeDelete} disabled={deleting}>取消</Button>
+          <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting || deleteUncertain}>{deleting ? '删除中…' : '确认删除'}</Button>
+        </>}
+      >
+        <p>确认删除 {deleteTarget?.record_date} {deleteTarget?.record_time} 的{kind === 'meeting' ? '晨会' : '交接班'}记录？删除后普通列表不再显示，原记录和删除信息会保留用于审计。</p>
+        {deleteError && <div className="notice-banner error" role="alert">{deleteError}</div>}
       </Dialog>
     </>
   );
