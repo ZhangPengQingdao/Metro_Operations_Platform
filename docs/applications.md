@@ -1,5 +1,7 @@
 # 应用接入
 
+故障记录独立应用的首版功能、权限、旧功能对照与安装前验收点见 [故障记录应用方案](fault-records-app-plan.md)。
+
 ## 当前可安装类型
 
 管理端默认装配支持 `ui: sandbox/none`、`backend: none/isolated`、`storage: none` 的签名应用。独立后端使用平台审批的固定 Node 镜像，内存/CPU 有界，非 root、文件系统只读、网络隔离，并提供容器内 8080 健康端点。
@@ -92,6 +94,8 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 ## 公开 L2 界面组件（0.5.0）
 
 React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+
+沙箱应用如需由用户手动导出文件，可在签名清单的 `ui` 声明 `downloads: true`（平台 0.13.0 起支持）。安装预览展示该能力，宿主只对已批准声明的页面增加 `allow-downloads`；未声明的应用仍禁止下载。应用自行检查导出业务权限与数据范围。
 
 常见组合优先使用 `QueryList`（查询工具栏、表格、分页）、`SidebarDialog`（分区导航弹窗）、`OrganizationPicker` 或 `OrganizationPeoplePicker`（组织及人员选择）。使用示例见 [共享查询列表](shared-list-ui.md) 和 [L2 弹窗与组织选择](shared-dialog-directory-ui.md)。
 

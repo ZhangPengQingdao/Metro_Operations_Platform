@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 export interface SandboxBundlePart { text: string; bytes: number; sha256: string }
-export interface SandboxDocumentInput { script: SandboxBundlePart; style?: SandboxBundlePart; platformOrigin: string; route?:string; trusted?:{appId:string} }
+export interface SandboxDocumentInput { script: SandboxBundlePart; style?: SandboxBundlePart; platformOrigin: string; route?:string; trusted?:{appId:string}; allowDownloads?:boolean }
 export interface SandboxDocument { html: string; headers: Readonly<Record<string, string>> }
 
 function verified(part: SandboxBundlePart, max: number): string {
@@ -36,7 +36,7 @@ export function buildSandboxDocument(input: SandboxDocumentInput): SandboxDocume
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Platform application</title><script nonce="${nonce}">${themeBoot}</script><style nonce="${nonce}">${baseStyle}${style.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="app"></div>${entry}</body></html>`;
   return Object.freeze({ html, headers: Object.freeze({
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': `${csp}; sandbox allow-scripts${input.trusted?' allow-same-origin':''}; frame-ancestors ${origin.origin}`,
+    'Content-Security-Policy': `${csp}; sandbox allow-scripts${input.trusted?' allow-same-origin':''}${input.allowDownloads?' allow-downloads':''}; frame-ancestors ${origin.origin}`,
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=()',
     'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
   }) });
