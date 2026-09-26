@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {createMaintenanceService} from './service.mjs';
 import {createMaintenanceHandlers} from './handlers.mjs';
+import * as XLSX from 'xlsx';
+import {parsePlanImportFile} from './import.mjs';
+
+test('CSV import keeps device numbers as text and Excel import reads the template',async()=>{
+ const csv=new File(['日期,车站,设备类型,设备编号,检修内容\n2026-09-27,测试站,TVM,01/02,季度检修'],'plans.csv',{type:'text/csv'});
+ const [csvPlan]=await parsePlanImportFile(csv,'workgroup');
+ assert.equal(csvPlan.scheduledDate,'2026-09-27');
+ assert.deepEqual(csvPlan.items.map(item=>item.deviceNumber),['01','02']);
+ const book=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(book,XLSX.utils.json_to_sheet([{日期:'2026-09-28',车站:'二号站',设备类型:'AGM',设备编号:'03/04',检修内容:'例检'}]),'计划');
+ const excel=new File([XLSX.write(book,{bookType:'xlsx',type:'array'})],'plans.xlsx');
+ const [excelPlan]=await parsePlanImportFile(excel,'workgroup');
+ assert.deepEqual(excelPlan.items.map(item=>item.deviceNumber),['03','04']);
+ assert.equal(excelPlan.stationName,'二号站');
+});
+
+test('plan import rejects malformed rows before any write',async()=>{
+ const invalid=new File(['日期,车站,设备类型,设备编号\n2026-09-27,测试站,TVM,'],'bad.csv');
+ await assert.rejects(parsePlanImportFile(invalid,'workgroup'),/第 2 行/);
+ const rows=['日期,车站,设备类型,设备编号',...Array.from({length:201},(_,i)=>`2026-09-27,测试站,TVM,${i+1}`)];
+ await assert.rejects(parsePlanImportFile(new File([rows.join('\n')],'too-many.csv'),'workgroup'),/1–200/);
+});
 
 function fixture(){
  const org=randomUUID(),otherOrg=randomUUID(),person=randomUUID(),colleague=randomUUID(),station=randomUUID();

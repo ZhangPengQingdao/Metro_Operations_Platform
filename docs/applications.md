@@ -101,6 +101,19 @@ React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、F
 
 沙箱应用如需由用户手动导出文件，可在签名清单的 `ui` 声明 `downloads: true`（平台 0.13.0 起支持）。安装预览展示该能力，宿主只对已批准声明的页面增加 `allow-downloads`；未声明的应用仍禁止下载。应用自行检查导出业务权限与数据范围。
 
+从 `@metro/platform-sdk/app-files` 导入 `readSandboxFile`、`readSandboxTextFile` 和 `downloadSandboxFile`。应用使用普通文件选择框获取员工选择的 `File`；读取函数要求显式设置 `maxBytes`（上限 16 MiB），可用 `extensions` 限制扩展名，并在读取前后检查大小。文本读取按 UTF-8 严格解码并去除 BOM。扩展名只是界面校验，解析器仍须校验文件内容、行数和业务字段。生成下载接受 `Blob`、`Uint8Array` 或 `ArrayBuffer`，上限 32 MiB，文件名必须是安全的单个名称。校验失败时抛出带 `code` 的 `AppFileError`，供应用转换为用户提示。
+
+```js
+import * as XLSX from 'xlsx';
+import {readSandboxFile,downloadSandboxFile} from '@metro/platform-sdk/app-files';
+
+const bytes = await readSandboxFile(file,{maxBytes:2_000_000,extensions:['.xlsx','.xls']});
+const workbook = XLSX.read(bytes,{type:'array',sheetRows:202}); // 应用自行解析、预览和校验业务记录
+downloadSandboxFile('记录.xlsx',XLSX.write(workbook,{bookType:'xlsx',type:'array'}),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+```
+
+文件读取和生成均在员工浏览器的沙箱内完成；原文件不经过 Bridge、应用后端或平台存储。应用通过已声明的业务 API 只提交解析后且经用户核对的数据。下载仍需清单声明 `ui.downloads: true`，并先按业务授权获取导出数据。此接口不提供原文件留存或供其他员工下载的附件能力。
+
 常见组合优先使用 `QueryList`（查询工具栏、表格、分页）、`SidebarDialog`（分区导航弹窗）、`OrganizationPicker` 或 `OrganizationPeoplePicker`（组织及人员选择）。使用示例见 [共享查询列表](shared-list-ui.md) 和 [L2 弹窗与组织选择](shared-dialog-directory-ui.md)。
 
 沙箱应用打开 L2 弹窗时，调用 `sandbox.invoke("platform.ui.modal", {open:true})`，关闭时传 `false`。宿主只接受当前沙箱通道的布尔状态，用于模糊侧边栏和页头并暂停其交互；应用内背景由共享 Dialog 的透明模糊遮罩处理。通道失效或应用卸载时自动恢复。此接口不传递身份、不授予业务权限，也不解除沙箱隔离。
