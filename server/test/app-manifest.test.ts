@@ -47,6 +47,9 @@ test('versioned manifest validates detached declarations without installing or g
   assert.equal(validateAppManifest(headless()).ok, true);
   const routed = fixture(); routed.ui = {mode:'sandbox',entryArtifactId:'ui',clientRouting:true};
   assert.equal(validateAppManifest(routed).ok,true);
+  const downloadable = fixture(); downloadable.ui = {mode:'sandbox',entryArtifactId:'ui',downloads:true};
+  assert.equal(validateAppManifest(downloadable).ok,true);
+  assert.equal(validateAppManifest({...fixture(),ui:{mode:'sandbox',entryArtifactId:'ui',downloads:false}}).ok,false);
   assert.equal(validateAppManifest({...fixture(),ui:{mode:'trusted',entryArtifactId:'ui',clientRouting:true}}).ok,false);
   const trusted = fixture(); trusted.ui.mode = 'trusted'; trusted.backend = { ...trusted.backend, mode: 'trusted', runtime: 'node', entryArtifactId: 'server', limits: { memoryMiB: 128, cpuMillis: 1000, timeoutSeconds: 10 } };
   assert.equal(validateAppManifest(trusted).ok, true);

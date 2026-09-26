@@ -14,6 +14,7 @@ export interface SandboxFrameProps {
   /** Hidden warm frames must not leave the surrounding platform shell inert. */
   visible?: boolean;
   title: string;
+  downloads?: true;
   /** Optional signed-app client routing; host verifies the new route before changing this prop. */
   route?: string;
   initialRoute?: string;
@@ -48,7 +49,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
   }
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
-function MountedFrame({ appId, resource, operations, title, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
+function MountedFrame({ appId, resource, operations, title, downloads, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
   const trusted=resource.mode==='isolated-origin'&&resource.frontendRunMode==='trusted';
   const frameOrigin=trusted?new URL(resource.url).origin:'null';
   const targetOrigin=trusted?frameOrigin:'*';
@@ -124,12 +125,12 @@ function MountedFrame({ appId, resource, operations, title, route, initialRoute,
   const isDark=initialTheme==='dark';
   // Keep the actual frame element stable while the host hides or shows a retained application.
   // Re-applying srcDoc on a parent render navigates some browsers and invalidates the channel.
-  const frameElement=useMemo(()=><iframe ref={frame} title={title} sandbox={trusted?'allow-scripts allow-same-origin':'allow-scripts'} referrerPolicy="no-referrer"
+  const frameElement=useMemo(()=><iframe ref={frame} title={title} sandbox={`${trusted?'allow-scripts allow-same-origin':'allow-scripts'}${downloads?' allow-downloads':''}`} referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'; fullscreen 'none'"
     src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark]);
+    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark,downloads]);
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
   return frameElement;
 }

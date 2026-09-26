@@ -4,7 +4,7 @@ import {Button} from '../../components/ui';
 import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
 import {adminRequest} from './client';
 
-interface HostedApplication {appId:string;name:string;requiresEmployee?:boolean;instanceKey:string;resource:SandboxFrameResource;}
+interface HostedApplication {appId:string;name:string;requiresEmployee?:boolean;instanceKey:string;downloads?:true;resource:SandboxFrameResource;}
 const operations=new Map();
 
 /** Administrator control-plane session admits the signed resource; it never impersonates an employee. */
@@ -27,5 +27,5 @@ export function AdminApplicationOutlet(){
   return()=>{active=false;controller?.abort();window.removeEventListener('focus',load);document.removeEventListener('visibilitychange',visible);};
  },[pathname,serial]);
  const current=resource?.path===pathname?resource.value:null;
- return <section className="admin-card">{error?<><p className="afc-error" role="alert">{error}</p><div className="admin-actions"><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button><Link to="/admin/apps">返回应用管理</Link></div></>:current?.requiresEmployee?<div><h2>{current.name}</h2><p>此应用的填报、台账和工班设置需要员工身份。请使用已授权的员工账号登录后，在员工工作台打开应用。</p><Link to="/admin/apps">管理应用授权与运行状态</Link></div>:current?<SandboxFrame key={current.instanceKey} appId={current.appId} instanceKey={current.instanceKey} resource={current.resource} operations={operations} enabled title={current.name}/>:<p role="status">正在加载应用…</p>}</section>;
+ return <section className="admin-card">{error?<><p className="afc-error" role="alert">{error}</p><div className="admin-actions"><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button><Link to="/admin/apps">返回应用管理</Link></div></>:current?.requiresEmployee?<div><h2>{current.name}</h2><p>此应用的填报、台账和工班设置需要员工身份。请使用已授权的员工账号登录后，在员工工作台打开应用。</p><Link to="/admin/apps">管理应用授权与运行状态</Link></div>:current?<SandboxFrame key={current.instanceKey} appId={current.appId} instanceKey={current.instanceKey} resource={current.resource} operations={operations} enabled title={current.name} downloads={current.downloads}/>:<p role="status">正在加载应用…</p>}</section>;
 }

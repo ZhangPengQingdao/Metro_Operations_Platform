@@ -12,6 +12,9 @@ test('sandbox document validates bytes/hash and emits restrictive response polic
   const b=buildSandboxDocument({script:part('0'),platformOrigin:'https://platform.example.com'});
   assert.notEqual(a.headers['Content-Security-Policy'],b.headers['Content-Security-Policy']);
   assert.equal(a.headers['Cache-Control'],'no-store');
+  const downloadable=buildSandboxDocument({script:part('0'),platformOrigin:'https://platform.example.com',allowDownloads:true});
+  assert.match(downloadable.headers['Content-Security-Policy'],/sandbox allow-scripts allow-downloads; frame-ancestors/);
+  assert.doesNotMatch(a.headers['Content-Security-Policy'],/allow-downloads/);
 });
 test('sandbox builder rejects tampered/oversized/unencodable artifacts and origin injection; closing tags cannot escape',()=>{
   for(const script of [{...part('0'),bytes:2},{...part('0'),sha256:'0'.repeat(64)},part('a'.repeat(1024*1024+1)),part('\ud800')]) {

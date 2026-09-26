@@ -11,6 +11,9 @@ test('sandbox frame enforces isolated origin and opaque sandbox, local fixture c
   const html=renderToString(<SandboxFrame {...props}/>);
   assert.match(html,/sandbox="allow-scripts"/);assert.doesNotMatch(html,/allow-same-origin|allow-popups|allow-forms|allow-top-navigation/);
   assert.match(html,/referrerPolicy="no-referrer"/i);
+  const withDownloads=renderToString(<SandboxFrame {...props} downloads/>);
+  assert.match(withDownloads,/sandbox="allow-scripts allow-downloads"/);
+  assert.doesNotMatch(html,/allow-downloads/);
   assert.doesNotMatch(renderToString(<SandboxFrame {...props} enabled={false}/>),/<iframe/);
 });
 test('trusted frame uses its independent origin and same-origin sandbox flag',()=>{

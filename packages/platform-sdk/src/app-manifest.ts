@@ -23,6 +23,8 @@ export type AppUiDeclaration = { mode: 'none' } | {mode:'trusted';entryArtifactI
   mode: 'sandbox'; entryArtifactId: string;
   /** Sandbox app handles host-authorized route changes without recreating its document. */
   clientRouting?: true;
+  /** Permit user-initiated downloads from this signed sandbox application. */
+  downloads?: true;
 };
 export type AppBackendDeclaration = { mode: 'none' } | {
   mode: 'trusted' | 'isolated'; runtime: 'node'; entryArtifactId: string;

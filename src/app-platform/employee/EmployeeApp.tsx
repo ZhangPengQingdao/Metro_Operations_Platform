@@ -14,7 +14,7 @@ import {rememberApp,type RetainedApp} from './retained-apps';
 
 type Account={id:string;personId:string;username:string;name?:string};
 type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;runtimeRevision:number;frontendRunMode:'standard'|'trusted';bundleUrl?:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
-type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;resource:SandboxFrameResource;initialRoute:string};
+type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;downloads?:true;resource:SandboxFrameResource;initialRoute:string};
 function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{account:Account;path:string;visible:boolean;prefetch:boolean;onNavigation:(appId:string,ids:string[])=>void}){
  const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0),[activeRoute,setActiveRoute]=useState('/'),[pending,setPending]=useState(true);
  const section=React.useRef<HTMLElement>(null),entryStart=React.useRef(0);
@@ -58,7 +58,7 @@ function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{accou
   return routes;
  },[appId,account.id,current,onNavigation]);
  const waiting=pending||activeRoute!==requestedRoute;
- return <section ref={section} className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&visible&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled visible={visible} title={current.name} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onFrameLoad={()=>record('frame')} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute){record('route');setPending(false);}}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
+ return <section ref={section} className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&visible&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled visible={visible} title={current.name} downloads={current.downloads} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onFrameLoad={()=>record('frame')} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute){record('route');setPending(false);}}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
 }
 export default function EmployeeApp(){
  const [owned,setOwned]=useState<ManagedApplication[]>([]);

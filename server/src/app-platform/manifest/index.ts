@@ -39,7 +39,7 @@ const schema = z.object({
   }).strict(),
   permissions: z.object({ requested: list(code), defined: list(z.object({ code, description, scopeKinds:z.array(z.enum(['self','workgroup','department','organizations','all'])).min(1).max(5).optional() }).strict()) }).strict(),
   ui: z.discriminatedUnion('mode', [none,
-    z.object({ mode: z.literal('sandbox'), entryArtifactId: id, clientRouting:z.literal(true).optional() }).strict(),
+    z.object({ mode: z.literal('sandbox'), entryArtifactId: id, clientRouting:z.literal(true).optional(), downloads:z.literal(true).optional() }).strict(),
     z.object({ mode: z.literal('trusted'), entryArtifactId: id }).strict()]),
   backend: z.discriminatedUnion('mode', [none, hosted('trusted'), hosted('isolated'), z.object({ mode: z.literal('external'), origin }).strict()]),
   storage: z.discriminatedUnion('mode', [none,

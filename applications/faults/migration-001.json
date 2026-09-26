@@ -1,0 +1,42 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "records",
+      "columns": [
+        {"name":"id","type":"uuid","nullable":false},
+        {"name":"organization_id","type":"uuid","nullable":false},
+        {"name":"created_by","type":"uuid","nullable":false},
+        {"name":"created_at","type":"timestamptz","nullable":false},
+        {"name":"updated_by","type":"uuid","nullable":false},
+        {"name":"updated_at","type":"timestamptz","nullable":false},
+        {"name":"revision","type":"integer","nullable":false},
+        {"name":"intent_id","type":"uuid","nullable":false},
+        {"name":"occurred_at","type":"timestamptz","nullable":false},
+        {"name":"occurred_order","type":"text","nullable":false},
+        {"name":"search_text","type":"text","nullable":false},
+        {"name":"station_id","type":"uuid","nullable":true},
+        {"name":"station_name","type":"text","nullable":false},
+        {"name":"device_type_name","type":"text","nullable":false},
+        {"name":"device_number","type":"text","nullable":false},
+        {"name":"reporter","type":"text","nullable":false},
+        {"name":"handler_id","type":"uuid","nullable":false},
+        {"name":"handler_name","type":"text","nullable":false},
+        {"name":"description","type":"text","nullable":false},
+        {"name":"reason","type":"text","nullable":true},
+        {"name":"solution","type":"text","nullable":true},
+        {"name":"arrival_at","type":"timestamptz","nullable":true},
+        {"name":"fixed_at","type":"timestamptz","nullable":true},
+        {"name":"status","type":"text","nullable":false},
+        {"name":"quality","type":"text","nullable":false},
+        {"name":"power_switch_related","type":"text","nullable":true},
+        {"name":"source","type":"text","nullable":false},
+        {"name":"voided","type":"boolean","nullable":false},
+        {"name":"voided_by","type":"uuid","nullable":true},
+        {"name":"voided_at","type":"timestamptz","nullable":true}
+      ],
+      "primaryKey": ["id"]
+    }
+  ]
+}
