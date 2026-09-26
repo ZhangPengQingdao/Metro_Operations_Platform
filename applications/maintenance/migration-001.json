@@ -1,0 +1,28 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [{
+    "kind": "createTable",
+    "table": "plans",
+    "columns": [
+      {"name":"id","type":"uuid","nullable":false},
+      {"name":"organization_id","type":"uuid","nullable":false},
+      {"name":"scheduled_date","type":"text","nullable":false},
+      {"name":"station_id","type":"uuid","nullable":true},
+      {"name":"station_name","type":"text","nullable":false},
+      {"name":"device_type_name","type":"text","nullable":false},
+      {"name":"content","type":"text","nullable":false},
+      {"name":"items","type":"jsonb","nullable":false},
+      {"name":"status","type":"text","nullable":false},
+      {"name":"search_text","type":"text","nullable":false},
+      {"name":"created_by","type":"uuid","nullable":false},
+      {"name":"created_at","type":"timestamptz","nullable":false},
+      {"name":"updated_by","type":"uuid","nullable":false},
+      {"name":"updated_at","type":"timestamptz","nullable":false},
+      {"name":"revision","type":"integer","nullable":false},
+      {"name":"intent_id","type":"uuid","nullable":false},
+      {"name":"deleted_at","type":"timestamptz","nullable":true},
+      {"name":"deleted_by","type":"uuid","nullable":true}
+    ],
+    "primaryKey": ["id"]
+  }]
+}

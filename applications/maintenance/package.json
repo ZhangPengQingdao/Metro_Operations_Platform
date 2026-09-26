@@ -1,0 +1,10 @@
+{
+  "name": "@metro-apps/maintenance",
+  "private": true,
+  "version": "0.1.1",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test.mjs"
+  }
+}
