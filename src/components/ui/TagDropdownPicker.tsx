@@ -24,6 +24,7 @@ export interface TagDropdownPickerProps {
   multiple?: boolean;
   align?: 'left' | 'right';
   showTagsBelow?: boolean;
+  inline?: boolean;
   className?: string;
 }
 
@@ -39,9 +40,10 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
   multiple = true,
   align = 'right',
   showTagsBelow = true,
+  inline = false,
   className = ''
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(inline);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   // 按 group 分组
@@ -94,67 +96,53 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
     outline: 'border border-neutral-300 text-neutral-700 hover:border-neutral-900 hover:text-neutral-900'
   }[buttonVariant];
 
-  return (
-    <div className={`relative inline-block ${showTagsBelow || title ? 'w-full space-y-2' : ''} ${className}`}>
-      {/* 头部触发按钮行 */}
-      <div className={`flex items-center ${title ? 'justify-between' : 'justify-start'}`}>
-        {title ? <span className="text-xs font-bold text-[#17211d]">{title}</span> : null}
+  if (inline) {
+    return (
+      <div className={`space-y-2 ${className}`}>
         <button
-          ref={triggerRef}
           type="button"
           disabled={disabled}
-          aria-haspopup="dialog"
           aria-expanded={isOpen}
-          onClick={() => !disabled && setIsOpen(!isOpen)}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 cursor-pointer select-none ${btnStyle} ${
-            disabled ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex w-full items-center justify-between border-0 bg-transparent p-0 text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span>{buttonText || title || '选择项目'}</span>
-          {selectedIds.length > 0 && (
-            <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[10px] bg-white/30 text-current font-bold">
-              {selectedIds.length}
-            </span>
-          )}
-          <CaretDown
-            size={12}
-            weight="bold"
-            className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-          />
+          <span className="text-xs font-bold text-neutral-900">
+            {title}
+            {selectedIds.length > 0 && <span className="ml-2 font-normal text-gray-400">已选 {selectedIds.length}</span>}
+          </span>
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500">
+            {isOpen ? '收起' : '展开'}
+            <CaretDown size={12} weight="bold" className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          </span>
         </button>
+        {isOpen && (
+          <div role="group" aria-label={title} className="space-y-2">
+            {multiple && items.length > 0 && (
+              <div className="flex justify-end gap-2 text-[11px] font-semibold">
+                <button type="button" disabled={disabled} onClick={() => handleSelectAllGroup(items)} className="border-0 bg-transparent p-0 text-neutral-900 cursor-pointer hover:text-neutral-700 disabled:cursor-not-allowed">全选</button>
+                <span className="text-gray-300">|</span>
+                <button type="button" disabled={disabled} onClick={() => onChange([])} className="border-0 bg-transparent p-0 text-gray-400 cursor-pointer hover:text-red-500 disabled:cursor-not-allowed">清除</button>
+              </div>
+            )}
+            <div className="flex max-h-[320px] flex-wrap gap-1.5 overflow-y-auto">
+              {items.length === 0 ? <span className="text-xs text-gray-400">{emptyText}</span> : items.map((item) => {
+                const selected = selectedIds.includes(item.id);
+                return (
+                  <Tag key={item.id} interactive={!disabled&&!item.disabled} selected={selected} onClick={() => !disabled&&!item.disabled && handleToggle(item.id)} className={disabled||item.disabled ? 'opacity-40 cursor-not-allowed' : ''}>
+                    {item.label}
+                    {item.badge && <span className={`ml-1 text-[10px] ${selected ? 'text-white/80' : 'text-gray-400'}`}>{item.badge}</span>}
+                  </Tag>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
+    );
+  }
 
-      {/* 下方选中的标签平铺流 */}
-      {showTagsBelow && (
-        <div className="flex flex-wrap gap-1.5 min-h-[28px] pt-0.5">
-          {selectedIds.length === 0 ? (
-            <span className="text-[11px] text-gray-400">{emptyText}</span>
-          ) : (
-            selectedIds.map((id) => {
-              const item = items.find((x) => x.id === id);
-              return (
-                <Tag
-                  key={id}
-                  onRemove={disabled ? undefined : () => onChange(selectedIds.filter((x) => x !== id))}
-                >
-                  {item?.label || id}
-                </Tag>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* 下拉悬浮筛选窗口 (FilterBar Popover 风格) */}
-      <FloatingPortal
-        open={isOpen}
-        anchorRef={triggerRef}
-        onDismiss={() => setIsOpen(false)}
-        width={380}
-        align={align === 'right' ? 'end' : 'start'}
-        ariaLabel={title}
-        className="p-4 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
-      >
+  const panel = (
+    <>
           {/* 下拉窗头部 */}
           <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-100">
             <div className="flex items-center gap-2">
@@ -308,7 +296,69 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
               </>
             )}
           </div>
-      </FloatingPortal>
+    </>
+  );
+
+  return (
+    <div className={`relative inline-block ${showTagsBelow || title ? 'w-full space-y-2' : ''} ${className}`}>
+      {/* 头部触发按钮行 */}
+      <div className={`flex items-center ${title ? 'justify-between' : 'justify-start'}`}>
+        {title ? <span className="text-xs font-bold text-neutral-900">{title}</span> : null}
+        <button
+          ref={triggerRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 cursor-pointer select-none ${btnStyle} ${
+            disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <span>{buttonText || title || '选择项目'}</span>
+          {selectedIds.length > 0 && (
+            <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[10px] bg-white/30 text-current font-bold">
+              {selectedIds.length}
+            </span>
+          )}
+          <CaretDown
+            size={12}
+            weight="bold"
+            className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+
+      {/* 下方选中的标签平铺流 */}
+      {showTagsBelow && (
+        <div className="flex flex-wrap gap-1.5 min-h-[28px] pt-0.5">
+          {selectedIds.length === 0 ? (
+            <span className="text-[11px] text-gray-400">{emptyText}</span>
+          ) : (
+            selectedIds.map((id) => {
+              const item = items.find((x) => x.id === id);
+              return (
+                <Tag
+                  key={id}
+                  onRemove={disabled ? undefined : () => onChange(selectedIds.filter((x) => x !== id))}
+                >
+                  {item?.label || id}
+                </Tag>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      <FloatingPortal
+          open={isOpen}
+          anchorRef={triggerRef}
+          onDismiss={() => setIsOpen(false)}
+          width={380}
+          align={align === 'right' ? 'end' : 'start'}
+          ariaLabel={title}
+          className="p-4 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
+      >{panel}</FloatingPortal>
     </div>
   );
 };

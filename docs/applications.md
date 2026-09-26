@@ -1,6 +1,6 @@
 # 应用接入
 
-故障记录独立应用的首版功能、权限、旧功能对照与安装前验收点见 [故障记录应用方案](fault-records-app-plan.md)。检修管理独立应用的计划组、逐台派工、导入导出及旧功能边界见 [检修管理应用方案](maintenance-app-plan.md)。
+待办事项独立应用的任务、人员与车站分配、周期模板及授权说明见 [待办应用说明](../applications/todos/README.md)。故障记录独立应用的首版功能、权限、旧功能对照与安装前验收点见 [故障记录应用方案](fault-records-app-plan.md)。检修管理独立应用的计划组、逐台派工、导入导出及旧功能边界见 [检修管理应用方案](maintenance-app-plan.md)。
 
 ## 当前可安装类型
 
@@ -93,9 +93,11 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 
 ## 公开 L2 界面组件（0.5.0）
 
-React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog、TagDropdownPicker 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。`TagDropdownPicker` 的 `inline` 模式在表单内直接展开目标标签。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
 
 普通单选使用 `DropdownSelect`，选中项以黑底和勾选标记显示。需要在同一输入框中搜索或选择时使用 `SearchSelect`；选项可提供 `detail`，与名称同排展示。目录查询、选中值和是否允许手工输入由应用管理。
+
+标准应用沙箱使用 `sandbox="allow-scripts"`，没有 `allow-forms`。保存操作应使用普通按钮的点击事件调用 Bridge；不要依赖原生 `<form onSubmit>` 或 `type="submit"`。涉及写入的应用需在真实标准沙箱中检查按钮是否发出请求。
 
 沙箱应用如需由用户手动导出文件，可在签名清单的 `ui` 声明 `downloads: true`（平台 0.13.0 起支持）。安装预览展示该能力，宿主只对已批准声明的页面增加 `allow-downloads`；未声明的应用仍禁止下载。应用自行检查导出业务权限与数据范围。
 

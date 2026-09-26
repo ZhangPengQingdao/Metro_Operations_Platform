@@ -1,0 +1,31 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {"kind":"createTable","table":"tasks","columns":[
+      {"name":"id","type":"uuid","nullable":false},{"name":"organization_id","type":"uuid","nullable":false},
+      {"name":"title","type":"text","nullable":false},{"name":"description","type":"text","nullable":true},
+      {"name":"scope_type","type":"text","nullable":false},{"name":"status","type":"text","nullable":false},
+      {"name":"items","type":"jsonb","nullable":false},{"name":"total_items","type":"integer","nullable":false},
+      {"name":"completed_items","type":"integer","nullable":false},{"name":"due_at","type":"timestamptz","nullable":true},
+      {"name":"is_scored","type":"boolean","nullable":false},{"name":"score_value","type":"integer","nullable":false},
+      {"name":"template_id","type":"uuid","nullable":true},{"name":"occurrence_key","type":"text","nullable":true},
+      {"name":"created_by","type":"uuid","nullable":false},{"name":"created_at","type":"timestamptz","nullable":false},
+      {"name":"updated_at","type":"timestamptz","nullable":false},{"name":"revision","type":"integer","nullable":false}
+    ],"primaryKey":["id"]},
+    {"kind":"createTable","table":"templates","columns":[
+      {"name":"id","type":"uuid","nullable":false},{"name":"organization_id","type":"uuid","nullable":false},
+      {"name":"title","type":"text","nullable":false},{"name":"description","type":"text","nullable":true},
+      {"name":"scope_type","type":"text","nullable":false},{"name":"targets","type":"jsonb","nullable":false},
+      {"name":"recurrence_type","type":"text","nullable":false},{"name":"recurrence_value","type":"integer","nullable":false},
+      {"name":"due_value","type":"integer","nullable":false},{"name":"trigger_minutes","type":"integer","nullable":false},
+      {"name":"due_minutes","type":"integer","nullable":false},{"name":"is_scored","type":"boolean","nullable":false},
+      {"name":"score_value","type":"integer","nullable":false},{"name":"active","type":"boolean","nullable":false},
+      {"name":"deleted","type":"boolean","nullable":false},
+      {"name":"created_by","type":"uuid","nullable":false},{"name":"created_at","type":"timestamptz","nullable":false},
+      {"name":"updated_at","type":"timestamptz","nullable":false},{"name":"revision","type":"integer","nullable":false}
+    ],"primaryKey":["id"]},
+    {"kind":"createIndex","table":"tasks","name":"tasks_organization","columns":["organization_id","id"]},
+    {"kind":"createIndex","table":"tasks","name":"tasks_occurrence","columns":["template_id","occurrence_key"],"unique":true},
+    {"kind":"createIndex","table":"templates","name":"templates_organization","columns":["organization_id","id"]}
+  ]
+}
