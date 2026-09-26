@@ -102,31 +102,31 @@ export default function EmployeeApp(){
  if(!account)return <Navigate to="/login" replace/>;
  const visibleApps=apps;
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
- return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={<EmployeeProfile/>} notificationsContent={<EmployeeMessages/>}>
+ return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={(onSaved,onBusy)=><EmployeeProfile onSaved={onSaved} onBusy={onBusy}/>} notificationsContent={<EmployeeMessages/>}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
  {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
  {activeAppId&&!retainedApps.some(item=>item.accountId===account.id&&item.appId===activeAppId)&&<p role="status">{appsLoaded&&!apps.some(app=>app.appId===activeAppId)?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
  {retainedApps.filter(item=>item.accountId===account.id).sort((a,b)=>a.appId.localeCompare(b.appId)).map(item=>{const visible=activeAppId===item.appId;const runtimeRevision=apps.find(app=>app.appId===item.appId)?.runtimeRevision??0;return <div key={`${account.id}:${item.appId}:${runtimeRevision}`} style={visible?undefined:{display:'none'}}><EmployeeApplication account={account} path={visible?pathname:item.path} visible={visible} prefetch={!visible&&item.prefetch} onNavigation={onNavigation}/></div>;})}
  </AdminShell>;
 }
-function EmployeeProfile(){
+function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean)=>void}){
  const [profile,setProfile]=useState<Record<string,string>|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const [currentPassword,setCurrent]=useState(''),[newPassword,setNew]=useState(''),[confirm,setConfirm]=useState('');
  useEffect(()=>{const c=new AbortController();employeeRequest<Record<string,string>>('/profile',{signal:c.signal}).then(setProfile).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[]);
  async function save(password:boolean){
   if(busy||!profile)return;setError('');setNotice('');
   if(password&&newPassword!==confirm){setError('两次输入的新密码不一致。');return;}
-  setBusy(true);try{
+  setBusy(true);onBusy(true);try{
    await employeeRequest(password?'/auth/password':'/profile',{method:'PATCH',body:password?{currentPassword,newPassword}:{phone:profile.phone??'',wecomUserId:profile.wecomUserId??''}});
    if(password){setCurrent('');setNew('');setConfirm('');window.dispatchEvent(new Event('mop-employee-session-expired'));}
-   else setNotice('个人资料已保存。');
-  }catch(e){setError(e instanceof Error?e.message:'保存未确认');}finally{setBusy(false);}
+   else {setNotice('个人资料已保存。');onSaved();}
+  }catch(e){setError(e instanceof Error?e.message:'保存未确认');}finally{setBusy(false);onBusy(false);}
  }
  return <>{error&&<p role="alert" className="afc-error">{error}</p>}{notice&&<p role="status">{notice}</p>}{profile?<ProfileSections busy={busy} basic={<form className="admin-form" onSubmit={e=>{e.preventDefault();void save(false);}}>
  <div className="afc-details"><span>工号</span><span>{profile.employeeNo}</span><span>姓名</span><span>{profile.name}</span></div>
  <label>手机号<Input type="tel" maxLength={50} disabled={busy} value={profile.phone??''} onChange={e=>setProfile({...profile,phone:e.target.value})}/></label>
  <label>企业微信 UserID<Input maxLength={255} disabled={busy} value={profile.wecomUserId??''} onChange={e=>setProfile({...profile,wecomUserId:e.target.value})}/></label>
- <div className="afc-profile-actions"><Button type="submit" disabled={busy}>保存资料</Button></div></form>} password={
+ <div className="afc-profile-actions"><Button type="submit" loading={busy} disabled={busy}>{busy?'保存中…':'保存资料'}</Button></div></form>} password={
  <form className="admin-form" onSubmit={e=>{e.preventDefault();void save(true);}}>
  <label>当前密码<Input required type="password" autoComplete="current-password" disabled={busy} value={currentPassword} onChange={e=>setCurrent(e.target.value)}/></label>
  <label>新密码<Input required type="password" minLength={12} maxLength={72} autoComplete="new-password" disabled={busy} value={newPassword} onChange={e=>setNew(e.target.value)}/></label>

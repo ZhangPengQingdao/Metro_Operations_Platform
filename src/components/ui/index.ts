@@ -58,6 +58,7 @@ export {
 
 export { PlatformIcon, PLATFORM_ICON_NAMES, type PlatformIconName, type PlatformIconProps } from './PlatformIcon';
 export { SearchField } from './SearchField';
+export { SearchSelect, type SearchSelectOption, type SearchSelectProps } from './SearchSelect';
 export {DataList,TableActions,ListPagination,type DataListProps,type ListPaginationProps} from './DataList';
 export {QueryList,type QueryListProps} from './QueryList';
 

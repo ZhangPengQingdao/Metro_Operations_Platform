@@ -23,7 +23,7 @@ export function PublisherPolicyDialog({onClose,installConfigured=true}:{onClose:
  async function revoke(digest:string){if(!data||busy)return;setBusy(true);setError('');try{setData(await adminRequest<Policy>('/version-approval/revoke',{method:'POST',body:{revision:data.revision,digest}}));}catch(e){setData(null);setError(e instanceof Error?e.message:'操作未确认');}finally{setBusy(false);}}
  async function submit(event:React.FormEvent){event.preventDefault();if(!data)return;
   const added=await save([...data.policy.keys,{publisherId:publisher,keyId,publicKeyPem:pem.trim(),appIds:apps.split(',').map(v=>v.trim()).filter(Boolean),revoked:false,validFrom:new Date().toISOString(),validUntil:new Date(until).toISOString()}]);
-  if(added){setFormOpen(false);setPublisher('');setKeyId('');setApps('');setUntil('');}}
+  if(added){setFormOpen(false);setPublisher('');setKeyId('');setApps('');setUntil('');onClose();}}
  const label=(text:string,node:ReactNode)=><label>{text}{node}</label>;
  return <SidebarDialog open title="审核与发布" onClose={()=>{if(!blocked)onClose();}} sections={SECTIONS.map(item=>({...item,disabled:blocked||(!installConfigured&&item.id!=='submissions')}))} activeSection={section} onSectionChange={setSection} sectionTitle={section==='submissions'?'上架与更新审核':undefined}>
     {section==='submissions'&&<AppSubmissions admin embedded onClose={onClose} onBusyChange={setReviewBusy}/>}
@@ -41,7 +41,7 @@ export function PublisherPolicyDialog({onClose,installConfigured=true}:{onClose:
       {label('允许的应用 ID',<Input required value={apps} placeholder="多个 ID 用英文逗号分隔" onChange={e=>setApps(e.target.value)} disabled={busy}/>)}
       {label('有效期至',<Input required type="datetime-local" value={until} onChange={e=>setUntil(e.target.value)} disabled={busy}/>)}
       {label('Ed25519 公钥（PEM）',<textarea required rows={4} value={pem} onChange={e=>setPem(e.target.value)} disabled={busy}/>)}
-      <Button disabled={busy||!data} type="submit">保存公钥信任</Button>
+      <Button disabled={busy||!data} type="submit">{busy?'保存中…':'保存公钥信任'}</Button>
      </form>}
     </div>
     <div hidden={section!=='versions'}>

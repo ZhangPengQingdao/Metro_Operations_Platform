@@ -10,7 +10,7 @@ export interface AdminApplication {id: string; name: string; icon?: AppManifest[
 export interface AdminShellProps {
   mode?:'admin'|'employee';
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
-  profileContent?: ReactNode; settingsContent?: ReactNode; notificationsContent?: ReactNode;
+  profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode;
 }
 const navigation = [
   {path: '/admin', label: '系统总览', icon: 'grid' as PlatformIconName},
@@ -48,6 +48,8 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const [confirmLogout,setConfirmLogout]=useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
+  const [panelBusy,setPanelBusy]=useState(false),[notice,setNotice]=useState('');
+  const savedPanel=()=>{setPanel(null);setNotice('已保存。');};
   const account = useRef<HTMLDivElement>(null);
   const accountTrigger = useRef<HTMLButtonElement>(null);
   const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications,base);
@@ -66,7 +68,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [accountOpen]);
-  const openPanel = (value: typeof panel) => {setAccountOpen(false); accountTrigger.current?.focus(); setPanel(value);};
+  const openPanel = (value: typeof panel) => {setAccountOpen(false); accountTrigger.current?.focus(); setNotice('');setPanelBusy(false);setPanel(value);};
   const logout = async () => {
     if (loggingOut) return;
     setLoggingOut(true); setError('');
@@ -101,11 +103,11 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
       </div>
 
     </aside>
-    <div className="afc-admin-workspace"><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{children}</main></div>
+    <div className="afc-admin-workspace"><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
     <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
-    {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => setPanel(null)}>
-      {panel === 'profile' && (profileContent ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}
-      {panel === 'settings' && (settingsContent ?? <SettingsSections/>)}
+    {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => {if(!panelBusy)setPanel(null);}}>
+      {panel === 'profile' && ((typeof profileContent==='function'?profileContent(savedPanel,setPanelBusy):profileContent) ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}
+      {panel === 'settings' && (settingsContent ?? <SettingsSections onSaved={savedPanel} onBusy={setPanelBusy}/>)}
       {panel === 'notifications' && (notificationsContent ?? <p className="afc-muted">通知服务暂不可用。</p>)}
       {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => (()=>{const next=event.target.value as typeof theme;saveThemePreference(next);setTheme(next);})()}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
     </AdminDialog>}

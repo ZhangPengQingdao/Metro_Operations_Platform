@@ -5,9 +5,10 @@ import {GatewayError,type AppGatewayOperation} from './model.js';
 
 const input=z.object({id:z.string().uuid()}).strict();
 export const locationListInput=z.object({afterId:z.string().uuid().optional(),pageSize:z.number().int().min(1).max(50).default(20),search:z.string().max(100).optional(),status:z.enum(['active','inactive']).optional(),organizationUnitId:z.string().uuid().optional()}).strict();
-export const assetListInput=z.object({afterId:z.string().uuid().optional(),pageSize:z.number().int().min(1).max(50).default(20),search:z.string().max(100).optional(),lifecycleState:z.enum(['planned','active','suspended','retired']).optional(),organizationUnitId:z.string().uuid().optional(),locationId:z.string().uuid().optional(),typeId:z.string().uuid().optional()}).strict();
+export const assetListInput=z.object({afterId:z.string().uuid().optional(),pageSize:z.number().int().min(1).max(50).default(20),search:z.string().max(100).optional(),lifecycleState:z.enum(['planned','active','suspended','retired']).optional(),organizationUnitId:z.string().uuid().optional(),locationId:z.string().uuid().optional(),typeId:z.string().uuid().optional(),typeName:z.string().max(100).optional()}).strict();
 const locationResult=z.object({id:z.string().uuid(),code:z.string(),name:z.string(),locationType:z.string(),status:z.string(),organizationUnitId:z.string().uuid().nullable()}).strict();
 const assetResult=z.object({id:z.string().uuid(),displayName:z.string(),assetCode:z.string().nullable(),locationId:z.string().uuid(),typeId:z.string().uuid(),lifecycleState:z.string(),organizationUnitId:z.string().uuid().nullable()}).strict();
+const assetListResult=assetResult.extend({typeName:z.string()}).strict();
 const locationScope=(row:z.infer<typeof locationResult>)=>({organizationUnitId:row.organizationUnitId,targets:[{type:'location' as const,id:row.id}]});
 const assetScope=(row:z.infer<typeof assetResult>)=>({organizationUnitId:row.organizationUnitId,targets:[{type:'asset' as const,id:row.id},{type:'location' as const,id:row.locationId},{type:'asset_type' as const,id:row.typeId}]});
 
@@ -30,7 +31,7 @@ export function createDirectoryGatewayOperations(options:{
   return {id:row.id,displayName:row.displayName,assetCode:row.assetCode,locationId:row.locationId,typeId:row.typeId,lifecycleState:row.lifecycleState,organizationUnitId:place.organizationUnitId};
  };
  const pageResult=z.object({organizationUnitId:z.string().uuid().nullable(),rows:z.array(locationResult).max(50),nextCursor:z.string().uuid().nullable()}).strict();
- const assetPageResult=z.object({organizationUnitId:z.string().uuid().nullable(),rows:z.array(assetResult).max(50),nextCursor:z.string().uuid().nullable()}).strict();
+ const assetPageResult=z.object({organizationUnitId:z.string().uuid().nullable(),rows:z.array(assetListResult).max(50),nextCursor:z.string().uuid().nullable()}).strict();
  const listScope=(value:unknown)=>{const p=locationListInput.parse(value);return p.organizationUnitId?{organizationUnitId:p.organizationUnitId}:{};};
  const assetListScope=(value:unknown)=>{const p=assetListInput.parse(value);return p.organizationUnitId?{organizationUnitId:p.organizationUnitId}:{};};
  const locationList=async(value:unknown)=>{

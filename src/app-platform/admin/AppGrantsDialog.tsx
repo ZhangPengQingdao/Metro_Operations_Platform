@@ -44,7 +44,7 @@ export function AppGrantsDialog({appId, onClose, onChange}: {appId:string; onClo
     current=await adminRequest<Installation>(`${path}/prepare-credential`,{method:'POST',body:{revision:current.revision}});
    }
    const updated=await adminRequest<Installation>(`${path}/grants${change.grantId?`/${encodeURIComponent(change.grantId)}`:''}`,{method:change.grantId?'DELETE':'POST',body:change.grantId?{revision:current.revision}:{revision:current.revision,permissionCode:change.permissionCode!,mode:change.mode!,...(change.mode==='service'?{serviceIdentityId:current.serviceIdentityId}:{}),scope:{kind:change.scope!,targets:[]}}});
-   setApp(updated);setRevoke(null);setPanel(null);onChange();return true;
+   setApp(updated);setRevoke(null);setPanel(null);onChange();onClose();return true;
   } catch(e) {
    setError(e instanceof Error?e.message:'操作未确认完成，请刷新核对。');
    // Require an explicit reload and review before another mutation, including ambiguous network outcomes.
@@ -98,7 +98,7 @@ export function AppGrantsDialog({appId, onClose, onChange}: {appId:string; onClo
 
  return <SidebarDialog open title="应用接入管理" onClose={()=>{if(!busy)onClose();}} navigationLabel="应用授权" sections={sections.map(item=>({...item,disabled:busy}))} activeSection={active} onSectionChange={setSection}>
     {error&&<p className="afc-error" role="alert">{error}</p>}
-    <div hidden={active!=='owner'}><AppOwner appId={appId}/></div>
+    <div hidden={active!=='owner'}><AppOwner appId={appId} onBusy={setBusy} onSaved={()=>{onChange();onClose();}}/></div>
 
     <div hidden={active!=='grants'}>
      {!app&&!error&&<p role="status">正在读取授权…</p>}

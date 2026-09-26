@@ -42,11 +42,12 @@ export function createFaultService(gateway,{clock=()=>new Date(),newId=randomUUI
  }
  return Object.freeze({
   async session(_input,employee){identity(employee);return {personId:employee.personId,organizationId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations,permissions:employee.businessAuthorization.grants.map(item=>item.permission)};},
-  async catalog(input,employee,signal){identity(employee);if(!plain(input)||Object.keys(input).some(key=>!['organizationId','stationSearch','personSearch'].includes(key)))fail('INVALID_INPUT');const org=input.organizationId??employee.organizationUnitId;if(!uuid(org)||!short(input.stationSearch??'',100)||!short(input.personSearch??'',100)||!['read','create','update'].some(name=>{try{targetOrganization(employee,name,org);return true;}catch{return false;}}))fail('ACCESS_DENIED');
+  async catalog(input,employee,signal){identity(employee);if(!plain(input)||Object.keys(input).some(key=>!['organizationId','stationSearch','personSearch','assetSearch','assetTypeName','stationId'].includes(key)))fail('INVALID_INPUT');const org=input.organizationId??employee.organizationUnitId;if(!uuid(org)||!short(input.stationSearch??'',100)||!short(input.personSearch??'',100)||!short(input.assetSearch??'',100)||!short(input.assetTypeName??'',100)||input.stationId!==undefined&&!uuid(input.stationId)||!['read','create','update'].some(name=>{try{targetOrganization(employee,name,org);return true;}catch{return false;}}))fail('ACCESS_DENIED');
    const people=await gateway.invoke('platform.people.members',{organizationUnitId:org,...(input.personSearch?{search:input.personSearch}:{})},signal);
    const locations=await gateway.invoke('platform.locations.list',{pageSize:50,status:'active',...(input.stationSearch?{search:input.stationSearch}:{})},signal).catch(()=>null);
+   const assets=await gateway.invoke('platform.assets.list',{pageSize:50,organizationUnitId:org,lifecycleState:'active',...(input.assetSearch?{search:input.assetSearch}:{}),...(input.assetTypeName?{typeName:input.assetTypeName}:{}),...(input.stationId?{locationId:input.stationId}:{})},signal).catch(()=>null);
    if(!input.personSearch&&!people.rows.some(row=>row.id===employee.personId)&&org===employee.organizationUnitId){const current=await gateway.invoke('platform.people.members',{organizationUnitId:org,personId:employee.personId},signal);people.rows.push(...current.rows);}
-   return {people:people.rows,stations:locations?.rows.filter(row=>row.locationType==='station')??[],stationLookupAvailable:!!locations};
+   return {people:people.rows,stations:locations?.rows.filter(row=>row.locationType==='station')??[],stationLookupAvailable:!!locations,assets:assets?.rows??[],assetLookupAvailable:!!assets};
   },
   list,
   async export(input,employee,signal){return list(input,employee,signal,'export');},
