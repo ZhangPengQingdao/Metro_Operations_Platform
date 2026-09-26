@@ -1414,3 +1414,21 @@ input[type=number] {
 .afc-people-picker__person>.afc-select-wrap select{width:100%;max-width:none;min-width:0;}
 .afc-people-picker__person>label{min-width:0;flex:1;}
 .afc-people-picker__person>label span{overflow-wrap:anywhere;}
+
+/* Shared L2 single-field search and selection. */
+.afc-search-select{position:relative;min-width:0}
+.afc-search-select>.afc-control{width:100%;padding-right:42px}
+.afc-search-select__arrow{position:absolute;right:3px;top:3px;bottom:3px;min-width:36px;display:grid;place-items:center;background:transparent;border:0;color:var(--afc-color-muted);cursor:pointer}
+.afc-search-select__arrow:disabled{cursor:not-allowed}
+.afc-search-select__arrow svg{transition:transform .18s ease}
+.afc-search-select__chevron--open{transform:rotate(180deg)}
+.afc-search-select__popover{z-index:99999;overflow:auto;border:1px solid var(--afc-color-line,#ddd);border-radius:14px;background:var(--afc-color-paper,#fff);padding:6px;box-shadow:0 16px 40px #0002}
+.afc-search-select__options{max-height:230px;overflow:auto}
+.afc-search-select__options button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;border:0;border-radius:9px;background:transparent;color:var(--afc-color-ink);text-align:left;padding:10px 12px;cursor:pointer}
+.afc-search-select__options button:hover,.afc-search-select__options button.active{background:var(--afc-control-hover,#f3f3f3)}
+.afc-search-select__options button[aria-selected=true],.afc-search-select__options button[aria-selected=true]:hover{background:#171717;color:#fff;font-weight:650}
+.afc-search-select__options button[aria-selected=true] small{color:#ffffffb8}
+.afc-search-select__options button svg{flex:none}
+.afc-search-select__options button:focus-visible{outline:2px solid var(--afc-color-primary);outline-offset:-2px}
+.afc-search-select__options small{display:inline;color:var(--afc-color-muted)}
+.afc-search-select__empty{margin:0;padding:10px 12px;color:var(--afc-color-muted)}

@@ -116,7 +116,7 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   assert.equal(assetPage1.json().result.rows.length,1);assert.equal(assetPage1.json().result.nextCursor,assetOne);
   const assetPage2=await call({...assetListReq,params:{pageSize:1,afterId:assetOne}});
   assert.equal(assetPage2.json().result.rows[0].id,assetTwo);assert.equal(assetPage2.json().result.nextCursor,null);
-  assert.deepEqual(Object.keys(assetPage1.json().result.rows[0]).sort(),['assetCode','displayName','id','lifecycleState','locationId','organizationUnitId','typeId']);
+  assert.deepEqual(Object.keys(assetPage1.json().result.rows[0]).sort(),['assetCode','displayName','id','lifecycleState','locationId','organizationUnitId','typeId','typeName']);
   assert.deepEqual((await call({...assetListReq,params:{search:'Device 1'}})).json().result.rows.map((r:{id:string})=>r.id),[assetOne]);
 
 

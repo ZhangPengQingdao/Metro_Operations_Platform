@@ -43,8 +43,8 @@ test('directory parameters reject scope spoofing and missing records before exec
 test('platform.assets.list validates params, checks scopes, paginates and rejects unauthorized row targets',async()=>{
  const listAssets=async(p:{afterId?:string;pageSize:number;organizationUnitId?:string})=>{
   const all=[
-   {id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,lifecycleState:'active',organizationUnitId:p.organizationUnitId??one},
-   {id:'52000000-0000-4000-8000-000000000005',displayName:'Asset 2',assetCode:'A2',locationId:two,typeId,lifecycleState:'active',organizationUnitId:p.organizationUnitId??one}
+   {id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,typeName:'售票机',lifecycleState:'active',organizationUnitId:p.organizationUnitId??one},
+   {id:'52000000-0000-4000-8000-000000000005',displayName:'Asset 2',assetCode:'A2',locationId:two,typeId,typeName:'售票机',lifecycleState:'active',organizationUnitId:p.organizationUnitId??one}
   ];
   return all.filter(r=>!p.afterId||r.id>p.afterId).slice(0,p.pageSize+1);
  };
@@ -75,7 +75,7 @@ test('platform.assets.list validates params, checks scopes, paginates and reject
  // 4. Provider returning mismatched organizationUnitId throws INVALID_RESULT (502)
  const badProviderOps=createDirectoryGatewayOperations({
   locations:{findLocationById:async()=>null},assets:{findAssetById:async()=>null},
-  listAssets:async()=>[{id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,lifecycleState:'active',organizationUnitId:two}]
+  listAssets:async()=>[{id:assetId,displayName:'Asset 1',assetCode:'A1',locationId:one,typeId,typeName:'售票机',lifecycleState:'active',organizationUnitId:two}]
  });
  const badGateway=new AppGateway({registry:{authenticateServiceCredential:async()=>{throw Error('not used');}},contextResolver:{resolve:async()=>({actorType:'person',person:{id:one},execution:{type:'application',appId:'reader'},authorize:async()=>({allowed:true})})} as unknown as Pick<PlatformActorContextResolver,'resolve'>,operations:badProviderOps});
  await assert.rejects(badGateway.invokeDelegated('reader',{source:'session',userId:one},{version:'1.0',operation:'platform.assets.list',params:{organizationUnitId:one}}),/INVALID_RESULT/);
