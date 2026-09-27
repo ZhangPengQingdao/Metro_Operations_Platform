@@ -20,6 +20,7 @@ import {AppRegistryError,AppRegistryService,PostgresAppRegistryRepository} from 
 import type {AppLifecycleRoutesOptions} from '../runtime/lifecycle-routes.js';
 import type {AppInstallRoutesOptions} from '../install/routes.js';
 import {withInstallUpload,INSTALL_BODY_LIMIT} from '../install/wire.js';
+import {LocationDirectoryError} from '../../platform/locations/index.js';
 
 export interface AdminConsoleOptions {
  origin:string; identity:AdminIdentityService; pool:ConnectablePool;
@@ -64,6 +65,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error instanceof AdminIdentityError||error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AdminDataError)return reply.code(error.statusCode).send({error:error.code,message:error.message});
+   if(error instanceof LocationDirectoryError)return reply.code(400).send({error:error.code,message:error.message});
    if(error instanceof AppRegistryError){
     const clientErrors:Record<string,number>={STALE_REVISION:409,APP_NOT_FOUND:404,GRANT_NOT_FOUND:404,REGISTRY_ACCESS_DENIED:403,UNDECLARED_PERMISSION:400,PERMISSION_NOT_ACTIVE:400,INVALID_DATA_SCOPE:400,INVALID_GRANT_MODE:400,SERVICE_IDENTITY_MISMATCH:400,SERVICE_RELATIVE_SCOPE:400,UNEXPECTED_SERVICE_IDENTITY:400,INVALID_GRANT_INTERVAL:400,GRANT_LIMIT:409};
     return reply.code(clientErrors[error.code]??503).send({error:error.code});
@@ -96,6 +98,9 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.put('/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.assign(c,req.body)));
   await registerAdminAiRoutes(scoped,options.identity);
   scoped.get('/data/resources',async()=>({resources:adminDataResources()}));
+  scoped.get('/data/line-stations',async req=>withData(req,(service,context)=>service.stationDirectory(context.administrator,req.query)));
+  scoped.post('/data/stations',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.createStation(context.administrator,req.body)));
+  scoped.put<{Params:{id:string}}>('/data/stations/:id',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.updateStation(context.administrator,req.params.id,req.body)));
   scoped.get<{Params:{key:string};Querystring:{q?:string;status?:string}}>('/data/:key',async req=>withData(req,async(service,context)=>({records:await service.list(context.administrator,req.params.key,req.query.q??'',req.query.status??'')})));
   scoped.post<{Params:{key:string}}>('/data/:key',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.create(context.administrator,req.params.key,req.body)));
   scoped.patch<{Params:{key:string;id:string}}>('/data/:key/:id',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.update(context.administrator,req.params.key,req.params.id,req.body)));

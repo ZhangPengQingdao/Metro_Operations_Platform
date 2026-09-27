@@ -6,13 +6,13 @@ import { createLocationDirectoryService, createPostgresLocationDirectoryReposito
 import { createAssetDirectoryService, createPostgresAssetDirectoryRepository, ASSET_LIFECYCLE_STATES, ASSET_DATA_QUALITY_STATUSES } from '../../platform/assets/index.js';
 import { createPostgresDataAlignmentRepository } from '../../platform/data-alignment/index.js';
 import {createPostgresResponsibilityRepository,createResponsibilityService} from '../../platform/responsibility/index.js';
+import {AdminDataError} from './errors.js';
+import {createAdminStationDirectory} from './stations.js';
+export {AdminDataError} from './errors.js';
 
 export interface AdminDataActor { id: string; username: string; displayName: string }
 export interface AdminDataField { key: string; label: string; type: 'text' | 'number' | 'select' | 'reference'; required: boolean; options?: string[]; resource?: string }
 export interface AdminDataResource { key: string; label: string; fields: AdminDataField[]; columns: string[]; updateFields: string[]; writable: boolean; reason?: string }
-export class AdminDataError extends Error {
-  constructor(readonly code: string, message: string, readonly statusCode = 400) { super(message); }
-}
 const text = z.string().trim().min(1).max(200);
 const optional = z.string().trim().max(1000).nullable().optional();
 const uuid = z.string().uuid();
@@ -71,12 +71,14 @@ export function createAdminDataService(client: QueryableClient, options: { audit
   async function mutate(actor: AdminDataActor, resource: string, action: string, operation: () => Promise<{id:string}>) {
     authorize(actor);
     return runDatabaseTransaction(client, async () => {
+      if(resource==='lines'||resource==='locations')await client.query("SELECT pg_advisory_xact_lock(hashtextextended('admin-line-stations',0))");
       const result = await operation();
       await options.audit({actorId:actor.id, action:`data.${resource}.${action}`, targetId:result.id});
       return result;
     });
   }
   return {
+    ...createAdminStationDirectory(client,{authorize,audit:options.audit}),
     resources: adminDataResources,
     async workgroupStations(actor:AdminDataActor,organizationId:string){
       authorize(actor);uuid.parse(organizationId);
