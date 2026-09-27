@@ -9,6 +9,8 @@ export const assetListInput=z.object({afterId:z.string().uuid().optional(),pageS
 const locationResult=z.object({id:z.string().uuid(),code:z.string(),name:z.string(),locationType:z.string(),status:z.string(),organizationUnitId:z.string().uuid().nullable()}).strict();
 const assetResult=z.object({id:z.string().uuid(),displayName:z.string(),assetCode:z.string().nullable(),locationId:z.string().uuid(),typeId:z.string().uuid(),lifecycleState:z.string(),organizationUnitId:z.string().uuid().nullable()}).strict();
 const assetListResult=assetResult.extend({typeName:z.string()}).strict();
+const responsibleInput=z.object({organizationUnitId:z.string().uuid(),lineName:z.string().max(100).optional(),stationId:z.string().uuid().optional(),search:z.string().max(100).optional()}).strict();
+const responsibleResult=z.object({organizationUnitId:z.string().uuid(),lines:z.array(z.object({id:z.string().uuid(),name:z.string()}).strict()).max(50),stations:z.array(z.object({id:z.string().uuid(),name:z.string(),lineId:z.string().uuid(),lineName:z.string()}).strict()).max(50)}).strict();
 const locationScope=(row:z.infer<typeof locationResult>)=>({organizationUnitId:row.organizationUnitId,targets:[{type:'location' as const,id:row.id}]});
 const assetScope=(row:z.infer<typeof assetResult>)=>({organizationUnitId:row.organizationUnitId,targets:[{type:'asset' as const,id:row.id},{type:'location' as const,id:row.locationId},{type:'asset_type' as const,id:row.typeId}]});
 
@@ -18,6 +20,7 @@ export function createDirectoryGatewayOperations(options:{
  assets:Pick<AssetDirectoryRepository,'findAssetById'>;
  listLocations?:(input:z.infer<typeof locationListInput>)=>Promise<z.infer<typeof locationResult>[]>;
  listAssets?:(input:z.infer<typeof assetListInput>)=>Promise<z.infer<typeof assetResult>[]>;
+ listResponsibleStations?:(input:z.infer<typeof responsibleInput>)=>Promise<z.infer<typeof responsibleResult>>;
 }):AppGatewayOperation[]{
  const location=async(value:unknown)=>{
   const row=await options.locations.findLocationById(input.parse(value).id);
@@ -57,5 +60,11 @@ export function createDirectoryGatewayOperations(options:{
   ...(options.listAssets?[{name:'platform.assets.list',permissionCode:'platform.assets.read',mode:'read' as const,validateParams:(v:unknown)=>assetListInput.safeParse(v).success,
    resolveResources:async(_c:unknown,v:unknown)=>[assetListScope(v)],execute:async(_c:unknown,v:unknown)=>assetList(v),validateResult:(v:unknown)=>assetPageResult.safeParse(v).success,
    resolveResultResources:async(_c:unknown,v:unknown)=>{const page=assetPageResult.parse(v);return [page.organizationUnitId?{organizationUnitId:page.organizationUnitId}:{},...page.rows.map(assetScope)];}}]:[]),
+  ...(options.listResponsibleStations?[{name:'platform.locations.responsible_stations',permissionCode:'platform.locations.read',mode:'read' as const,
+   validateParams:(v:unknown)=>responsibleInput.safeParse(v).success,
+   resolveResources:async(_c:unknown,v:unknown)=>[{organizationUnitId:responsibleInput.parse(v).organizationUnitId}],
+   execute:async(_c:unknown,v:unknown)=>options.listResponsibleStations!(responsibleInput.parse(v)),
+   validateResult:(v:unknown)=>responsibleResult.safeParse(v).success,
+   resolveResultResources:async(_c:unknown,v:unknown)=>[{organizationUnitId:responsibleResult.parse(v).organizationUnitId}]}]:[]),
  ];
 }

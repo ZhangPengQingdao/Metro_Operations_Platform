@@ -20,7 +20,7 @@ const navigation = [
   {path: '/admin/developer', label: '开发者中心', icon: 'terminal' as PlatformIconName},
 ];
 const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',navigation:[
- ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['lines','线路'],['locations','车站与位置'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
+ ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['line-stations','线路与车站'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
 ].map(([id,label])=>({id,label,path:`/admin/data/${id}`}))};
 const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'},{id:'registrations',label:'注册审核',path:'/admin/accounts/registrations'}]};
 export function applicationNavigation(pathname: string, applications: AdminApplication[],base='/admin') {

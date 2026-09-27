@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import type { OpenAiToolDefinition } from '../mcp/index.js';
+export { getActiveAiRuntimeConfig } from './config.js';
 
 export interface AiProviderRuntimeConfig {
   endpoint: string;
@@ -29,6 +30,7 @@ export interface AiProviderChatMessage {
 }
 
 export interface RequestOpenAiOptions {
+  signal?: AbortSignal;
   toolChoice?: 'auto' | 'required' | {
     type: 'function';
     function: { name: string };
@@ -333,7 +335,7 @@ export async function requestOpenAiMessage(
       },
       body: JSON.stringify(body),
       redirect: 'error',
-      signal: AbortSignal.timeout(config.timeoutMs)
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs)
     });
   } catch (error) {
     throw new AiProviderTransportError(

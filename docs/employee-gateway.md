@@ -48,8 +48,11 @@ Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，
 | `platform.locations.list` | `platform.locations.read` | organizationUnitId、rows、nextCursor；rows 为位置白名单字段 |
 | `platform.assets.get` | `platform.assets.read` | id、displayName、assetCode、locationId、typeId、lifecycleState、organizationUnitId |
 | `platform.assets.list` | `platform.assets.read` | organizationUnitId、rows、nextCursor；rows 增加 typeName 类型名称，支持按类型名称精确筛选，名称搜索也匹配类型名称；仍按设备和位置授权范围裁剪 |
+| `platform.ai.complete` | `platform.ai.complete` | content；调用平台配置的模型返回有界文本，不返回密钥或模型配置 |
 
 按 ID 查询只接受 `{id}`。不存在或无权访问的对象均拒绝；不提供目录批量导出。位置按真实位置/组织授权，设备按真实设备/位置/类型及位置所属组织授权。执行前、执行后和返回快照均做范围检查，防止数据变化导致越权返回。
+
+模型补全只接受 `{system,prompt}`，分别最多 3,000 和 12,000 字符，返回 `content` 最多 12,000 字符；请求受 Gateway 授权、限流、审计和 30 秒超时约束。它不替应用校验业务字段，应用应校验模型返回并在写入前由员工确认。安装识隐等应用时，服务身份须单独获得该能力授权。
 
 位置列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, status?}`。设备列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, lifecycleState?, locationId?, typeId?, typeName?}`，`typeName` 为精确名称过滤。页大小默认 20、最多 50；search 为名称、编码和设备类型名称的字面子串（最多 100 字符），status 仅 active/inactive，lifecycleState 为 planned/active/suspended/retired。数据库按 UUID 升序有界读取，用返回的 nextCursor 续页；不返回总数。未指定组织时必须具有完整目录授权；指定组织时对该组织做授权并限制 SQL 查询范围，返回每行再次检查真实范围。组织参数是待验证资源，不是授权声明。范围不足时连空页也拒绝；逐对象授权仍用 get 查询。游标不要求记录仍存在，删除游标记录不会回到第一页。
 

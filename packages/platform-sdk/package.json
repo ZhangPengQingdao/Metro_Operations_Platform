@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-sdk",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Public contracts and application SDK for Metro Operations Platform.",
   "type": "module",
   "sideEffects": false,
@@ -45,6 +45,10 @@
     "./app-files": {
       "types": "./dist/app-files.d.ts",
       "import": "./dist/app-files.js"
+    },
+    "./app-files-backend": {
+      "types": "./dist/app-files-backend.d.ts",
+      "import": "./dist/app-files-backend.js"
     },
     "./app-backend": {
       "types": "./dist/app-backend.d.ts",

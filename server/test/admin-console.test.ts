@@ -9,11 +9,16 @@ import {ADMIN_IDENTITY_MIGRATION,AdminIdentityService,registerAdminIdentityRoute
 import {registerAdminConsoleRoutes} from '../src/app-platform/admin/routes.ts';
 import {APP_REGISTRY_SQL,AppRegistryService,MemoryAppRegistryRepository,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
 import {PLATFORM_PEOPLE_DIRECTORY_SQL} from '../src/platform/people/index.ts';
+import {PLATFORM_LOCATION_DIRECTORY_SQL} from '../src/platform/locations/index.ts';
+import {PLATFORM_ASSET_DIRECTORY_SQL} from '../src/platform/assets/index.ts';
+import {PLATFORM_RESPONSIBILITY_SQL} from '../src/platform/responsibility/index.ts';
+import {createResponsibleStationReader} from '../src/app-platform/gateway/responsible-stations.ts';
+import {createDirectoryGatewayOperations} from '../src/app-platform/gateway/directory.ts';
 import {createAdminDataService} from '../src/app-platform/admin-data/index.ts';
 import type {PlatformAdministratorContext,PlatformActorContext} from '../src/platform/context/index.ts';
 import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
 test('real console authenticates independent accounts, rejects CSRF and writes master data with atomic audit',async()=>{
- const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);await db.exec(APP_REGISTRY_SQL);await db.exec(PLATFORM_PEOPLE_DIRECTORY_SQL);
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);await db.exec(APP_REGISTRY_SQL);await db.exec(PLATFORM_PEOPLE_DIRECTORY_SQL);await db.exec(PLATFORM_LOCATION_DIRECTORY_SQL);await db.exec(PLATFORM_ASSET_DIRECTORY_SQL);await db.exec(PLATFORM_RESPONSIBILITY_SQL);
  const client={query:(sql:string,values?:readonly unknown[])=>sql.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(sql,[...(values??[])]),release(){}};
  const pool={connect:async()=>client};const identity=new AdminIdentityService(pool);const account=await identity.bootstrap({username:'console.admin',displayName:'Admin',password:'Administrator-test-123'});
  const app=Fastify();await app.register(cookie);registerAdminIdentityRoutes(app,{origin:'https://platform.example',service:identity});await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool});
@@ -61,6 +66,33 @@ test('real console authenticates independent accounts, rejects CSRF and writes m
   const search=await app.inject({url:'/api/admin/data/organizations?q=missing',headers});assert.deepEqual(search.json().records,[]);
   assert.equal((await app.inject({url:'/api/admin/data/organizations?status=wrong',headers})).statusCode,400);
   assert.equal((await app.inject({method:'PATCH',url:`/api/admin/data/organizations/${id}`,headers,payload:{name:'新名称'}})).statusCode,200);
+  const workgroupResponse=await app.inject({method:'POST',url:'/api/admin/data/organizations',headers,payload:{name:'检修一工班',unitType:'workgroup',parentId:id}});assert.equal(workgroupResponse.statusCode,200,workgroupResponse.body);const workgroup=workgroupResponse.json();
+  const line='51000000-0000-4000-8000-000000000001',stationA='51000000-0000-4000-8000-000000000002',stationB='51000000-0000-4000-8000-000000000003';
+  await db.query("INSERT INTO platform_lines(id,code,name,status,created_at,updated_at) VALUES($1,'line-1','一号线','active',now(),now())",[line]);
+  for(const [index,station] of [stationA,stationB].entries()){
+   await db.query('INSERT INTO platform_locations(id,code,name,location_type,status,created_at,updated_at) VALUES($1,$2,$3,\'station\',\'active\',now(),now())',[station,`station-${index}`,`车站${index+1}`]);
+   await db.query('INSERT INTO platform_line_stations(id,line_id,station_id,station_code,sort_order,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,\'active\',now(),now())',[`51000000-0000-4000-8000-00000000001${index}`,line,station,`S${index}`,index]);
+  }
+  const stationPath=`/api/admin/data/organizations/${workgroup.id}/stations`;
+  assert.equal((await app.inject({url:stationPath})).statusCode,401);
+  assert.equal((await app.inject({url:`/api/admin/data/organizations/${id}/stations`,headers})).statusCode,400);
+  assert.equal((await app.inject({method:'PUT',url:stationPath,headers:{cookie:cookies,origin:'https://evil.example'},payload:{stationIds:[stationA]}})).statusCode,403);
+  const stationList=await app.inject({url:stationPath,headers});assert.equal(stationList.statusCode,200,stationList.body);
+  assert.deepEqual(stationList.json().stations.map((station:{id:string})=>station.id),[stationA,stationB]);
+  assert.equal((await app.inject({method:'PUT',url:stationPath,headers,payload:{stationIds:[id]}})).statusCode,400);
+  assert.equal((await app.inject({method:'PUT',url:stationPath,headers,payload:{stationIds:[stationA]}})).statusCode,200);
+  assert.deepEqual((await app.inject({url:stationPath,headers})).json().selectedIds,[stationA]);
+  const readStations=createResponsibleStationReader(client);
+  const scopeResult=await readStations({organizationUnitId:workgroup.id});assert.deepEqual(scopeResult.stations.map(station=>station.id),[stationA]);
+  const operation=createDirectoryGatewayOperations({locations:{findLocationById:async()=>null},assets:{findAssetById:async()=>null},listResponsibleStations:readStations}).find(item=>item.name==='platform.locations.responsible_stations')!;
+  assert.equal(operation.validateResult(scopeResult),true);
+  assert.deepEqual(await operation.resolveResultResources!({} as never,scopeResult),[{organizationUnitId:workgroup.id}]);
+  assert.deepEqual((await readStations({organizationUnitId:workgroup.id,lineName:'其他线路'})).stations,[]);
+  assert.equal((await app.inject({method:'PUT',url:stationPath,headers,payload:{stationIds:[stationB]}})).statusCode,200);
+  assert.deepEqual((await readStations({organizationUnitId:workgroup.id})).stations.map(station=>station.id),[stationB]);
+  assert.equal((await db.query('SELECT status FROM platform_responsibility_scopes WHERE organization_unit_id=$1 AND location_id=$2',[workgroup.id,stationA])).rows[0].status,'inactive');
+  await assert.rejects(createAdminDataService(client,{audit:async()=>{throw Error('audit failed');}}).setWorkgroupStations(account,workgroup.id,{stationIds:[stationA]}));
+  assert.deepEqual((await readStations({organizationUnitId:workgroup.id})).stations.map(station=>station.id),[stationB]);
   const service=createAdminDataService(client,{audit:async()=>{throw Error('audit failed');}});
   await assert.rejects(service.create(account,'positions',{name:'回滚岗位'}));
   assert.equal((await db.query('SELECT id FROM platform_positions')).rows.length,0);
