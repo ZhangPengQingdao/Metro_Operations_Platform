@@ -134,7 +134,7 @@ FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及
 
 ## 应用图标与压缩安装包（0.10.0）
 
-应用清单可提供 `icon: { "paths": ["M5 4h14v16H5z"] }`。宿主以固定 `0 0 24 24` 视口、中性主题描边绘制 SVG；最多 16 条路径，每条不超过 2048 字符。图标属于签名清单的一部分，不允许 HTML、脚本、外部图片地址或事件属性。未提供图标的旧应用继续使用默认图标。晨会交接构建从 `applications/shifts/icon.json` 将图标写入清单。
+应用清单可提供 `icon: { "paths": ["M5 4h14v16H5z"] }`。宿主以固定 `0 0 24 24` 视口、中性主题描边绘制 SVG；最多 16 条路径，每条不超过 2048 字符。图标属于签名清单的一部分，不允许 HTML、脚本、外部图片地址或事件属性。平台内置应用在管理员/员工侧栏和员工工作台统一使用 L2 `TRANSIT_ICON_LIST` 的业务图标：故障 `warning`、隐患 `warning-diamond`、检修 `calendar-dots`、物料 `package`、晨会交接 `sun-horizon`、待办 `check-square`；宿主仅改变显示，不修改已安装的签名清单。其他应用使用清单图标，未提供时使用通用图标。晨会交接构建从 `applications/shifts/icon.json` 将图标写入清单。
 
 `mop-app export-upload <built-dir> <signature-file> <output.mop.gz>` 导出 gzip 压缩安装包。压缩内容仍是完整安装清单、签名及全部产物，管理端可直接上传；`.json` 导出与上传仍兼容。压缩文件和解压后内容均限制为 92MB，后端继续验证产物大小、摘要、发布者签名和已批准权限。不会解压客户端指定的文件系统路径。
 

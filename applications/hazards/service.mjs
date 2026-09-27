@@ -41,8 +41,8 @@ export function createHazardService(gateway,{clock=()=>new Date(),newId=randomUU
   return ops;
  };
  async function casesFor(rawText,employee,signal){
-  if(!employee.businessAuthorization.grants.some(grant=>grant.permission==='app.hazards.read'))return [];
-  let readScope;try{readScope=scope(employee,'read');}catch(error){if(error?.message==='ACCESS_DENIED')return [];throw error;}
+  if(!employee.businessAuthorization.grants.some(grant=>grant.permission==='app.hazards.cases'))return [];
+  let readScope;try{readScope=scope(employee,'cases');}catch(error){if(error?.message==='ACCESS_DENIED')return [];throw error;}
   const best=[];let after=null,pageSize=20;
   for(;;){
    let result;
@@ -93,7 +93,7 @@ export function createHazardService(gateway,{clock=()=>new Date(),newId=randomUU
    await write(input.requestId,[{action:'update',table:'records',id:old.id,expected:{revision:old.revision,status:'pending_review'},values:{status:'closed',closed_by:employee.personId,closed_at:now,updated_by:employee.personId,updated_at:now,revision:old.revision+1,intent_id:input.requestId}},{action:'insert',table:'cases',id:old.id,values}],signal);
    return {id:old.id,qualityScore:score,retrievalEnabled:score>=70};
   },
-  async cases(input,employee,signal){identity(employee);if(!keys(input,['organizationId','search','after','pageSize'])||input.organizationId!==undefined&&!validId(input.organizationId)||input.search!==undefined&&!text(input.search,100)||input.after!==undefined&&(!plain(input.after)||typeof input.after.value!=='string'||!validId(input.after.id))||input.pageSize!==undefined&&(!Number.isInteger(input.pageSize)||input.pageSize<1||input.pageSize>30))fail('INVALID_INPUT');const filters=[];if(input.organizationId){targetOrganization(employee,'read',input.organizationId);filters.push({column:'organization_id',value:input.organizationId});}return data.list('cases',{...scope(employee,'read'),filters,order:{column:'created_at',direction:'desc'},pageSize:input.pageSize??20,...(input.after?{after:input.after}:{}),...(input.search?{search:{column:'search_text',text:input.search.trim().toLowerCase()}}:{})},signal);},
+  async cases(input,employee,signal){identity(employee);if(!keys(input,['organizationId','search','after','pageSize'])||input.organizationId!==undefined&&!validId(input.organizationId)||input.search!==undefined&&!text(input.search,100)||input.after!==undefined&&(!plain(input.after)||typeof input.after.value!=='string'||!validId(input.after.id))||input.pageSize!==undefined&&(!Number.isInteger(input.pageSize)||input.pageSize<1||input.pageSize>30))fail('INVALID_INPUT');const filters=[];if(input.organizationId){targetOrganization(employee,'cases',input.organizationId);filters.push({column:'organization_id',value:input.organizationId});}return data.list('cases',{...scope(employee,'cases'),filters,order:{column:'created_at',direction:'desc'},pageSize:input.pageSize??20,...(input.after?{after:input.after}:{}),...(input.search?{search:{column:'search_text',text:input.search.trim().toLowerCase()}}:{})},signal);},
   'photo-begin':(input,employee,signal)=>{identity(employee);return photos.begin(input,employee,signal);},
   'photo-part':(input,employee,signal)=>{identity(employee);return photos.part(input,employee,signal);},
   'photo-finish':(input,employee,signal)=>{identity(employee);return photos.finish(input,employee,signal);},
