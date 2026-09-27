@@ -8,7 +8,7 @@ def run(*args,check=True):
  return r
 try:
  run('docker','network','create',network)
- password=secrets.token_hex(32);admin_password=secrets.token_hex(16)
+ password=secrets.token_hex(32);admin_password='Aa1!'+secrets.token_hex(16)
  db='mop-db-'+suffix;containers.append(db)
  postgres=json.loads(pathlib.Path('deploy/images.json').read_text())['postgres']
  run('docker','pull',postgres)

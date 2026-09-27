@@ -1,3 +1,4 @@
+import {ADMIN_PASSWORD_SESSION_SQL} from '../src/setup/password-policy-migration.ts';
 import test from 'node:test';
 import http from 'node:http';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import {createAdminDataService} from '../src/app-platform/admin-data/index.ts';
 import type {PlatformAdministratorContext,PlatformActorContext} from '../src/platform/context/index.ts';
 import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
 test('real console authenticates independent accounts, rejects CSRF and writes master data with atomic audit',async()=>{
- const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(APP_REGISTRY_SQL);await db.exec(PLATFORM_PEOPLE_DIRECTORY_SQL);
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);await db.exec(APP_REGISTRY_SQL);await db.exec(PLATFORM_PEOPLE_DIRECTORY_SQL);
  const client={query:(sql:string,values?:readonly unknown[])=>sql.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(sql,[...(values??[])]),release(){}};
  const pool={connect:async()=>client};const identity=new AdminIdentityService(pool);const account=await identity.bootstrap({username:'console.admin',displayName:'Admin',password:'Administrator-test-123'});
  const app=Fastify();await app.register(cookie);registerAdminIdentityRoutes(app,{origin:'https://platform.example',service:identity});await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool});
@@ -93,10 +94,10 @@ test('management identity never masquerades as person and does not admit service
 
 test('migration management validates admin session, origin, pagination and evidence-only reconciliation',async()=>{
  const {AppStorageError}=await import('../src/app-platform/storage/binding.ts');
- const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);
  const pool={connect:async()=>({query:(sql:string,args?:readonly unknown[])=>db.query(sql,[...(args??[])]),release(){}})};
- const identity=new AdminIdentityService(pool);await identity.bootstrap({username:'migration.admin',displayName:'Admin',password:'Migration-test-password'});
- const login=await identity.login({username:'migration.admin',password:'Migration-test-password'});
+ const identity=new AdminIdentityService(pool);await identity.bootstrap({username:'migration.admin',displayName:'Admin',password:'Migration-test-password1'});
+ const login=await identity.login({username:'migration.admin',password:'Migration-test-password1'});
  const app=Fastify();await app.register(cookie);let reads=0,writes=0;
  const management={writeHistory:async()=>({writes:[],revision:4,enabled:false,nextCursor:null}),reconcileWrite:async()=>{writes++;throw new AppStorageError('STORAGE_WRITE_RECONCILIATION_REQUIRED');},migrationHistory:async(context:PlatformAdministratorContext,appId:string,after:number)=>{assert.equal(context.actorType,'administrator');assert.equal(appId,'sample');reads++;return {revision:4,enabled:false,attempts:[],nextSequence:null,after};},reconcileMigration:async()=>{writes++;throw new AppStorageError('MIGRATION_RECONCILIATION_BLOCKED');}};
  await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool,management:management as unknown as import('../src/app-platform/management/service.ts').AppManagement});
@@ -150,7 +151,7 @@ test('directory status updates persist for every enabled directory and retain de
 });
 
 test('aborted admin uploads release capacity for subsequent packages', {timeout:15000}, async()=>{
- const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);
  const client={query:(sql:string,values?:readonly unknown[])=>sql.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(sql,[...(values??[])]),release(){}};
  const pool={connect:async()=>client};const identity=new AdminIdentityService(pool);
  await identity.bootstrap({username:'upload.admin',displayName:'Admin',password:'Administrator-test-123'});

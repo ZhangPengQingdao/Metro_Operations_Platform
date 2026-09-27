@@ -1,3 +1,4 @@
+import { passwordSchema, isPasswordCompliant } from '../../core/security/index.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {z} from 'zod';
@@ -18,11 +19,11 @@ CREATE TABLE IF NOT EXISTS platform_employee_sessions(
 CREATE INDEX IF NOT EXISTS platform_employee_sessions_account ON platform_employee_sessions(account_id);`;
 export const employeeIdentityMigration:MigrationDefinition={id:'platform-employee-identity-expand',title:'Independent employee accounts and sessions',ownerTaskId:'PLATFORM-L4-015',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-056'],sourceTables:[],targetTables:['platform_employee_accounts','platform_employee_sessions'],dependsOn:['platform-people-directory-expand'],recoveryNotes:'Additive schema only; never bootstrap employees or copy administrator accounts.',async run({client}){await client.query(EMPLOYEE_IDENTITY_SQL);}};
 export class EmployeeIdentityError extends Error{constructor(readonly statusCode:number,readonly code:string){super(code);}}
-export interface EmployeeAccount{id:string;personId:string;username:string;status:'active'|'disabled'}
-type Row={id:string;person_id:string;username:string;password_hash:string;status:'active'|'disabled'};
+export interface EmployeeAccount{id:string;personId:string;username:string;status:'active'|'disabled';passwordChangeRequired?:boolean}
+type Row={id:string;person_id:string;username:string;password_hash:string;status:'active'|'disabled';password_change_required?:boolean};
 const username=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$/).transform(v=>v.toLowerCase());
-const password=z.string().min(12).refine(v=>Buffer.byteLength(v,'utf8')<=72);
-const publicAccount=(row:Row):EmployeeAccount=>({id:row.id,personId:row.person_id,username:row.username,status:row.status});
+const password=passwordSchema;
+const publicAccount=(row:Row):EmployeeAccount=>({id:row.id,personId:row.person_id,username:row.username,status:row.status,...(row.password_change_required?{passwordChangeRequired:true}:{})});
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 const activePerson=`SELECT p.id FROM platform_people p JOIN platform_organization_units o ON o.id=p.organization_unit_id JOIN platform_positions pos ON pos.id=p.position_id
  WHERE p.id=$1 AND p.employment_status='active' AND o.status='active' AND pos.status='active'`;
@@ -72,17 +73,17 @@ export class EmployeeIdentityService{
    await appendAdminAudit(db,{actorId:context.administrator.id,action:'employee.update',targetId:id});return {...publicAccount(account),status:parsed.status??account.status};
   });
  }
- async authenticate(token?:string):Promise<EmployeeAccount|null>{
+ async authenticate(token?:string,allowPasswordChange=false):Promise<EmployeeAccount|null>{
   if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
   return this.read(async db=>{
-   const [row]=await rows<Row>(db,`SELECT a.* FROM platform_employee_sessions s
+   const [row]=await rows<Row>(db,`SELECT a.*,s.password_change_required FROM platform_employee_sessions s
     JOIN platform_employee_accounts a ON a.id=s.account_id
     JOIN platform_people p ON p.id=a.person_id
     JOIN platform_organization_units o ON o.id=p.organization_unit_id
     JOIN platform_positions pos ON pos.id=p.position_id
     WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active'
     AND p.employment_status='active' AND o.status='active' AND pos.status='active'`,[digest(token)]);
-   return row?publicAccount(row):null;
+   return row&&(!row.password_change_required||allowPasswordChange)?publicAccount(row):null;
   });
  }
  async login(input:unknown){
@@ -93,9 +94,11 @@ export class EmployeeIdentityService{
   return this.transaction(async db=>{
    const [account]=await rows<Row>(db,'SELECT * FROM platform_employee_accounts WHERE id=$1',[candidate.id]);
    if(!account||account.status!=='active'||account.password_hash!==candidate.password_hash||!(await rows(db,activePerson,[account.person_id])).length)throw new EmployeeIdentityError(401,'EMPLOYEE_LOGIN_FAILED');
+   const passwordChangeRequired=!isPasswordCompliant(parsed.password);
+   if(passwordChangeRequired)await db.query('DELETE FROM platform_employee_sessions WHERE account_id=$1',[account.id]);
    const token=randomBytes(32).toString('hex');await db.query('DELETE FROM platform_employee_sessions WHERE expires_at<=now()');
-   await db.query('INSERT INTO platform_employee_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)',[digest(token),account.id,new Date(Date.now()+8*60*60*1000)]);
-   return {account:publicAccount(account),token};
+   await db.query('INSERT INTO platform_employee_sessions(token_hash,account_id,expires_at,password_change_required) VALUES($1,$2,$3,$4)',[digest(token),account.id,new Date(Date.now()+8*60*60*1000),passwordChangeRequired]);
+   return {account:publicAccount({...account,password_change_required:passwordChangeRequired}),token};
   });
  }
  async profile(token?:string){
@@ -104,9 +107,10 @@ export class EmployeeIdentityService{
   if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   return {...account,...result[0]};
  }
- private async requireSelf(db:QueryableClient,token:string){
-  const [account]=await rows<Row>(db,`SELECT a.* FROM platform_employee_accounts a JOIN platform_employee_sessions s ON s.account_id=a.id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active' FOR UPDATE OF a`,[digest(token)]);
+ private async requireSelf(db:QueryableClient,token:string,allowPasswordChange=false){
+  const [account]=await rows<Row>(db,`SELECT a.*,s.password_change_required FROM platform_employee_accounts a JOIN platform_employee_sessions s ON s.account_id=a.id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.status='active' FOR UPDATE OF a`,[digest(token)]);
   if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  if(account.password_change_required&&!allowPasswordChange)throw new EmployeeIdentityError(403,'EMPLOYEE_PASSWORD_CHANGE_REQUIRED');
   await this.validPerson(db,account.person_id);return account;
  }
  async updateProfile(token:string,input:unknown){
@@ -125,10 +129,10 @@ export class EmployeeIdentityService{
  }
  async changePassword(token:string,input:unknown){
   const parsed=z.object({currentPassword:z.string().max(256),newPassword:password}).strict().parse(input);
-  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  if(!await this.authenticate(token,true))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   const hash=await bcrypt.hash(parsed.newPassword,12);
   await this.transaction(async db=>{
-   const account=await this.requireSelf(db,token);
+   const account=await this.requireSelf(db,token,true);
    if(!await bcrypt.compare(parsed.currentPassword,account.password_hash))throw new EmployeeIdentityError(403,'EMPLOYEE_PASSWORD_INCORRECT');
    await db.query('UPDATE platform_employee_accounts SET password_hash=$1 WHERE id=$2',[hash,account.id]);
    await db.query('DELETE FROM platform_employee_sessions WHERE account_id=$1',[account.id]);

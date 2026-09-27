@@ -1,6 +1,13 @@
 import importlib.util,json,pathlib,tempfile,unittest,uuid,subprocess,hashlib
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('updater',pathlib.Path(__file__).parents[2]/'deploy/updater.py');u=importlib.util.module_from_spec(spec);spec.loader.exec_module(u)
+class PasswordPolicy(unittest.TestCase):
+ def test_account_password_rule(self):
+  for value in ['Abcd1234','Abcdefg!','ABCD123!','abcd123!','Aa1！中文密码','Aa1!'+('a'*68)]:
+   with self.subTest(value=value):self.assertTrue(u.valid_account_password(value))
+  for value in ['Aa1!abc','abcdefghijkl','abcd1234','Abcdefgh','ABCD1234','abcdefg!','abcd123 ','abcd123中','abcd123\u0301','Aa1!'+('a'*69),'Aa1!'+('中'*23)]:
+   with self.subTest(value=value):self.assertFalse(u.valid_account_password(value))
+
 class Fixture(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.temp.name)

@@ -1,3 +1,6 @@
+import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
+import {PasswordInput} from '../identity/PasswordInput';
+import {isPasswordCompliant,PASSWORD_POLICY_MESSAGE} from '../identity/password-policy';
 import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {ManagedApplications,type ManagedApplication} from './ManagedApplications';
 import {ProfileSections} from '../identity/ProfileSections';
@@ -12,7 +15,7 @@ import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
 import type {SandboxJson} from '../host/sandbox/bridge';
 import {rememberApp,type RetainedApp} from './retained-apps';
 
-type Account={id:string;personId:string;username:string;name?:string};
+type Account={id:string;personId:string;username:string;name?:string;passwordChangeRequired?:boolean};
 type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;runtimeRevision:number;frontendRunMode:'standard'|'trusted';bundleUrl?:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
 type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;downloads?:true;resource:SandboxFrameResource;initialRoute:string};
 function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{account:Account;path:string;visible:boolean;prefetch:boolean;onNavigation:(appId:string,ids:string[])=>void}){
@@ -80,8 +83,8 @@ export default function EmployeeApp(){
   const timer=setTimeout(()=>{if(document.visibilityState==='visible')setRetainedApps(current=>rememberApp(current,{accountId:account.id,appId:app.appId,path:warmPath,prefetch:true}));},300);
   return()=>clearTimeout(timer);
  },[account?.id,activeApp,pathname,retainedApps,apps]);
- useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/profile').then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
- useEffect(()=>{if(!account)return;const accountId=account.id;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){const allowed=new Set(value.applications.map(app=>app.appId));setRetainedApps(current=>current.every(item=>item.accountId===accountId&&allowed.has(item.appId))?current:current.filter(item=>item.accountId===accountId&&allowed.has(item.appId)));setOwned(managed.applications);setApps(value.applications);setAppsLoaded(true);setError('');}}catch(e){if(active){setApps([]);setAppsLoaded(false);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
+ useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/auth/me').then(v=>v.passwordChangeRequired?v:employeeRequest<Account>('/profile')).then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
+ useEffect(()=>{if(!account||account.passwordChangeRequired)return;const accountId=account.id;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){const allowed=new Set(value.applications.map(app=>app.appId));setRetainedApps(current=>current.every(item=>item.accountId===accountId&&allowed.has(item.appId))?current:current.filter(item=>item.accountId===accountId&&allowed.has(item.appId)));setOwned(managed.applications);setApps(value.applications);setAppsLoaded(true);setError('');}}catch(e){if(active){setApps([]);setAppsLoaded(false);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
  useEffect(()=>{
   const desired=new Set<string>();
   if(pathname!=='/employee'||!appsLoaded||!account){for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();return;}
@@ -100,6 +103,7 @@ export default function EmployeeApp(){
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" replace/>;
+ if(account.passwordChangeRequired)return <PasswordChangeRequired kind="employee" onChanged={()=>{setAccount(null);setApps([]);setRetainedApps([]);navigate('/login',{replace:true});}}/>;
  const visibleApps=apps;
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={(onSaved,onBusy)=><EmployeeProfile onSaved={onSaved} onBusy={onBusy}/>} notificationsContent={<EmployeeMessages/>}>
@@ -115,6 +119,7 @@ function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean
  useEffect(()=>{const c=new AbortController();employeeRequest<Record<string,string>>('/profile',{signal:c.signal}).then(setProfile).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[]);
  async function save(password:boolean){
   if(busy||!profile)return;setError('');setNotice('');
+  if(password&&!isPasswordCompliant(newPassword)){setError(PASSWORD_POLICY_MESSAGE);return;}
   if(password&&newPassword!==confirm){setError('两次输入的新密码不一致。');return;}
   setBusy(true);onBusy(true);try{
    await employeeRequest(password?'/auth/password':'/profile',{method:'PATCH',body:password?{currentPassword,newPassword}:{phone:profile.phone??'',wecomUserId:profile.wecomUserId??''}});
@@ -129,8 +134,8 @@ function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean
  <div className="afc-profile-actions"><Button type="submit" loading={busy} disabled={busy}>{busy?'保存中…':'保存资料'}</Button></div></form>} password={
  <form className="admin-form" onSubmit={e=>{e.preventDefault();void save(true);}}>
  <label>当前密码<Input required type="password" autoComplete="current-password" disabled={busy} value={currentPassword} onChange={e=>setCurrent(e.target.value)}/></label>
- <label>新密码<Input required type="password" minLength={12} maxLength={72} autoComplete="new-password" disabled={busy} value={newPassword} onChange={e=>setNew(e.target.value)}/></label>
- <label>确认新密码<Input required type="password" minLength={12} maxLength={72} autoComplete="new-password" disabled={busy} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label>
+ <label>新密码<PasswordInput required autoComplete="new-password" disabled={busy} value={newPassword} onChange={e=>setNew(e.target.value)}/></label>
+ <label>确认新密码<Input required type="password" minLength={8} maxLength={72} autoComplete="new-password" disabled={busy} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label>
  <p className="afc-muted">修改后需要重新登录，其他设备的登录也会失效。</p><div className="afc-profile-actions"><Button type="submit" disabled={busy}>修改密码</Button></div></form>}/>:!error&&<p role="status">正在读取个人资料…</p>}</>;
 }
 function EmployeeMessages(){

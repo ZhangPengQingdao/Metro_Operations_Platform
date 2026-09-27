@@ -1,3 +1,4 @@
+import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
 import {RegistrationReview} from './RegistrationReview';
 import {Pulse,ShieldCheck,UploadSimple,Pause,Play,Plus,GearSix} from '@phosphor-icons/react';
@@ -64,10 +65,11 @@ export default function AdminApp(){
  useEffect(()=>{const expire=()=>{setUser(null);setApplications([]);};window.addEventListener('afc-admin-session-expired',expire);return()=>window.removeEventListener('afc-admin-session-expired',expire);},[]);
  const reloadApps=useCallback(()=>{adminRequest<{applications:Installation[]}>('/apps').then(({applications:rows})=>setApplications(rows.filter(a=>a.enabled&&a.manifest.ui.mode!=='none').map(a=>({id:a.appId,name:a.manifest.name,icon:a.manifest.icon,navigation:a.manifest.navigation.flatMap(n=>{const route=a.manifest.routes.find(r=>r.id===n.routeId);return route?[{id:n.id,label:n.label,path:`/admin/app/${a.appId}${route.path==='/'?'':route.path}`}]:[]})})))).catch(()=>setApplications([]));},[]);
  useEffect(()=>{let active=true;adminRequest<AdminUser>('/auth/me').then(value=>{if(active)setUser(value);}).catch(e=>{if(active&&!(e instanceof AdminRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
- useEffect(()=>{if(user)reloadApps();},[user,reloadApps]);
+ useEffect(()=>{if(user&&!user.passwordChangeRequired)reloadApps();},[user,reloadApps]);
  async function logout(){await adminRequest('/auth/logout',{method:'POST'});setUser(null);setApplications([]);navigate('/login');}
  if(loading)return <div className="afc-admin"><p role="status">正在检查管理员会话…</p></div>;
  if(!user)return <Navigate to="/login" replace/>;
+ if(user.passwordChangeRequired)return <PasswordChangeRequired kind="admin" onChanged={()=>{setUser(null);setApplications([]);navigate('/login',{replace:true});}}/>;
  if(location.pathname==='/admin/login'||location.pathname==='/admin/updates'||location.pathname==='/admin/audit')return <Navigate to="/admin" replace/>;
  const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage onChange={reloadApps}/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts/registrations'?<RegistrationReview/>:path==='/admin/accounts/employees'?<EmployeeAccounts/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/developer'?<DeveloperPage/>:path.startsWith('/admin/app/')?<AdminApplicationOutlet/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
  return <AdminShell user={user} applications={applications} onLogout={logout} profileContent={<ProfileSections basic={<dl className="afc-details"><dt>账号</dt><dd>{user.username}</dd><dt>名称</dt><dd>{user.displayName}</dd></dl>} password={<PasswordPanel onChanged={()=>{setUser(null);navigate('/login');}}/>}/>} notificationsContent={<NotificationsPanel/>}>{content}</AdminShell>;

@@ -10,7 +10,7 @@ test('registration without captcha requires atomic native administrator approval
  await pg.query("INSERT INTO platform_organization_units(id,code,name,unit_type,status,parent_id,created_at,updated_at) SELECT ('62000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,'page-'||n,'Paged team '||n,'workgroup','active',$1,now(),now() FROM generate_series(1,101) AS n",[org]);
  const first=await service.organizations(''),last=await service.organizations('',String(first.at(-1)!.id));
  assert.equal(first.length,100);assert.equal(last.length,2);assert.equal(new Set([...first,...last].map(o=>o.id)).size,102);assert.ok(last.every(o=>o.parentId===org));
- const input={employeeNo:'Worker-001',name:'测试员工',phone:'13800000000',wecomUserId:'worker001',organizationId:org,password:'test-register-password'};
+ const input={employeeNo:'Worker-001',name:'测试员工',phone:'13800000000',wecomUserId:'worker001',organizationId:org,password:'Test-register-password1'};
  assert.deepEqual(await service.submit({...input}),{status:'pending'});await assert.rejects(identity.login({username:'worker-001',password:input.password}),/EMPLOYEE_LOGIN_FAILED/);await assert.rejects(service.submit({...input}),/REGISTRATION_CONFLICT/);
  const list=await service.list(actor,1);assert.equal(list.total,1);assert.ok(!JSON.stringify(list).includes('password'));const id=list.applications[0].id as string;
  const denied={...actor,authorize:async(permission:string)=>({...await actor.authorize(permission,{}),allowed:false})};await assert.rejects(service.list(denied,1),/REGISTRATION_DENIED/);await assert.rejects(service.review(denied,id,{decision:'reject'}),/REGISTRATION_DENIED/);

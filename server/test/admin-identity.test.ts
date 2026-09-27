@@ -1,3 +1,4 @@
+import {ADMIN_PASSWORD_SESSION_SQL} from '../src/setup/password-policy-migration.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
@@ -7,7 +8,7 @@ import { ADMIN_IDENTITY_MIGRATION, AdminIdentityService, registerAdminIdentityRo
 
 async function fixture() {
  const db = new PGlite();
- await db.exec(ADMIN_IDENTITY_MIGRATION);
+ await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);
  const client = { query: (sql: string, values?: readonly unknown[]) => sql.includes('pg_advisory_xact_lock') ? Promise.resolve({ rows: [] }) : db.query(sql, values ? [...values] : []), release() {} };
  const service = new AdminIdentityService({ connect: async () => client });
  return { db, service };

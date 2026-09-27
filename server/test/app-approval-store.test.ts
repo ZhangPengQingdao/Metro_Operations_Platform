@@ -1,3 +1,4 @@
+import {ADMIN_PASSWORD_SESSION_SQL} from '../src/setup/password-policy-migration.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync} from 'node:crypto';
@@ -9,8 +10,8 @@ import type {PlatformManagementContext} from '../src/platform/context/index.ts';
 test('publisher trust and exact version approval retain history, use CAS, deny invalid keys and never reimport revoked configuration',async()=>{
  const db=new PGlite();const client={query:(sql:string,args?:readonly unknown[])=>db.query(sql,[...(args??[])]),release(){}};const pool={connect:async()=>client};
  try{
-  await db.exec(ADMIN_IDENTITY_MIGRATION);await appApprovalMigration.run({client} as never);
-  const account=await new AdminIdentityService(pool).bootstrap({username:'policy.admin',displayName:'Policy',password:'Policy-test-password'});
+  await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);await appApprovalMigration.run({client} as never);
+  const account=await new AdminIdentityService(pool).bootstrap({username:'policy.admin',displayName:'Policy',password:'Policy-test-password1'});
   let allowed=true;const context={actorType:'administrator',administrator:account,execution:{type:'platform'},authorize:async()=>({allowed})} as unknown as PlatformManagementContext;
   const keys=generateKeyPairSync('ed25519'),key={publisherId:'publisher',keyId:'publisher-key',publicKeyPem:keys.publicKey.export({format:'pem',type:'spki'}).toString(),appIds:['inventory'],revoked:false,validFrom:'2020-01-01T00:00:00Z',validUntil:'2099-01-01T00:00:00Z'};
   const store=new AppApprovalStore(pool),digest='a'.repeat(64);
