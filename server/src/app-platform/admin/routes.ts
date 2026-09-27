@@ -99,6 +99,8 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.get<{Params:{key:string};Querystring:{q?:string;status?:string}}>('/data/:key',async req=>withData(req,async(service,context)=>({records:await service.list(context.administrator,req.params.key,req.query.q??'',req.query.status??'')})));
   scoped.post<{Params:{key:string}}>('/data/:key',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.create(context.administrator,req.params.key,req.body)));
   scoped.patch<{Params:{key:string;id:string}}>('/data/:key/:id',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.update(context.administrator,req.params.key,req.params.id,req.body)));
+  scoped.get<{Params:{id:string}}>('/data/organizations/:id/stations',async req=>withData(req,(service,context)=>service.workgroupStations(context.administrator,req.params.id)));
+  scoped.put<{Params:{id:string}}>('/data/organizations/:id/stations',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.setWorkgroupStations(context.administrator,req.params.id,req.body)));
   scoped.get('/audit',async()=>{
    const db=await options.pool.connect();
    try {const result=await db.query('SELECT id,actor_id AS "actorId",action,target_id AS "targetId",occurred_at AS "createdAt" FROM platform_admin_audit ORDER BY occurred_at DESC,id DESC LIMIT 100');return {entries:(result as {rows:unknown[]}).rows};}finally{db.release();}

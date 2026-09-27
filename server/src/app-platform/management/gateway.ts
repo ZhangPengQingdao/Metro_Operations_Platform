@@ -14,8 +14,10 @@ import type {AppGatewayOperation} from '../gateway/model.js';
 import {AppGateway} from '../gateway/gateway.js';
 import {createPeopleDirectoryOperation} from '../gateway/people-directory.js';
 import {createLocationListReader} from '../gateway/location-list.js';
+import {createResponsibleStationReader} from '../gateway/responsible-stations.js';
 import {createAssetListReader} from '../gateway/asset-list.js';
 import {createDirectoryGatewayOperations} from '../gateway/directory.js';
+import {createAiCompletionOperation} from '../gateway/ai.js';
 
 /** Runtime requests never borrow the lifecycle manager's transaction session. */
 function createManagementContexts(pool:ConnectablePool&QueryableClient){
@@ -41,7 +43,7 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
  const {contextResolver,authenticateServiceCredential}=createManagementContexts(pool);
  return new AppGateway({registry:{authenticateServiceCredential},contextResolver,
   auditRepository:createPostgresCoreTechnicalAuditRepository(pool),
-  operations:[createOrganizationContextOperation(createPostgresPeopleDirectoryRepository(pool)),createWebhookOperation(),...createSignatureGatewayOperations(pool),createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations]});
+  operations:[createOrganizationContextOperation(createPostgresPeopleDirectoryRepository(pool)),createWebhookOperation(),createAiCompletionOperation(),...createSignatureGatewayOperations(pool),createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listResponsibleStations:createResponsibleStationReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations],limits:{timeoutMs:30_000}});
 }
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){

@@ -8,3 +8,7 @@ export const appGatewayPermissionsMigration:MigrationDefinition={id:'app-gateway
 export const appPeoplePermissionMigration:MigrationDefinition={id:'app-gateway-people-permission',title:'Active workgroup directory permission',ownerTaskId:'PLATFORM-L4-016',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-062'],sourceTables:[],targetTables:['platform_permissions'],dependsOn:['platform-authorization-expand'],recoveryNotes:'Permission catalog only; no employee or service grant.',async run({client}){
  await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000005','platform.people.read','读取工班成员','按授权范围读取在职工班成员姓名和工号','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
 }};
+
+export const appAiPermissionMigration:MigrationDefinition={id:'app-gateway-ai-permission',title:'Bounded AI completion permission',ownerTaskId:'PLATFORM-L4-017',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-063'],sourceTables:[],targetTables:['platform_permissions'],dependsOn:['platform-authorization-expand'],recoveryNotes:'Permission catalog only; no application receives model access automatically.',async run({client}){
+ await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000006','platform.ai.complete','调用平台配置的模型','应用使用受限文本补全，模型凭据不进入沙箱','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
+}};

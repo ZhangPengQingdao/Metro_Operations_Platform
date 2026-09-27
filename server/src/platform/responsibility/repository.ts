@@ -10,6 +10,7 @@ export interface ResponsibilityRepository {
   findScopeByTarget(record: Omit<ResponsibilityScope, 'id'|'status'|'createdAt'|'updatedAt'>): Promise<ResponsibilityScope | null>;
   listScopesByOrganization(organizationUnitId: string): Promise<ResponsibilityScope[]>;
   listScopesByTarget(target: { responsibilityAreaId?: string; locationId?: string; assetTypeId?: string; assetId?: string }): Promise<ResponsibilityScope[]>;
+  setScopeStatus(id: string, status: ResponsibilityScope['status']): Promise<ResponsibilityScope>;
   createAssignment(record: ResponsibilityAssignment): Promise<ResponsibilityAssignment>;
   listAssignmentsByScope(scopeId: string): Promise<ResponsibilityAssignment[]>;
   listAssignmentsByPerson(personId: string): Promise<ResponsibilityAssignment[]>;
@@ -35,6 +36,7 @@ export function createMemoryResponsibilityRepository(seed: { areas?: readonly Re
     async findScopeByTarget(record) { return cloneOrNull([...scopes.values()].find((x) => x.organizationUnitId === record.organizationUnitId && sameTarget(x, record))); },
     async listScopesByOrganization(id) { return [...scopes.values()].filter((x) => x.organizationUnitId === id).map(clone); },
     async listScopesByTarget(target) { return [...scopes.values()].filter((x) => targetMatches(x,target)).map(clone); },
+    async setScopeStatus(id,status) { const scope=scopes.get(id);if(!scope)throw new ResponsibilityError('SCOPE_NOT_FOUND','责任范围不存在');const updated={...scope,status,updatedAt:new Date().toISOString()};scopes.set(id,updated);return clone(updated); },
     async createAssignment(record) { if (assignments.has(record.id)) throw new ResponsibilityError('DUPLICATE_ASSIGNMENT_ID','责任分配 ID 已存在'); assignments.set(record.id,clone(record)); return clone(record); },
     async listAssignmentsByScope(id) { return [...assignments.values()].filter((x) => x.scopeId === id).map(clone).sort(compareAssignments); },
     async listAssignmentsByPerson(id) { return [...assignments.values()].filter((x) => x.personId === id).map(clone).sort(compareAssignments); },
@@ -73,6 +75,7 @@ export function createPostgresResponsibilityRepository(client: QueryableClient):
         [t.responsibilityAreaId??null,t.locationId??null,t.assetTypeId??null,t.assetId??null]
       )).map(mapScope);
     },
+    async setScopeStatus(id,status) { return mapScope(requireRow(await client.query('UPDATE platform_responsibility_scopes SET status=$2,updated_at=now() WHERE id=$1 RETURNING *',[id,status]))); },
     async createAssignment(r) {
       return mapAssignment(requireRow(await client.query(
         `INSERT INTO platform_responsibility_assignments

@@ -1,0 +1,66 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "records",
+      "columns": [
+        {"name":"id","type":"uuid","nullable":false},
+        {"name":"organization_id","type":"uuid","nullable":false},
+        {"name":"created_by","type":"uuid","nullable":false},
+        {"name":"created_at","type":"timestamptz","nullable":false},
+        {"name":"updated_by","type":"uuid","nullable":false},
+        {"name":"updated_at","type":"timestamptz","nullable":false},
+        {"name":"revision","type":"integer","nullable":false},
+        {"name":"intent_id","type":"uuid","nullable":false},
+        {"name":"inspected_at","type":"timestamptz","nullable":false},
+        {"name":"station_id","type":"uuid","nullable":false},
+        {"name":"location","type":"text","nullable":false},
+        {"name":"line","type":"text","nullable":false},
+        {"name":"description","type":"text","nullable":false},
+        {"name":"category","type":"text","nullable":false},
+        {"name":"level","type":"text","nullable":false},
+        {"name":"temporary_controls","type":"text","nullable":true},
+        {"name":"governance_measures","type":"text","nullable":true},
+        {"name":"governance_deadline","type":"timestamptz","nullable":true},
+        {"name":"governance_details","type":"text","nullable":true},
+        {"name":"responsible_person","type":"text","nullable":false},
+        {"name":"responsible_person_id","type":"uuid","nullable":false},
+        {"name":"before_photo_id","type":"uuid","nullable":true},
+        {"name":"after_photo_id","type":"uuid","nullable":true},
+        {"name":"status","type":"text","nullable":false},
+        {"name":"closed_by","type":"uuid","nullable":true},
+        {"name":"closed_at","type":"timestamptz","nullable":true},
+        {"name":"ai_confidence","type":"text","nullable":true},
+        {"name":"ai_basis","type":"text","nullable":true},
+        {"name":"search_text","type":"text","nullable":false}
+      ],
+      "primaryKey": ["id"]
+    },
+    {
+      "kind": "createTable",
+      "table": "cases",
+      "columns": [
+        {"name":"id","type":"uuid","nullable":false},
+        {"name":"organization_id","type":"uuid","nullable":false},
+        {"name":"source_record_id","type":"uuid","nullable":false},
+        {"name":"created_by","type":"uuid","nullable":false},
+        {"name":"created_at","type":"timestamptz","nullable":false},
+        {"name":"updated_at","type":"timestamptz","nullable":false},
+        {"name":"revision","type":"integer","nullable":false},
+        {"name":"description","type":"text","nullable":false},
+        {"name":"category","type":"text","nullable":false},
+        {"name":"level","type":"text","nullable":false},
+        {"name":"governance_measures","type":"text","nullable":false},
+        {"name":"governance_details","type":"text","nullable":false},
+        {"name":"quality_score","type":"integer","nullable":false},
+        {"name":"retrieval_enabled","type":"boolean","nullable":false},
+        {"name":"training_enabled","type":"boolean","nullable":false},
+        {"name":"search_text","type":"text","nullable":false}
+      ],
+      "primaryKey": ["id"]
+    },
+    {"kind":"createIndex","table":"records","name":"records_org_status_idx","columns":["organization_id","status"]},
+    {"kind":"createIndex","table":"cases","name":"cases_org_retrieval_idx","columns":["organization_id","retrieval_enabled"]}
+  ]
+}
