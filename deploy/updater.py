@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """MOP host updater. Python 3.12 stdlib + OpenSSL + Docker Compose, no web-process privileges."""
-import http.client,socket
+import http.client,socket,unicodedata
 import argparse,io,base64,fcntl,getpass,grp,hashlib,http.server,json,os,pathlib,platform,re,secrets,shutil,socketserver,subprocess,sys,tarfile,tempfile,threading,time,urllib.error,urllib.parse,urllib.request,uuid
 REPO='ZhangPengQingdao/Metro_Operations_Platform'
 VERSION=re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')
 IMAGE=re.compile(r'^sha256:[a-f0-9]{64}$')
 RUNTIME_IMAGE='node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5'
 ACTIVE={'queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up','migrating','switching','health_check','draining','restoring_apps'}
+def valid_account_password(value):
+ categories=[bool(re.search('[A-Z]',value)),bool(re.search('[a-z]',value)),bool(re.search('[0-9]',value)),any(not ch.isspace() and unicodedata.category(ch)[0] in 'PS' for ch in value)]
+ return len(value)>=8 and len(value.encode())<=72 and sum(categories)>=3
+
 class Failure(Exception):pass
 def require(ok,code):
  if not ok:raise Failure(code)
@@ -485,7 +489,7 @@ def install(root,v,key):
    print(f'请在 1Panel 配置 https://{domain} → http://127.0.0.1:{http_port}，保留 Host 请求头。')
    if applications:print(f'应用资源配置 https://{resource_domain} 与 https://*.{resource_domain} → http://127.0.0.1:{resource_port}，配置 wildcard DNS/TLS，保留原始 Host；该域名只用于应用资源，不设置平台 Cookie。')
   username=input('首位管理员用户名：').strip();require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{2,63}',username),'INVALID_USERNAME')
-  password=getpass.getpass('管理员密码（至少 12 字符）：');require(12<=len(password) and len(password.encode())<=72 and password==getpass.getpass('再次输入密码：'),'INVALID_PASSWORD')
+  password=getpass.getpass('管理员密码（至少 8 字符，大小写字母、数字、特殊符号至少三类）：');require(valid_account_password(password) and password==getpass.getpass('再次输入密码：'),'INVALID_PASSWORD')
   token=getpass.getpass('GitHub 私有仓库只读令牌：').strip();require(10<len(token)<512 and not any(c.isspace() for c in token),'INVALID_GITHUB_TOKEN')
   try:gid=grp.getgrnam('mop-update').gr_gid
   except KeyError:command(['groupadd','--system','mop-update']);gid=grp.getgrnam('mop-update').gr_gid

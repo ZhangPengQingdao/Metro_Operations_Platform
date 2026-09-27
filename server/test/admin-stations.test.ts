@@ -1,3 +1,4 @@
+import {ADMIN_PASSWORD_SESSION_SQL} from '../src/setup/password-policy-migration.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -13,13 +14,14 @@ import {PLATFORM_RESPONSIBILITY_SQL} from '../src/platform/responsibility/index.
 import {createResponsibleStationReader} from '../src/app-platform/gateway/responsible-stations.ts';
 
 test('administrator maintains one station on multiple lines with atomic audit, conflict protection and scoped directory continuity',async()=>{
- const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION+PLATFORM_PEOPLE_DIRECTORY_SQL+PLATFORM_LOCATION_DIRECTORY_SQL+PLATFORM_ASSET_DIRECTORY_SQL+PLATFORM_RESPONSIBILITY_SQL);
+ const db=new PGlite();await db.exec(ADMIN_IDENTITY_MIGRATION+PLATFORM_PEOPLE_DIRECTORY_SQL+PLATFORM_LOCATION_DIRECTORY_SQL+PLATFORM_ASSET_DIRECTORY_SQL+PLATFORM_RESPONSIBILITY_SQL);await db.exec(ADMIN_PASSWORD_SESSION_SQL);
  const client={query:(sql:string,args?:readonly unknown[])=>sql.includes('pg_advisory_xact_lock')?Promise.resolve({rows:[]}):db.query(sql,[...(args??[])]),release(){}};
  const pool={connect:async()=>client},identity=new AdminIdentityService(pool),origin='https://platform.example';
  const actor=await identity.bootstrap({username:'station.admin',displayName:'车站管理员',password:'Station-directory-test-123'});
  const app=Fastify();await app.register(cookie);registerAdminIdentityRoutes(app,{origin,service:identity});await registerAdminConsoleRoutes(app,{origin,identity,pool});
  try{
   const login=await app.inject({method:'POST',url:'/api/admin/auth/login',headers:{origin},payload:{username:actor.username,password:'Station-directory-test-123'}});
+  assert.equal(login.statusCode,200,login.body);
   const headers={origin,cookie:String(login.headers['set-cookie']).split(';')[0]};
   async function request(method:'GET'|'POST'|'PUT',path:string,payload?:unknown){return app.inject({method,url:'/api/admin/data/'+path,headers,payload});}
   for(const [method,path] of [['GET','line-stations'],['POST','stations'],['PUT','stations/10000000-0000-4000-8000-000000000001']] as const){

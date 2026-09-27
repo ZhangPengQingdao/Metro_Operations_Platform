@@ -1,3 +1,4 @@
+import {passwordSchema} from '../../core/security/index.js';
 import {randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import {z} from 'zod';
@@ -12,7 +13,7 @@ CREATE TABLE IF NOT EXISTS platform_registration_challenges(id uuid PRIMARY KEY,
 CREATE TABLE IF NOT EXISTS platform_employee_registrations(id uuid PRIMARY KEY,employee_no text NOT NULL,name text NOT NULL,phone text,wecom_user_id text,organization_id uuid NOT NULL REFERENCES platform_organization_units(id),password_hash text,status text NOT NULL CHECK(status IN ('pending','approved','rejected')),created_at timestamptz NOT NULL DEFAULT now(),reviewed_at timestamptz,reviewer_id uuid,person_id uuid REFERENCES platform_people(id));
 CREATE UNIQUE INDEX IF NOT EXISTS platform_registration_pending_employee ON platform_employee_registrations(lower(employee_no)) WHERE status='pending';`);}};
 const rows=async<T=Record<string,unknown>>(db:QueryableClient,sql:string,args:readonly unknown[]=[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
-const application=z.object({employeeNo:z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).transform(v=>v.toLowerCase()),name:z.string().trim().min(1).max(100),phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/).default(''),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/).default(''),organizationId:z.string().uuid(),password:z.string().min(12).refine(v=>Buffer.byteLength(v,'utf8')<=72)}).strict();
+const application=z.object({employeeNo:z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).transform(v=>v.toLowerCase()),name:z.string().trim().min(1).max(100),phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/).default(''),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/).default(''),organizationId:z.string().uuid(),password:passwordSchema}).strict();
 export class RegistrationService {
  constructor(private pool:ConnectablePool){}
  private async read<T>(work:(db:QueryableClient)=>Promise<T>){const db=await this.pool.connect();try{return await work(db);}finally{db.release();}}

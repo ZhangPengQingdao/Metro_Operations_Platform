@@ -36,10 +36,16 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
     const now=Date.now();for(const [id,entry]of attempts)if(entry.until<=now)attempts.delete(id);
     if(!attempts.has(req.ip)&&attempts.size>=10000)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
     const entry=attempts.get(req.ip)??{count:0,until:now+60000};attempts.set(req.ip,entry);if(++entry.count>5)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
-   }else precheckedIdentity.set(req,await options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+   }else {
+    const passwordRoute=({GET:'/api/employee/auth/me',POST:'/api/employee/auth/logout',PATCH:'/api/employee/auth/password'} as Record<string,string>)[req.method];
+    const account=await options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE],true);
+    if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+    if(account.passwordChangeRequired&&req.routeOptions.url!==passwordRoute)throw new EmployeeIdentityError(403,'EMPLOYEE_PASSWORD_CHANGE_REQUIRED');
+    if(req.routeOptions.url!==passwordRoute)precheckedIdentity.set(req,{source:'session',userId:account.personId});
+   }
   });
   scoped.post('/auth/login',{bodyLimit:4096},async(req,reply)=>{const result=await options.service.login(req.body);reply.setCookie(EMPLOYEE_SESSION_COOKIE,result.token,{...cookie,maxAge:8*60*60});return result.account;});
-  scoped.get('/auth/me',async req=>options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.get('/auth/me',async req=>options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE],true));
   scoped.post('/auth/logout',async(req,reply)=>{await options.service.logout(req.cookies[EMPLOYEE_SESSION_COOKIE]!);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/profile',async req=>options.service.profile(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));

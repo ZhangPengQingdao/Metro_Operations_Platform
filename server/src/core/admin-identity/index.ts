@@ -1,3 +1,4 @@
+import { passwordSchema, isPasswordCompliant } from '../security/password-policy.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import type { FastifyInstance } from 'fastify';
@@ -32,12 +33,12 @@ export const adminIdentityMigration: MigrationDefinition = {
 export async function appendAdminAudit(db: QueryableClient, event: { actorId: string; action: string; targetId: string }): Promise<void> {
  await db.query('INSERT INTO platform_admin_audit(id,actor_id,action,target_id) VALUES($1,$2,$3,$4)', [randomUUID(), event.actorId, event.action, event.targetId]);
 }
-export interface AdminAccount { id: string; username: string; displayName: string; status: 'active' | 'disabled' }
-type AccountRow = { id: string; username: string; display_name: string; password_hash: string; status: 'active' | 'disabled' };
-const publicAccount = (row: AccountRow): AdminAccount => ({ id: row.id, username: row.username, displayName: row.display_name, status: row.status });
+export interface AdminAccount { id: string; username: string; displayName: string; status: 'active' | 'disabled'; passwordChangeRequired?: boolean }
+type AccountRow = { id: string; username: string; display_name: string; password_hash: string; status: 'active' | 'disabled'; password_change_required?: boolean };
+const publicAccount = (row: AccountRow): AdminAccount => ({ id: row.id, username: row.username, displayName: row.display_name, status: row.status, ...(row.password_change_required ? { passwordChangeRequired: true } : {}) });
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
 const username = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$/).transform(v => v.toLowerCase());
-const password = z.string().min(12).refine(v => Buffer.byteLength(v, 'utf8') <= 72, 'Password exceeds bcrypt limit');
+const password = passwordSchema;
 const accountInput = z.object({ username, displayName: z.string().trim().min(1).max(80), password }).strict();
 export class AdminIdentityError extends Error {
  constructor(readonly statusCode: number, readonly code: string) { super(code); }
@@ -57,16 +58,17 @@ export class AdminIdentityService {
  }
  private async identity(db: QueryableClient, token?: string): Promise<AccountRow | undefined> {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return undefined;
-  return (await rows<AccountRow>(db, `SELECT a.* FROM platform_admin_accounts a JOIN platform_admin_sessions s ON s.account_id=a.id WHERE s.token_hash=$1 AND s.expires_at > now() AND a.status='active'`, [digest(token)]))[0];
+  return (await rows<AccountRow>(db, `SELECT a.*,s.password_change_required FROM platform_admin_accounts a JOIN platform_admin_sessions s ON s.account_id=a.id WHERE s.token_hash=$1 AND s.expires_at > now() AND a.status='active'`, [digest(token)]))[0];
  }
- private async require(db: QueryableClient, token: string): Promise<AccountRow> {
+ private async require(db: QueryableClient, token: string, allowPasswordChange = false): Promise<AccountRow> {
   const account = await this.identity(db, token);
   if (!account) throw new AdminIdentityError(401, 'ADMIN_AUTH_REQUIRED');
+  if (account.password_change_required && !allowPasswordChange) throw new AdminIdentityError(403, 'ADMIN_PASSWORD_CHANGE_REQUIRED');
   return account;
  }
- async authenticate(token?: string): Promise<AdminAccount | null> {
+ async authenticate(token?: string, allowPasswordChange = false): Promise<AdminAccount | null> {
   const db = await this.pool.connect();
-  try { const row = await this.identity(db, token); return row ? publicAccount(row) : null; } finally { db.release(); }
+  try { const row = await this.identity(db, token); return row && (!row.password_change_required || allowPasswordChange) ? publicAccount(row) : null; } finally { db.release(); }
  }
  async bootstrap(input: unknown): Promise<AdminAccount> {
   const parsed = accountInput.parse(input); const hash = await bcrypt.hash(parsed.password, 12);
@@ -94,20 +96,22 @@ export class AdminIdentityService {
   return this.transaction(async db => {
    const [row] = await rows<AccountRow>(db, 'SELECT * FROM platform_admin_accounts WHERE username=$1', [parsed.username]);
    if (!row || row.status !== 'active' || row.password_hash !== verified.password_hash || row.id !== verified.id) throw new AdminIdentityError(401, 'ADMIN_LOGIN_FAILED');
+   const passwordChangeRequired = !isPasswordCompliant(parsed.password);
+   if (passwordChangeRequired) await db.query('DELETE FROM platform_admin_sessions WHERE account_id=$1', [row.id]);
    const token = randomBytes(32).toString('hex');
    await db.query('DELETE FROM platform_admin_sessions WHERE expires_at <= now()');
-   await db.query('INSERT INTO platform_admin_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)', [digest(token), row.id, new Date(Date.now() + this.sessionMs)]);
+   await db.query('INSERT INTO platform_admin_sessions(token_hash,account_id,expires_at,password_change_required) VALUES($1,$2,$3,$4)', [digest(token), row.id, new Date(Date.now() + this.sessionMs), passwordChangeRequired]);
    await appendAdminAudit(db, { actorId: row.id, action: 'admin.login', targetId: row.id });
-   return { account: publicAccount(row), token };
+   return { account: publicAccount({ ...row, password_change_required: passwordChangeRequired }), token };
   });
  }
  async logout(token: string): Promise<void> { await this.transaction(async db => { await db.query('DELETE FROM platform_admin_sessions WHERE token_hash=$1', [digest(token)]); }); }
  async changePassword(token: string, input: unknown): Promise<void> {
   const parsed = z.object({ currentPassword: z.string().max(256), newPassword: password }).strict().parse(input);
-  if (!await this.authenticate(token)) throw new AdminIdentityError(401, 'ADMIN_AUTH_REQUIRED');
+  if (!await this.authenticate(token, true)) throw new AdminIdentityError(401, 'ADMIN_AUTH_REQUIRED');
   const hash = await bcrypt.hash(parsed.newPassword, 12);
   await this.transaction(async db => {
-   const account = await this.require(db, token);
+   const account = await this.require(db, token, true);
    if (!await bcrypt.compare(parsed.currentPassword, account.password_hash)) throw new AdminIdentityError(403, 'ADMIN_PASSWORD_INCORRECT');
    await db.query('UPDATE platform_admin_accounts SET password_hash=$1 WHERE id=$2', [hash, account.id]);
    await db.query('DELETE FROM platform_admin_sessions WHERE account_id=$1', [account.id]);
@@ -167,14 +171,19 @@ export function registerAdminIdentityRoutes(app: FastifyInstance, options: { ori
     if (attempts.size >= 10000 && !attempts.has(request.ip)) throw new AdminIdentityError(429, 'ADMIN_RATE_LIMIT');
     attempts.set(request.ip, entry);
     if (++entry.count > 5) throw new AdminIdentityError(429, 'ADMIN_RATE_LIMIT');
-   } else if (!await options.service.authenticate(request.cookies[ADMIN_SESSION_COOKIE])) throw new AdminIdentityError(401, 'ADMIN_AUTH_REQUIRED');
+   } else {
+    const account = await options.service.authenticate(request.cookies[ADMIN_SESSION_COOKIE], true);
+    if (!account) throw new AdminIdentityError(401, 'ADMIN_AUTH_REQUIRED');
+    const passwordRoute = ({ GET: '/api/admin/auth/me', POST: '/api/admin/auth/logout', PATCH: '/api/admin/auth/password' } as Record<string, string>)[request.method];
+    if (account.passwordChangeRequired && request.routeOptions.url !== passwordRoute) throw new AdminIdentityError(403, 'ADMIN_PASSWORD_CHANGE_REQUIRED');
+   }
   });
   scoped.post('/auth/login', { bodyLimit: 4096 }, async (req, reply) => {
    const result = await options.service.login(req.body);
    reply.setCookie(ADMIN_SESSION_COOKIE, result.token, { ...cookie, maxAge: 8 * 60 * 60 });
    return result.account;
   });
-  scoped.get('/auth/me', async req => options.service.authenticate(req.cookies[ADMIN_SESSION_COOKIE]));
+  scoped.get('/auth/me', async req => options.service.authenticate(req.cookies[ADMIN_SESSION_COOKIE], true));
   scoped.post('/auth/logout', async (req, reply) => { await options.service.logout(req.cookies[ADMIN_SESSION_COOKIE]!); reply.clearCookie(ADMIN_SESSION_COOKIE, cookie); return { ok: true }; });
   scoped.patch('/auth/password', { bodyLimit: 4096 }, async (req, reply) => { await options.service.changePassword(req.cookies[ADMIN_SESSION_COOKIE]!, req.body); reply.clearCookie(ADMIN_SESSION_COOKIE, cookie); return { ok: true }; });
   scoped.get('/accounts', async req => ({ accounts: await options.service.list(req.cookies[ADMIN_SESSION_COOKIE]!) }));

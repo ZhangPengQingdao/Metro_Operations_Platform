@@ -2,7 +2,7 @@
 
 ## 初始化与边界
 
-通过 `npm --prefix server run db:init` 显式安装新增的员工账号/会话及目录权限定义迁移。连同应用 runtime 存储迁移，当前共 35 项平台迁移；启动服务不会自动执行。迁移不创建员工账号、不授予角色权限，也不复制管理员身份。
+通过 `npm --prefix server run db:init` 显式安装新增的员工账号/会话及目录权限定义迁移。连同应用 runtime 存储迁移一起安装；启动服务不会自动执行。迁移不创建员工账号、不授予角色权限，也不复制管理员身份。
 
 员工账号绑定已有在职人员；所属组织、岗位也必须启用。管理员通过以下接口管理账号，需要平台管理员会话、写请求的同源 Origin 及 `platform.authorization.manage`：
 
@@ -14,9 +14,11 @@
 | POST | `/api/admin/employee-accounts` | `{personId, username, password}` |
 | PATCH | `/api/admin/employee-accounts/:id` | `{status?, password?}`，至少一项 |
 
-用户名 3–64 位，字母或数字开头，允许 `_ . -`，统一小写；密码至少 12 字符、不超过 72 UTF-8 字节。密码使用 bcrypt，返回值不包含哈希。创建/修改写入管理员审计；停用、重新启用、重置密码均撤销已有会话。管理员在“账号管理 → 员工账号”中创建、分页搜索账号、重置密码与启停。账号与人员一一关联，不赋予管理员身份。
+用户名 3–64 位，字母或数字开头，允许 `_ . -`，统一小写；密码至少 8 字符，且大写字母、小写字母、数字、特殊符号中至少包含三类，不超过 72 UTF-8 字节。密码使用 bcrypt，返回值不包含哈希。创建/修改写入管理员审计；停用、重新启用、重置密码均撤销已有会话。管理员在“账号管理 → 员工账号”中创建、分页搜索账号、重置密码与启停。账号与人员一一关联，不赋予管理员身份。
 
 ## 员工会话
+
+已有密码不合规时，下次登录签发仅允许读取本人会话、改密与退出的受限会话，公开账号返回 `passwordChangeRequired: true`；网页强制改密，业务接口拒绝访问。改密后撤销全部会话并重新登录。升级迁移与管理员规则见 [密码规则](password-policy.md)。
 
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
@@ -97,4 +99,4 @@ SDK 自动将 handler 内的异步 Gateway 调用绑定至原始 API 帧 ID；�
 
 员工 `GET /api/employee/profile` 读取本人资料，`GET /api/employee/notifications` 仅返回本人收件通知。工作区复用共享侧边栏、消息和个人资料。应用的 `platform.ui.navigation` 只筛选声明过的菜单，不授予路由或业务权限。
 
-`PATCH /api/employee/profile` 只接受本人的 `phone` 和 `wecomUserId`，拒绝身份、岗位与组织字段；沿用默认租户的企业微信外部身份记录，修改 UserID 后清除核验状态。`PATCH /api/employee/auth/password` 接受 `currentPassword` 和至少 12 字符的新密码 `newPassword`，验证当前密码后撤销该员工的全部会话。两个写接口均校验 Origin 和有效员工会话，事务内再次核对本人身份并记录审计。
+`PATCH /api/employee/profile` 只接受本人的 `phone` 和 `wecomUserId`，拒绝身份、岗位与组织字段；沿用默认租户的企业微信外部身份记录，修改 UserID 后清除核验状态。`PATCH /api/employee/auth/password` 接受 `currentPassword` 和至少 8 字符且包含上述四类字符中至少三类的新密码 `newPassword`，验证当前密码后撤销该员工的全部会话。两个写接口均校验 Origin 和有效员工会话，事务内再次核对本人身份并记录审计。

@@ -1,3 +1,4 @@
+export {passwordSchema,isPasswordCompliant,PASSWORD_POLICY_MESSAGE} from './password-policy.js';
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 

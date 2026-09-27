@@ -5,7 +5,7 @@ import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {NavLink, useLocation} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
-export interface AdminUser {id: string; username: string; displayName: string}
+export interface AdminUser {id: string; username: string; displayName: string; passwordChangeRequired?: boolean}
 export interface AdminApplication {id: string; name: string; icon?: AppManifest['icon']; navigation: {id: string; label: string; path: string}[]}
 export interface AdminShellProps {
   mode?:'admin'|'employee';
