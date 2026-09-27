@@ -128,3 +128,8 @@ export function createPlatformSignaturesClient(gateway:Pick<ReturnType<typeof cr
 export function createPlatformWebhookClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
  return Object.freeze({send(params:{url:string;message:string;messageType?:'text'|'markdown'},signal?:AbortSignal){return gateway.invoke('platform.webhook.send',params,signal);}});
 }
+
+/** Bounded text generation through the host-configured model; credentials never enter the app. */
+export function createPlatformAiClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({complete(params:{system:string;prompt:string},signal?:AbortSignal){return gateway.invoke('platform.ai.complete',params,signal) as Promise<{content:string}>;}});
+}

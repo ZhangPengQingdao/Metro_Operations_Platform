@@ -13,7 +13,7 @@ function fixture(){
  const gateway={async invoke(operation,p){
   if(operation==='platform.people.members')return {rows:[{id:personId,name:'张三',employeeNo:'1',organizationUnitId:org},{id:otherPerson,name:'李四',employeeNo:'2',organizationUnitId:org}].filter(row=>row.organizationUnitId===p.organizationUnitId&&(!p.personId||p.personId===row.id))};
   if(operation==='platform.locations.get')return {id:locationId,name:'测试站',status:'active',locationType:'station'};
-  if(operation==='platform.locations.list')return {rows:[{id:locationId,name:'测试站',status:'active',locationType:'station'}]};
+  if(operation==='platform.locations.responsible_stations')return {lines:[{id:randomUUID(),name:'1号线'}],stations:p.organizationUnitId===org&&(!p.stationId||p.stationId===locationId)?[{id:locationId,name:'测试站',lineId:randomUUID(),lineName:'1号线'}]:[]};
   if(operation==='platform.assets.list'){assetQueries.push(p);return {rows:[{id:randomUUID(),displayName:'自动售票机 01',assetCode:'TVM-01',locationId,typeName:'自动售票机',typeId:randomUUID(),lifecycleState:'active',organizationUnitId:org}]};}
   if(operation==='platform.app_data.get')return {row:structuredClone(rows.get(p.id)??null)};
   if(operation==='platform.app_data.list'){
@@ -84,4 +84,10 @@ test('catalog exposes searchable stations, people and assets in the authorized o
  assert.equal(result.assets[0].typeName,'自动售票机');assert.equal(result.assetLookupAvailable,true);
  assert.equal(f.assetQueries[0].organizationUnitId,f.org);assert.equal(f.assetQueries[0].locationId,f.locationId);assert.equal(f.assetQueries[0].typeName,'自动售票机');
  await assert.rejects(f.service.catalog({organizationId:f.otherOrg},f.employee),/ACCESS_DENIED/);
+});
+test('record write rejects stations outside the workgroup responsibility scope',async()=>{
+ const f=fixture();
+ await assert.rejects(f.service.create({requestId:randomUUID(),id:randomUUID(),record:{...f.form,stationId:randomUUID()}},f.employee),/INVALID_STATION/);
+ await assert.rejects(f.service.create({requestId:randomUUID(),id:randomUUID(),record:{...f.form,stationId:null}},f.employee),/INVALID_STATION/);
+ assert.equal(f.writes.length,0);
 });

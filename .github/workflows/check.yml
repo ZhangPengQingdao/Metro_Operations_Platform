@@ -27,6 +27,9 @@ jobs:
       - run: npm --prefix applications/faults test
       - run: npm --prefix applications/faults run build
       - run: npm --prefix server run app-cli -- validate ../applications/faults/dist
+      - run: npm --prefix applications/hazards test
+      - run: npm --prefix applications/hazards run build
+      - run: npm --prefix server run app-cli -- validate ../applications/hazards/dist
       - run: python3 -m unittest discover -s tests/deployment -v
       - run: bash -n deploy/install.sh
 

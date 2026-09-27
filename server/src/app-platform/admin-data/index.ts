@@ -5,6 +5,7 @@ import { createPeopleDirectoryService, createPostgresPeopleDirectoryRepository, 
 import { createLocationDirectoryService, createPostgresLocationDirectoryRepository, LOCATION_TYPES } from '../../platform/locations/index.js';
 import { createAssetDirectoryService, createPostgresAssetDirectoryRepository, ASSET_LIFECYCLE_STATES, ASSET_DATA_QUALITY_STATUSES } from '../../platform/assets/index.js';
 import { createPostgresDataAlignmentRepository } from '../../platform/data-alignment/index.js';
+import {createPostgresResponsibilityRepository,createResponsibilityService} from '../../platform/responsibility/index.js';
 
 export interface AdminDataActor { id: string; username: string; displayName: string }
 export interface AdminDataField { key: string; label: string; type: 'text' | 'number' | 'select' | 'reference'; required: boolean; options?: string[]; resource?: string }
@@ -54,9 +55,12 @@ export function adminDataResources(): AdminDataResource[] {
 export function createAdminDataService(client: QueryableClient, options: { audit(event: {actorId:string; action:string; targetId:string}): Promise<void> }) {
   const peopleRepo = createPostgresPeopleDirectoryRepository(client);
   const locationRepo = createPostgresLocationDirectoryRepository(client);
+  const assetRepo=createPostgresAssetDirectoryRepository(client);
+  const responsibilityRepo=createPostgresResponsibilityRepository(client);
   const people = createPeopleDirectoryService(peopleRepo);
   const locations = createLocationDirectoryService(locationRepo, {findOrganizationUnit: id => peopleRepo.findOrganizationUnitById(id)});
-  const assets = createAssetDirectoryService(createPostgresAssetDirectoryRepository(client), {findLocation: id => locationRepo.findLocationById(id)});
+  const assets = createAssetDirectoryService(assetRepo, {findLocation: id => locationRepo.findLocationById(id)});
+  const responsibilities=createResponsibilityService(responsibilityRepo,{findOrganizationUnit:id=>peopleRepo.findOrganizationUnitById(id),findPerson:id=>peopleRepo.findPersonById(id),findLocation:id=>locationRepo.findLocationById(id),findAssetType:id=>assetRepo.findTypeById(id),findAsset:id=>assetRepo.findAssetById(id)});
   function authorize(actor: AdminDataActor) {
     if (!actor?.id || !actor.username || !actor.displayName) throw new AdminDataError('ADMIN_REQUIRED','需要管理员身份',401);
   }
@@ -74,6 +78,36 @@ export function createAdminDataService(client: QueryableClient, options: { audit
   }
   return {
     resources: adminDataResources,
+    async workgroupStations(actor:AdminDataActor,organizationId:string){
+      authorize(actor);uuid.parse(organizationId);
+      const organization=await peopleRepo.findOrganizationUnitById(organizationId);
+      if(!organization||organization.unitType!=='workgroup')throw new AdminDataError('WORKGROUP_REQUIRED','请先选择工班',400);
+      const [profiles,allLocations,scopes]=await Promise.all([locationRepo.listLocationProfiles({locationType:'station',status:'active'}),locationRepo.listLocationProfiles({status:'active'}),responsibilityRepo.listScopesByOrganization(organizationId)]);
+      const parents=new Map(allLocations.map(profile=>[profile.location.id,profile.location.parentId]));
+      const inheritedScopes=new Set(scopes.filter(scope=>scope.status==='active'&&scope.locationId&&scope.includeDescendants).map(scope=>scope.locationId!));
+      const stations=profiles.map(profile=>({id:profile.location.id,name:profile.location.name,lines:profile.stationLines.filter(item=>item.line.status==='active'&&item.lineStation.status==='active').map(item=>item.line.name)})).filter(station=>station.lines.length>0);
+      const validStations=new Set(stations.map(station=>station.id));
+      const selectedIds=scopes.filter(scope=>scope.status==='active'&&scope.locationId&&!scope.includeDescendants&&validStations.has(scope.locationId)).map(scope=>scope.locationId!);
+      const inheritedIds=stations.filter(station=>{let ancestor:string|null=station.id;for(let depth=0;ancestor&&depth<32;depth++,ancestor=parents.get(ancestor)??null)if(inheritedScopes.has(ancestor))return true;return false;}).map(station=>station.id);
+      return {organizationId,stations,selectedIds,inheritedIds};
+    },
+    async setWorkgroupStations(actor:AdminDataActor,organizationId:string,input:unknown){
+      authorize(actor);uuid.parse(organizationId);
+      const {stationIds}=z.object({stationIds:z.array(uuid).max(500)}).strict().parse(input);
+      if(new Set(stationIds).size!==stationIds.length)throw new AdminDataError('INVALID_STATIONS','车站不能重复');
+      return runDatabaseTransaction(client,async()=>{
+        const organization=await peopleRepo.findOrganizationUnitById(organizationId);
+        if(!organization||organization.unitType!=='workgroup'||organization.status!=='active')throw new AdminDataError('WORKGROUP_REQUIRED','请选择启用的工班');
+        const profiles=await locationRepo.listLocationProfiles({locationType:'station',status:'active'}),valid=new Set(profiles.filter(profile=>profile.stationLines.some(item=>item.line.status==='active'&&item.lineStation.status==='active')).map(item=>item.location.id));
+        if(stationIds.some(id=>!valid.has(id)))throw new AdminDataError('INVALID_STATIONS','包含无效或停用的车站');
+        const scopes=await responsibilityRepo.listScopesByOrganization(organizationId),direct=scopes.filter(scope=>scope.locationId&&valid.has(scope.locationId)&&!scope.includeDescendants);
+        const chosen=new Set(stationIds);
+        for(const scope of direct)if(scope.status!==(chosen.has(scope.locationId!)?'active':'inactive'))await responsibilityRepo.setScopeStatus(scope.id,chosen.has(scope.locationId!)?'active':'inactive');
+        for(const stationId of stationIds)if(!direct.some(scope=>scope.locationId===stationId))await responsibilities.createScope({organizationUnitId:organizationId,target:{type:'location',id:stationId}});
+        await options.audit({actorId:actor.id,action:'data.organizations.stations.update',targetId:organizationId});
+        return {organizationId,stationIds};
+      });
+    },
     async list(actor: AdminDataActor, resource: string, query = '', filter = '') {
       authorize(actor);
       if (query.length > 200) throw new AdminDataError('INVALID_QUERY','搜索词过长');

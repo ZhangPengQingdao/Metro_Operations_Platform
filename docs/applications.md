@@ -40,6 +40,10 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 管理员页面装载不会赋予应用员工身份或业务权限。默认 Gateway 提供 `platform.locations.get/list` 与 `platform.assets.get/list`，员工和服务使用独立授权链路，详见 [员工身份与目录接口](employee-gateway.md)。其余业务接口仍需装配，通用应用数据读写仅向服务后端开放。
 
+平台 0.17.0 新增 `platform.ai.complete`，隔离后端可通过 `createPlatformAiClient(gateway).complete({system,prompt},signal)` 调用管理员配置的模型。签名清单必须请求 `platform.ai.complete`，安装后由管理员授予服务能力；请求最多 3,000 字符 system 与 12,000 字符 prompt，返回最多 12,000 字符文本，Gateway 总超时 30 秒。模型密钥不交给应用，调用受 Gateway 认证、限流和审计约束。返回是待应用验证的文本，应用必须校验业务枚举并要求员工确认后再保存。示例见 [识隐应用设计](hazard-reporting-app-plan.md)。
+
+同版本新增 `platform.locations.responsible_stations` 只读 Gateway 操作，需 `platform.locations.read` 授权。参数为必填 `organizationUnitId`，可选 `lineName`、`stationId`、`search`；返回该工班有效责任范围覆盖、且属于启用线路的车站及线路候选，最多 50 条。管理员在“基础数据 → 组织与工班 → 管辖车站”维护车站范围；应用保存记录时应按组织、线路与车站 ID 再次核验，不只依赖下拉候选。
+
 员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，每次请求核验员工登录态。员工应用准入与业务授权在单进程内最多复用 30 秒；本进程通过员工账号、应用使用授权、应用业务授权、审批和应用生命周期操作后立即失效，其他进程或直接改库的变化可能延迟最多 30 秒生效。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件和外联仍拒绝。物料的实际 Docker 托管全链路尚待验收。
 
 CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默认管理端不挂载该入口；本版通过管理端上传导出的签名 JSON 包安装。
@@ -112,7 +116,11 @@ const workbook = XLSX.read(bytes,{type:'array',sheetRows:202}); // 应用自行�
 downloadSandboxFile('记录.xlsx',XLSX.write(workbook,{bookType:'xlsx',type:'array'}),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 ```
 
-文件读取和生成均在员工浏览器的沙箱内完成；原文件不经过 Bridge、应用后端或平台存储。应用通过已声明的业务 API 只提交解析后且经用户核对的数据。下载仍需清单声明 `ui.downloads: true`，并先按业务授权获取导出数据。此接口不提供原文件留存或供其他员工下载的附件能力。
+普通文件读取和生成均在员工浏览器的沙箱内完成；原文件不经过 Bridge、应用后端或平台存储。应用通过已声明的业务 API 只提交解析后且经用户核对的数据。下载仍需清单声明 `ui.downloads: true`，并先按业务授权获取导出数据。
+
+同一文件 SDK 还提供可复用的照片留证接口。沙箱端从 `@metro/platform-sdk/app-files` 导入 `createSandboxImageClient`，传入应用已声明的 `begin`、`part`、`finish`、`read` 业务 API 名称及调用函数。`upload(file,{organizationId,kind})` 将员工选取的 JPG/PNG/WebP 在本地压缩成 JPEG（原图最多 8 MiB、输出最多 220 KB），分块上传并返回照片 ID；`read({recordId,photoId})` 按业务 API 读取、校验长度与 SHA-256 后返回 `Blob`。已有 JPEG 字节可用 `uploadPrepared`，但必须满足同样的大小及格式约束。每个上传写入都有独立请求 ID，未知写入结果不得自动重试。
+
+隔离后端从 `@metro/platform-sdk/app-files-backend` 导入 `createAppImageMigrationOperations` 和 `createManagedAppImageStore`。前者将 SDK 需要的 `photos`、`photo_parts` 私有表操作加入应用迁移；后者实现与前端对应的分块写入、校验、关联与读取。应用必须提供 `authorizeWrite` 和 `resolveRead` 回调，分别核对上传组织权限及照片所属记录的读取权限；保存记录时将 `requireReady`、`link` 与业务写入放入同一托管存储事务。应用仍须在签名清单声明相应业务 API 及 `platform.app_data.read/write`，照片不会跨应用共享，也没有独立的平台文件 URL。这是留证照片能力；原始 Excel/CSV 文件仍只解析为业务数据，不留存。未关联照片目前不会自动清理，应用需按容量规划处理。
 
 常见组合优先使用 `QueryList`（查询工具栏、表格、分页）、`SidebarDialog`（分区导航弹窗）、`OrganizationPicker` 或 `OrganizationPeoplePicker`（组织及人员选择）。使用示例见 [共享查询列表](shared-list-ui.md) 和 [L2 弹窗与组织选择](shared-dialog-directory-ui.md)。
 
