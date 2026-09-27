@@ -45,3 +45,5 @@
 ## 隐患提报（识隐）应用
 
 识隐 0.1.0 需要平台 0.17.0 的图片存储 SDK、AI Gateway 和工班管辖车站查询。先完成平台更新，再构建、校验、签名并安装 `applications/hazards`。预览时核对新增托管存储迁移、`platform.app_data.read/write`、`platform.locations.read`、`platform.people.read`、`platform.ai.complete` 服务能力及标准沙箱模式；审批精确签名版本。安装后显式配置员工使用范围、提报/治理/复审角色，核对模型配置可用性和前后照片读取。不要在真实工班制造虚假隐患记录。
+
+升级识隐 0.2.0 时先更新平台至 0.19.0，再构建并签名该应用的新包。预览必须核对新增 `app.hazards.cases` 角色权限、三个导航路径及 `clientRouting`；不需要新存储迁移或平台能力。升级后由应用负责人按需将 `cases` 授予案例库角色，原有 `read` 不再包含案例库访问；验证只授 `create`、只授 `read`、只授 `cases` 的员工分别只看到对应入口。未知安装结果按原任务核对，不自动重放。

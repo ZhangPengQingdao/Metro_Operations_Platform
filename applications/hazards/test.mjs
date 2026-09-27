@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createHazardService,similarity} from './service.mjs';
 import {qualityScore,validateRecord} from './policy.mjs';
+import {visiblePages,pageForRoute} from './workspace.mjs';
 
 const org='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const reporter='33333333-3333-4333-8333-333333333333',reviewer='44444444-4444-4444-8444-444444444444';
 const uid=n=>'aaaaaaaa-aaaa-4aaa-8aaa-'+String(n).padStart(12,'0');
-const grants=(person,organization=org)=>['read','create','update','review','photo'].map(name=>({permission:'app.hazards.'+name,all:false,self:false,organizationIds:[organization]}));
+const grants=(person,organization=org)=>['read','cases','create','update','review','photo'].map(name=>({permission:'app.hazards.'+name,all:false,self:false,organizationIds:[organization]}));
 const employee=(person,organization=org)=>({personId:person,organizationUnitId:organization,businessAuthorization:{revision:uid(900),grants:grants(person,organization),organizations:[{id:organization,name:'测试工班'}]}});
+test('workspace shows only separately granted report, records and case pages',()=>{
+ const session=permissions=>({permissions:permissions.map(name=>'app.hazards.'+name)});
+ assert.deepEqual(visiblePages(session(['create'])).map(page=>page.id),['report']);
+ assert.deepEqual(visiblePages(session(['read'])).map(page=>page.id),['records']);
+ assert.deepEqual(visiblePages(session(['cases'])).map(page=>page.id),['cases']);
+ assert.deepEqual(visiblePages(session(['create','read','cases'])).map(page=>page.id),['report','records','cases']);
+ assert.equal(pageForRoute('/cases',session(['read'])),undefined);
+ assert.equal(pageForRoute('/cases',session(['cases']))?.label,'闭环案例库');
+});
 const form=(organization=org)=>({organizationId:organization,inspectedAt:'2026-09-27T08:00:00.000Z',stationId:uid(901),location:'某站',line:'1号线',description:'站厅闸机紧急停止按钮防护盖破损',category:'设备运行维修',level:'一般隐患II级',temporaryControls:'围挡并安排值守',governanceMeasures:'更换防护盖并复查按钮功能',governanceDeadline:'2026-09-30T08:00:00.000Z',governanceDetails:'',responsiblePerson:'张三',responsiblePersonId:uid(902),beforePhotoId:null,afterPhotoId:null,status:'open',aiConfidence:null,aiBasis:''});
 function fixture({maxCasePageSize=Infinity}={}){
  const tables=new Map(['records','cases','photos','photo_parts'].map(name=>[name,new Map()]));
@@ -103,7 +113,7 @@ test('photo upload requires its own scoped grant and either create or update aut
 test('self-only permission cannot inspect another employee case through AI suggestions',async()=>{
  const f=fixture(),a=employee(reporter),id=uid(40);
  f.tables.get('cases').set(id,{id,organization_id:org,source_record_id:id,created_by:reviewer,created_at:'2026-09-27T09:00:00.000Z',description:'站厅闸机紧急停止按钮防护盖破损',category:'设备运行维修',level:'一般隐患II级',governance_measures:'更换防护盖并复查按钮功能',governance_details:'已完成更换',retrieval_enabled:true});
- a.businessAuthorization.grants=a.businessAuthorization.grants.map(grant=>grant.permission==='app.hazards.read'?{...grant,self:true,organizationIds:[]}:grant);
+ a.businessAuthorization.grants=a.businessAuthorization.grants.map(grant=>grant.permission==='app.hazards.cases'?{...grant,self:true,organizationIds:[]}:grant);
  const result=await f.service.suggest({organizationId:org,rawText:'站厅闸机紧急停止按钮防护盖破损'},a);
  assert.equal(result.referenceCount,0);
  assert.equal(result.manualReview,true);
@@ -111,7 +121,7 @@ test('self-only permission cannot inspect another employee case through AI sugge
 test('reporter without case read permission still receives a manual-review AI suggestion',async()=>{
  const f=fixture(),a=employee(reporter),id=uid(41);
  f.tables.get('cases').set(id,{id,organization_id:org,source_record_id:id,created_by:reviewer,created_at:'2026-09-27T09:00:00.000Z',description:'站厅闸机紧急停止按钮防护盖破损',category:'设备运行维修',level:'一般隐患II级',governance_measures:'更换防护盖并复查按钮功能',governance_details:'已完成更换',retrieval_enabled:true});
- a.businessAuthorization.grants=a.businessAuthorization.grants.filter(grant=>grant.permission!=='app.hazards.read');
+ a.businessAuthorization.grants=a.businessAuthorization.grants.filter(grant=>grant.permission!=='app.hazards.cases');
  const result=await f.service.suggest({organizationId:org,rawText:'站厅闸机紧急停止按钮防护盖破损'},a);
  assert.equal(result.referenceCount,0);
  assert.equal(result.manualReview,true);
@@ -127,7 +137,7 @@ test('AI retrieval checks older cases beyond 100 rows and reduces oversized page
  f.tables.get('cases').set(id,{id,organization_id:other,source_record_id:id,created_by:reviewer,created_at:'2020-01-01T00:00:00.000Z',description:query,category:'设备运行维修',level:'一般隐患II级',governance_measures:'更换防护盖',governance_details:'已更换',retrieval_enabled:true});
  assert.equal((await f.service.cases({pageSize:5},a)).rows.length,5);
  assert.equal((await f.service.suggest({organizationId:org,rawText:query},a)).referenceCount,0);
- a.businessAuthorization.grants=a.businessAuthorization.grants.map(grant=>grant.permission==='app.hazards.read'?{...grant,organizationIds:[org,other]}:grant);
+ a.businessAuthorization.grants=a.businessAuthorization.grants.map(grant=>grant.permission==='app.hazards.cases'?{...grant,organizationIds:[org,other]}:grant);
  const result=await f.service.suggest({organizationId:org,rawText:query},a);
  assert.equal(result.referenceCount,1);
  assert.equal(result.manualReview,false);

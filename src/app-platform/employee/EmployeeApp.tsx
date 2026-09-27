@@ -1,4 +1,5 @@
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
+import {ApplicationIcon} from '../host/ApplicationIcon';
 import {PasswordInput} from '../identity/PasswordInput';
 import {isPasswordCompliant,PASSWORD_POLICY_MESSAGE} from '../identity/password-policy';
 import type {AppManifest} from '@metro/platform-sdk/app-manifest';
@@ -66,8 +67,19 @@ function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{accou
 export default function EmployeeApp(){
  const [owned,setOwned]=useState<ManagedApplication[]>([]);
  const [menus,setMenus]=useState<Record<string,string[]>>({});
- const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
  const {pathname}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
+ useEffect(()=>{
+  const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(pathname);
+  const app=apps.find(item=>item.appId===match?.[1]),ids=app&&menus[app.appId];
+  if(!app||!ids?.length)return;
+  const currentPath=match?.[2]??'/';
+  const current=app.navigation.find(item=>app.routes.some(route=>route.id===item.routeId&&route.path===currentPath));
+  if(current&&ids.includes(current.id))return;
+  const first=app.navigation.find(item=>ids.includes(item.id)&&app.routes.some(route=>route.id===item.routeId));
+  const route=app.routes.find(item=>item.id===first?.routeId);
+  if(route)navigate(`/employee/app/${app.appId}${route.path==='/'?'':route.path}`,{replace:true});
+ },[apps,menus,pathname,navigate]);
  const [retainedApps,setRetainedApps]=useState<RetainedApp[]>([]);
  const prefetchLinks=React.useRef(new Map<string,HTMLLinkElement>());
  const activeApp=pathname.startsWith('/employee/app/')&&!/^\/employee\/app\/[^/]+\/~management$/.test(pathname);
@@ -108,7 +120,7 @@ export default function EmployeeApp(){
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={(onSaved,onBusy)=><EmployeeProfile onSaved={onSaved} onBusy={onBusy}/>} notificationsContent={<EmployeeMessages/>}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
- {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon">{app.name.slice(0,1)}</span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
+ {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<><div className="admin-heading"><h1>{pathname==='/employee/apps'?'应用管理':'工作台'}</h1></div>{pathname!=='/employee/apps'&&<h2>应用</h2>}<div className="employee-app-list">{visibleApps.map(app=><Link className="employee-app-link" key={app.appId} to={`/employee/app/${app.appId}${app.routes[0]?.path??'/~management'}`}><span className="employee-app-icon"><ApplicationIcon appId={app.appId} icon={app.icon} size={24}/></span><span><strong>{app.name}</strong><span className="afc-muted">{app.description}</span></span><span aria-hidden>→</span></Link>)}</div>{!visibleApps.length&&!error&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}</>}
  {activeAppId&&!retainedApps.some(item=>item.accountId===account.id&&item.appId===activeAppId)&&<p role="status">{appsLoaded&&!apps.some(app=>app.appId===activeAppId)?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
  {retainedApps.filter(item=>item.accountId===account.id).sort((a,b)=>a.appId.localeCompare(b.appId)).map(item=>{const visible=activeAppId===item.appId;const runtimeRevision=apps.find(app=>app.appId===item.appId)?.runtimeRevision??0;return <div key={`${account.id}:${item.appId}:${runtimeRevision}`} style={visible?undefined:{display:'none'}}><EmployeeApplication account={account} path={visible?pathname:item.path} visible={visible} prefetch={!visible&&item.prefetch} onNavigation={onNavigation}/></div>;})}
  </AdminShell>;
