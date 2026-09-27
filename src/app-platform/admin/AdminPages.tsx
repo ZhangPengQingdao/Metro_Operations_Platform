@@ -4,6 +4,7 @@ import {Button,Input,Select,OrganizationPicker,Switch,DataList,TableActionButton
 import React,{useEffect,useState} from 'react';
 import {AdminDialog} from './AdminShell';
 import {adminRequest} from './client';
+import {LineStationsPage} from './LineStationsPage';
 type RecordRow=Record<string,unknown>;
 type Field={key:string;label:string;type:string;required:boolean;options?:string[];resource?:string};
 type Resource={key:string;label:string;fields:Field[];columns:string[];updateFields:string[];writable:boolean;reason?:string};
@@ -41,6 +42,8 @@ export function DataPage(){
  const {pathname}=useLocation();const {value,error}=useLoad<{resources:Resource[]}>('/data/resources');
  const key=pathname.slice('/admin/data/'.length);const current=value?.resources.find(r=>r.key===key);
  if(pathname==='/admin/data')return <Navigate to="/admin/data/people" replace/>;
+ if(key==='lines'||key==='locations')return <Navigate to="/admin/data/line-stations" replace/>;
+ if(key==='line-stations'){const lines=value?.resources.find(resource=>resource.key==='lines');return <><h1>线路与车站</h1><Failure error={error}/>{lines?<LineStationsPage linesContent={<Directory resource={lines}/>}/>:!error&&<p role="status">正在读取…</p>}</>;}
  return <><h1>{current?.label??'基础数据'}</h1><Failure error={error}/>{current?<Directory key={key} resource={current}/>:value?<p role="alert">目录不存在</p>:!error&&<p role="status">正在读取…</p>}</>;
 }
 type Account={id:string;username:string;displayName:string;status:string};

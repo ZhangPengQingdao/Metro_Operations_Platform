@@ -249,3 +249,11 @@
 .app-frontend-mode label input{margin-top:3px;accent-color:var(--afc-ink);}
 .app-frontend-mode label span{flex-basis:100%;padding-left:22px;}
 @media(max-width:560px){.system-update-heading,.system-update-available{align-items:flex-start;}.system-update-available>.afc-button{width:100%;}}
+.station-interchange{display:inline-block;margin-left:12px;font-size:12px;}
+.station-line-labels{display:flex;flex-direction:column;gap:6px;}
+.station-memberships{border:1px solid var(--afc-border);border-radius:10px;padding:16px;min-width:0;}
+.station-memberships legend{font-weight:600;padding:0 4px;}
+.station-membership{display:grid;grid-template-columns:minmax(0,1fr) 120px auto;gap:12px;align-items:end;margin:16px 0;}
+.station-membership>label{min-width:0;}
+.station-membership>.afc-button{margin-bottom:2px;}
+@media(max-width:560px){.station-membership{grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;}.station-memberships{padding:12px;}}
