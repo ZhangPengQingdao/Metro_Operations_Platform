@@ -4,10 +4,11 @@ import type {AppManifest} from '../manifest/index.js';
 import type {AppRegistryService} from '../registry/index.js';
 import {AppManagementError} from './ui.js';
 
-const supported=new Set(['platform.app_data.read','platform.app_data.write','platform.people.read','platform.locations.read','platform.assets.read','platform.ai.complete','platform.notifications.create','platform.notifications.manage','platform.signatures.create','platform.signatures.read','platform.signatures.sign','platform.attachments.create','platform.attachments.read']);
+const supported=new Set(['platform.app_data.read','platform.app_data.write','platform.people.read','platform.locations.read','platform.assets.read','platform.ai.complete','platform.apps.invoke','platform.notifications.create','platform.notifications.manage','platform.signatures.create','platform.signatures.read','platform.signatures.sign','platform.attachments.create','platform.attachments.read']);
 export function requestedPlatformCapabilities(manifest:AppManifest){
  const defined=new Set(manifest.permissions.defined.map(p=>p.code));
- if(manifest.permissions.requested.some(code=>!code.startsWith('platform.')&&!defined.has(code)))throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
+ if(manifest.permissions.requested.some(code=>!code.startsWith('platform.')&&!defined.has(code)
+  && !manifest.compatibility.applications.some(app=>code.startsWith(`app.${app.id}.`))))throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
  const permissions=manifest.permissions.requested.filter(code=>code.startsWith('platform.'));
  if(permissions.some(code=>!supported.has(code)))throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
  return permissions;

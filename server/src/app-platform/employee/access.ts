@@ -22,7 +22,8 @@ export class EmployeeAppAccess{
  async set(context:PlatformAdministratorContext,appId:string,input:unknown){await manage(context);appIdSchema.parse(appId);const value=z.object({personId:z.string().uuid(),enabled:z.boolean(),revision:z.string().uuid().nullable()}).strict().parse(input);
   return this.read(db=>runDatabaseTransaction(db,async()=>{
    await db.query("SELECT pg_advisory_xact_lock(hashtextextended('employee-app-access',0))");await manage(context);
-   const [installation]=await rows<{id:string}>(db,'SELECT id FROM platform_app_installations WHERE app_id=$1',[appId]);if(!installation)throw new EmployeeIdentityError(404,'EMPLOYEE_APP_NOT_FOUND');
+   const [installation]=await rows<{id:string;mode:string|null}>(db,`SELECT i.id,(SELECT mode FROM platform_app_authorization WHERE installation_id=i.id) AS mode FROM platform_app_installations i WHERE i.app_id=$1`,[appId]);if(!installation)throw new EmployeeIdentityError(404,'EMPLOYEE_APP_NOT_FOUND');
+   if(installation.mode==='application')throw new EmployeeIdentityError(409,'APP_ACCESS_MANAGED_BY_ROLE');
    const [person]=await rows<{employment_status:string}>(db,'SELECT employment_status FROM platform_people WHERE id=$1',[value.personId]);if(!person||value.enabled&&person.employment_status!=='active')throw new EmployeeIdentityError(403,'EMPLOYEE_PERSON_INACTIVE');
    const [old]=await rows<{revision:string}>(db,'SELECT revision FROM platform_employee_app_access WHERE installation_id=$1 AND person_id=$2',[installation.id,value.personId]);
    if((old?.revision??null)!==value.revision)throw new EmployeeIdentityError(409,'STALE_REVISION');

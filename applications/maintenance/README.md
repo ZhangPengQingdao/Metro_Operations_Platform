@@ -1,4 +1,4 @@
-# 检修管理应用 0.1.2
+# 检修管理应用 0.1.3
 
 独立应用，参考旧 AFC Ops Manager 的检修计划与派工流程重新实现。仅通过公开 SDK、Gateway 和托管存储接入平台；不依赖旧仓库，也不迁移旧检修数据。
 
@@ -11,7 +11,7 @@
 
 ## 授权与安装
 
-应用权限为 `app.maintenance.read/create/update/export/delete`，均支持本人、本工班、本部室、指定组织和全平台范围。员工需获应用使用授权及对应业务权限；进入应用需要 `read`。服务身份需获 `platform.app_data.read/write`、`platform.people.read`、`platform.locations.read` 和 `platform.assets.read`。管理员在安装审批时可一并批准这些平台能力；安装完成后应用会启用，应用负责人、员工使用授权和业务角色仍需另行配置。
+应用权限为 `app.maintenance.read/create/update/export/delete`，均支持本人、本工班、本部室、指定组织和全平台范围。应用负责人配置人员范围和业务角色；查看计划需 `read`，具体数据按该权限范围裁剪。服务身份需获 `platform.app_data.read/write`、`platform.people.read`、`platform.locations.read` 和 `platform.assets.read`。管理员在安装审批时可一并批准这些平台能力；安装完成后应用会启用，负责人和业务角色仍需另行配置。新版包把列表、详情、创建、修改、作废和导出声明为可开放候选，负责人在“开放接口”中逐项发布，默认关闭。
 
 ```sh
 npm run build:sdk

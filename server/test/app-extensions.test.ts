@@ -88,13 +88,13 @@ test('reentrant abort cannot resurrect an overwritten generation',async()=>{
 
 test('application namespaces coexist and registry capacity fails before replacement',async()=>{
  const f=fixture({installations:2});
- const other={...f.installation,id:'42000000-0000-4000-8000-000000000002',appId:'other',manifest:{...f.installation.manifest,id:'other',events:{...f.installation.manifest.events,publish:['app.other.changed.v1']}}};
- const mappings=f.mappings.map(m=>m.kind==='event-publish'?{...m,id:'app.other.changed.v1'}:m);
+ const other={...f.installation,id:'42000000-0000-4000-8000-000000000002',appId:'other',manifest:{...f.installation.manifest,id:'other',permissions:{...f.installation.manifest.permissions,requested:['app.other.use']},routes:f.installation.manifest.routes.map(route=>({...route,permission:'app.other.use'})),events:{...f.installation.manifest.events,publish:['app.other.changed.v1']}}};
+ const mappings=f.mappings.map(m=>({...m,permissionCode:'app.other.use',...(m.kind==='event-publish'?{id:'app.other.changed.v1'}:{})}));
  const handle=f.registry.activate(other,mappings);
  assert.equal(new Set([...f.handle.descriptors,...handle.descriptors].map(d=>d.key)).size,10);
  assert.notEqual(createAppJobDefinitions(f.handle,async()=>f.actor)[0].id,createAppJobDefinitions(handle,async()=>f.actor)[0].id);
- const third={...other,id:'third',appId:'third',manifest:{...other.manifest,id:'third',events:{...other.manifest.events,publish:['app.third.changed.v1']}}};
- assert.throws(()=>f.registry.activate(third,mappings.map(m=>m.kind==='event-publish'?{...m,id:'app.third.changed.v1'}:m)),/REGISTRY_FULL/);
+ const third={...other,id:'third',appId:'third',manifest:{...other.manifest,id:'third',permissions:{...other.manifest.permissions,requested:['app.third.use']},routes:other.manifest.routes.map(route=>({...route,permission:'app.third.use'})),events:{...other.manifest.events,publish:['app.third.changed.v1']}}};
+ assert.throws(()=>f.registry.activate(third,mappings.map(m=>({...m,permissionCode:'app.third.use',...(m.kind==='event-publish'?{id:'app.third.changed.v1'}:{})}))),/REGISTRY_FULL/);
  await f.handle.list(f.actor);
 });
 

@@ -16,10 +16,12 @@ export interface AppGatewayOperation {
   resolveResources(context: GatewayActorContext, params: GatewayJson): Promise<readonly AuthorizationResource[]>;
   execute(context: GatewayActorContext, params: GatewayJson, signal: AbortSignal): Promise<unknown>;
   validateResult(value: GatewayJson): boolean;
+  /** Validated, bounded routing labels for the existing terminal audit. Never include payload data. */
+  auditMetadata?(params: GatewayJson): Readonly<Record<string,string>>;
   /** Recheck the actual returned snapshot, even if its current database location has changed. */
   resolveResultResources?(context: GatewayActorContext, result: GatewayJson): Promise<readonly AuthorizationResource[]>;
 }
-const PUBLIC_CODES = new Set(['AI_NOT_CONFIGURED','AI_UNAVAILABLE','STORAGE_CONFLICT','STORAGE_TABLE_UNSUPPORTED','STORAGE_BUSY','STORAGE_REQUEST_ALREADY_RECORDED','STORAGE_WRITE_RECONCILIATION_REQUIRED','STORAGE_WRITE_UNCERTAIN','STORAGE_OPERATION_FAILED','STORAGE_CLEANUP_REQUIRED','STORAGE_RESULT_LIMIT','INVALID_PAYLOAD','PAYLOAD_TOO_LARGE','INVALID_REQUEST','RATE_LIMITED','BUSY','INVALID_CREDENTIAL','INVALID_IDENTITY','ABORTED','TIMEOUT','OPERATION_DENIED','INVALID_PARAMS','ACCESS_DENIED','INVALID_RESULT','GATEWAY_FAILED','AUDIT_FAILED','METHOD_NOT_ALLOWED','HEADERS_TOO_LARGE','INVALID_HEADERS','UNSUPPORTED_MEDIA_TYPE','INVALID_JSON']);
+const PUBLIC_CODES = new Set(['APP_CAPABILITY_NOT_PUBLISHED','TARGET_APP_ACCESS_DENIED','AI_NOT_CONFIGURED','AI_UNAVAILABLE','STORAGE_CONFLICT','STORAGE_TABLE_UNSUPPORTED','STORAGE_BUSY','STORAGE_REQUEST_ALREADY_RECORDED','STORAGE_WRITE_RECONCILIATION_REQUIRED','STORAGE_WRITE_UNCERTAIN','STORAGE_OPERATION_FAILED','STORAGE_CLEANUP_REQUIRED','STORAGE_RESULT_LIMIT','INVALID_PAYLOAD','PAYLOAD_TOO_LARGE','INVALID_REQUEST','RATE_LIMITED','BUSY','INVALID_CREDENTIAL','INVALID_IDENTITY','ABORTED','TIMEOUT','OPERATION_DENIED','INVALID_PARAMS','ACCESS_DENIED','INVALID_RESULT','GATEWAY_FAILED','AUDIT_FAILED','METHOD_NOT_ALLOWED','HEADERS_TOO_LARGE','INVALID_HEADERS','UNSUPPORTED_MEDIA_TYPE','INVALID_JSON']);
 export class GatewayError extends Error {
   readonly code: string;
   constructor(code: string, readonly statusCode = 400, readonly writeOutcome: 'not_started' | 'unknown' = 'not_started') {

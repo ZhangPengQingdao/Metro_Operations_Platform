@@ -7,6 +7,7 @@ import type {AppManagement} from '../management/service.js';
 import {GatewayError} from '../gateway/model.js';
 import {AdminIdentityError} from '../../core/admin-identity/index.js';
 import type {EmployeeAppAccess} from './access.js';
+import type {AppCapabilityPublication} from '../capabilities/publication.js';
 import {AppManagementError} from '../management/ui.js';
 import {AppStdioApiError} from '../runtime/stdio-api.js';
 import {createAppAttachmentTransfer,AppAttachmentError,APP_ATTACHMENT_MAX_BYTES,type AppAttachmentDirectory} from './attachment-service.js';
@@ -16,7 +17,7 @@ import {createPostgresPeopleDirectoryRepository} from '../../platform/people/ind
 import {getDatabasePool,type QueryableClient} from '../../core/database/index.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;publications?:AppCapabilityPublication;attachmentBackend?:AttachmentBackend}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -67,6 +68,8 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/capabilities',async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.state(req.params.appId,(await resolveRequestIdentity(req)).userId);});
+  scoped.put<{Params:{appId:string}}>('/apps/:appId/capabilities',{bodyLimit:4096},async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.set(req.params.appId,(await resolveRequestIdentity(req)).userId,req.body);});
   async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});

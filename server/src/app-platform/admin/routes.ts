@@ -1,4 +1,5 @@
 import {AppBusinessAuthorization} from '../business-authorization/service.js';
+import {AppCapabilityPublication} from '../capabilities/publication.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {createEmployeeRoleManagement} from './employee-roles.js';
 import {parsePolicy} from '../developer/publisher-policy.js';
@@ -111,6 +112,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    try {const result=await db.query('SELECT id,actor_id AS "actorId",action,target_id AS "targetId",occurred_at AS "createdAt" FROM platform_admin_audit ORDER BY occurred_at DESC,id DESC LIMIT 100');return {entries:(result as {rows:unknown[]}).rows};}finally{db.release();}
   });
   scoped.get('/apps',async req=>withRegistry(req,async(service,context)=>({applications:await service.list(context),runtimeConfigured:!!options.lifecycle,installConfigured:!!options.install,trustedAvailable:options.management?.trustedAvailable()??false})));
+  scoped.get('/app-capabilities',async req=>{const context=await createAdministratorContext(req,options.identity);if(!(await context.authorize('platform.authorization.read',{})).allowed)throw new AdminIdentityError(403,'ADMIN_ACCESS_DENIED');return new AppCapabilityPublication(options.pool).catalog();});
   scoped.get<{Params:{appId:string}}>('/apps/:appId',async req=>withRegistry(req,(service,context)=>service.get(context,req.params.appId)));
   scoped.put<{Params:{appId:string}}>('/apps/:appId/frontend-mode',{bodyLimit:1024},async req=>{
    const body=z.object({revision:z.number().int().positive(),mode:z.enum(['standard','trusted'])}).strict().parse(req.body);

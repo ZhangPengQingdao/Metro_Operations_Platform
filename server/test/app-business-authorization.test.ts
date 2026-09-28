@@ -37,6 +37,7 @@ test('application owner, role isolation, per-operation scopes, hierarchy and rev
   await assert.rejects(service.change(app.appId,owner,{action:'member',revision:initial,personId:member,roleId:role,enabled:true}),/STALE_REVISION/);
   state=await service.change(app.appId,owner,{action:'member',revision:state.revision,personId:member,roleId:role,enabled:true});
   state=await service.change(app.appId,owner,{action:'activate',revision:state.revision,confirm:true});
+  await assert.rejects(access.set(context,app.appId,{personId:member,enabled:true,revision:null}),/APP_ACCESS_MANAGED_BY_ROLE/);
   let resolved=await service.resolve(app.appId,member);assert.deepEqual(resolved!.grants[0].organizationIds,[team]);
   assert.deepEqual((await service.resolve(app.appId,owner))!.grants,[]);
   assert.equal(await service.resolve(secondApp.appId,member),null);

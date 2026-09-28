@@ -40,5 +40,8 @@ test('platform grant batch is atomic, excludes business permissions, and require
  const fileGrants=(await approveInstalledPlatformGrants(registry,context,fileManifest.id)).grants;
  for(const code of ['platform.attachments.create','platform.attachments.read'])assert.deepEqual(fileGrants.filter(g=>g.permissionCode===code).map(g=>g.mode),['service']);
  assert.throws(()=>requestedPlatformCapabilities({...manifest,permissions:{...manifest.permissions,requested:['platform.authorization.manage']}}),/APP_CAPABILITIES_NOT_SUPPORTED/);
+ const consumer={...manifest,compatibility:{...manifest.compatibility,applications:[{id:'provider',version:{minInclusive:'1.0.0',maxExclusive:'2.0.0'}}]},permissions:{...manifest.permissions,requested:['platform.apps.invoke','app.provider.create']}};
+ assert.deepEqual(requestedPlatformCapabilities(consumer),['platform.apps.invoke']);
+ assert.throws(()=>requestedPlatformCapabilities({...consumer,compatibility:{...consumer.compatibility,applications:[]}}),/APP_CAPABILITIES_NOT_SUPPORTED/);
  }finally{await db.close();}
 });
