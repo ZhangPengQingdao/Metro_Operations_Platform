@@ -35,6 +35,8 @@
 .afc-app-links { margin-top:18px; border-top:1px solid var(--afc-border); padding-top:12px; }
 .afc-app-links>p { padding:0 12px 8px; font-size:11px; color:var(--afc-muted); }
 .afc-sidebar-bottom { margin:0 10px; padding:10px 0; border-top:1px solid var(--afc-border); display:flex; align-items:center; gap:2px; }
+.afc-notification-trigger { position:relative; display:inline-flex; flex:none; }
+.afc-notification-badge { position:absolute; top:-3px; right:-5px; min-width:17px; height:17px; padding:0 3px; border-radius:9px; background:#b91c1c; color:white; font-size:10px; line-height:17px; text-align:center; pointer-events:none; }
 .afc-admin[data-rail="true"] .afc-sidebar-bottom { flex-direction:column; }
 .afc-account { position:relative; min-width:0; flex:1; }
 .afc-account-trigger { width:100%; min-height:44px; display:flex; align-items:center; gap:9px; border:0; background:transparent; border-radius:10px; padding:7px; text-align:left; font-size:13px; }

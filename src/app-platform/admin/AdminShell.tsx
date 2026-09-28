@@ -11,7 +11,7 @@ export interface AdminApplication {id: string; name: string; icon?: AppManifest[
 export interface AdminShellProps {
   mode?:'admin'|'employee';
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
-  profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode;
+  profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode; notificationCount?:number;
 }
 const navigation = [
   {path: '/admin', label: '系统总览', icon: 'grid' as PlatformIconName},
@@ -36,7 +36,7 @@ export function AdminDialog({title, children, onClose, className}: {title: strin
   return <Dialog open title={title} onClose={onClose} size="lg" className={className}>{children}</Dialog>;
 }
 
-export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent}: AdminShellProps) {
+export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent, notificationCount=0}: AdminShellProps) {
   const {pathname} = useLocation();
   const base=mode==='admin'?'/admin':'/employee';
   const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
@@ -99,7 +99,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
               <button onClick={() => openPanel('profile')}><PlatformIcon name="userCircle" size={18}/>个人资料</button>{mode==='admin'&&<button onClick={() => openPanel('settings')}><PlatformIcon name="cog" size={18}/>系统设置</button>}<button onClick={() => openPanel('preferences')}><PlatformIcon name="sun" size={18}/>外观偏好</button><hr/><button disabled={loggingOut} onClick={()=>{setAccountOpen(false);setError('');setConfirmLogout(true);}}><PlatformIcon name="login" size={18}/>{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <p role="alert" className="afc-error">{error}</p>}
             </div>}
           </div>
-          <IconButton size="sm" type="button" label="通知" onClick={() => openPanel('notifications')}><PlatformIcon name="bell" size={20}/></IconButton>
+          <span className="afc-notification-trigger"><IconButton size="sm" type="button" label={notificationCount>0?`通知，${notificationCount} 项待签字`:'通知'} onClick={() => openPanel('notifications')}><PlatformIcon name="bell" size={20}/></IconButton>{notificationCount>0&&<span className="afc-notification-badge" aria-hidden="true">{notificationCount>99?'99+':notificationCount}</span>}</span>
         </div>
       </div>
 

@@ -59,7 +59,11 @@ export function createSignatureAppService(gateway){
    const now=new Date().toISOString(),row={organization_id:org,created_by:employee.personId,created_at:now,updated_at:now,intent_id:input.requestId,template_key:input.templateKey,title:input.title.trim(),fields,participants:input.participantIds.map(id=>({id,name:people.find(person=>person.id===id).name})),score_rows:scores,signer_ids:signerIds.map(id=>({id})),signer_people:signerIds.map(id=>({id,name:people.find(person=>person.id===id).name})),search_text:[input.title,...Object.values(fields),...people.map(person=>person.name)].join(' ').slice(0,4000),cancelled:false};
    await data.transaction(input.requestId,[{action:'insert',table:'records',id:input.id,values:row}],signal);
    let signature='ready';try{await signatures.associate({entityId:input.id,title:input.title.trim(),organizationUnitId:org,personIds:signerIds},signal);}catch{signature='unconfirmed';}
-   let notification=signature==='ready'?'ready':'not_started';if(signature==='ready')for(const id of signerIds){try{await notifications.create({id:notificationId(input.id,id),entityId:input.id,personId:id,title:`待签字：${input.title.trim()}`,body:'有一份新的在线签字任务需要您本人签署。'},signal);}catch{notification='unconfirmed';}}
+   let notification=signature==='ready'?'ready':'not_started';
+   if(signature==='ready')for(let i=0;i<signerIds.length;i+=4){
+    const results=await Promise.allSettled(signerIds.slice(i,i+4).map(id=>notifications.create({id:notificationId(input.id,id),entityId:input.id,personId:id,title:`待签字：${input.title.trim()}`,body:'有一份新的在线签字任务需要您本人签署。'},signal)));
+    if(results.some(result=>result.status==='rejected'))notification='unconfirmed';
+   }
    return {id:input.id,created:true,signature,notification};
   },
   async sign(input,employee,signal){
