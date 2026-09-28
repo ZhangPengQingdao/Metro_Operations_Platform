@@ -19,6 +19,10 @@ export class GatewayAdmission {
     this.global=make(this.limits.globalRequests);this.apps=make(this.limits.appRequests);this.actors=make(this.limits.actorRequests);
   }
   preauth() { if(!this.global.check('global').allowed) throw new GatewayError('RATE_LIMITED',429); }
-  authenticated(appId:string,actor:string) { if(!this.apps.check(`app:${appId}`).allowed || !this.actors.check(`actor:${appId}:${actor}`).allowed) throw new GatewayError('RATE_LIMITED',429); }
+  authenticated(appId:string,actor:string) {
+    // Every service call for an app uses the same service identity. The app budget
+    // already bounds their aggregate; keep the smaller actor budget for people.
+    if(!this.apps.check(`app:${appId}`).allowed || actor!=='service'&&!this.actors.check(`actor:${appId}:${actor}`).allowed) throw new GatewayError('RATE_LIMITED',429);
+  }
   enter() { if(this.active>=this.limits.concurrency) throw new GatewayError('BUSY',503);this.active++;return ()=>{this.active--;}; }
 }

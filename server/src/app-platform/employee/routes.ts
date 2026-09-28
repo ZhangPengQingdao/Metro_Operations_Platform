@@ -9,8 +9,14 @@ import {AdminIdentityError} from '../../core/admin-identity/index.js';
 import type {EmployeeAppAccess} from './access.js';
 import {AppManagementError} from '../management/ui.js';
 import {AppStdioApiError} from '../runtime/stdio-api.js';
+import {createAppAttachmentTransfer,AppAttachmentError,APP_ATTACHMENT_MAX_BYTES,type AppAttachmentDirectory} from './attachment-service.js';
+import {createLocalStorageAdapter,type StorageAdapter} from '../../core/storage/index.js';
+import {createPostgresAttachmentRepository,AttachmentError,type AttachmentRepository} from '../../platform/attachments/index.js';
+import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
+import {getDatabasePool,type QueryableClient} from '../../core/database/index.js';
 
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization}){
+type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -21,13 +27,22 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   if(checked){precheckedIdentity.delete(req);return Promise.resolve(checked);}
   return options.service.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE]);
  };
+ const attachmentBackend=options.attachmentBackend??{
+  connect:async()=>{const pool=getDatabasePool();if(!pool)throw new AppAttachmentError('ATTACHMENT_UNAVAILABLE');return pool.connect();},
+  repository:(client:QueryableClient)=>createPostgresAttachmentRepository(client),
+  directory:(client:QueryableClient)=>{const people=createPostgresPeopleDirectoryRepository(client);return {findPerson:(id:string)=>people.findPersonById(id),findOrganizationUnit:(id:string)=>people.findOrganizationUnitById(id)};},
+  storage:createLocalStorageAdapter()
+ };
  app.register(async scoped=>{
   scoped.setErrorHandler((error,_req,reply)=>{
+   if(error&&typeof error==='object'&&'statusCode' in error&&error.statusCode===413)return reply.code(413).send({error:'FILE_TOO_LARGE'});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    if(error instanceof GatewayError)return reply.code(error.statusCode).send({version:'1.0',error:{code:error.code,writeOutcome:error.writeOutcome}});
    if(error instanceof AppStdioApiError)return reply.code(error.code==='ACCESS_DENIED'||error.code==='API_DENIED'?403:503).send({error:{code:'APP_API_FAILED',writeOutcome:error.writeOutcome}});
    if(error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AppManagementError)return reply.code(503).send({error:error.code});
+   if(error instanceof AppAttachmentError)return reply.code(error.code==='FILE_TOO_LARGE'?413:error.code==='ACCESS_DENIED'?403:error.code==='ATTACHMENT_UNAVAILABLE'?503:error.code==='ATTACHMENT_LIMIT'?409:400).send({error:error.code});
+   if(error instanceof AttachmentError)return reply.code(403).send({error:'ACCESS_DENIED'});
    return reply.code(503).send({error:'EMPLOYEE_SERVICE_UNAVAILABLE'});
   });
   scoped.addHook('preHandler',async(req,reply)=>{
@@ -79,6 +94,66 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const input=z.object({apiId:z.string().min(1).max(100),method:z.enum(['GET','POST','PUT','PATCH','DELETE']),path:z.string().min(1).max(512),payload:z.unknown().refine(value=>value!==undefined)}).strict().parse(req.body);
    return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>resolveRequestIdentity(req),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
+  });
+  scoped.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:APP_ATTACHMENT_MAX_BYTES},(_req,body,done)=>done(null,body));
+  let activeUploads=0;
+  const uploads=new WeakSet<FastifyRequest>();
+  const admitUpload=async(req:FastifyRequest)=>{
+   if(req.headers.origin!==options.origin)throw new EmployeeIdentityError(403,'EMPLOYEE_ORIGIN_DENIED');
+   const account=await options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE],true);
+   if(!account||account.passwordChangeRequired)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+   if(activeUploads>=2)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
+   activeUploads++;uploads.add(req);
+  };
+  const releaseUpload=(req:FastifyRequest)=>{if(uploads.delete(req))activeUploads--;};
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/attachments',{
+   bodyLimit:APP_ATTACHMENT_MAX_BYTES,onRequest:admitUpload,onRequestAbort:async req=>releaseUpload(req),onResponse:async req=>releaseUpload(req)
+  },async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const input=z.object({entityType:z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),entityId:z.string().uuid(),intentId:z.string().uuid(),fileName:z.string().min(1).max(180)}).strict().parse(req.query);
+   const admission=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
+   const bytes=req.body;if(!Buffer.isBuffer(bytes))throw new AppAttachmentError('INVALID_FILE');
+   const authorize=()=>options.management!.authorizeEmployeeAttachment(req.params.appId,()=>resolveRequestIdentity(req),admission,{action:'upload',entityType:input.entityType,entityId:input.entityId,requestId:input.intentId});
+   const first=await authorize(),client=await attachmentBackend.connect();
+   try{
+    let firstUsed=false;
+    const transfer=createAppAttachmentTransfer({storage:attachmentBackend.storage,repository:attachmentBackend.repository(client),directory:attachmentBackend.directory(client),
+     authorize:async()=>{const result=firstUsed?await authorize():first;firstUsed=true;return {organizationId:result.organizationId};}});
+    return await transfer.upload(first.context,{appId:req.params.appId,entityType:input.entityType,entityId:input.entityId,intentId:input.intentId,fileName:input.fileName,bytes});
+   }finally{client.release();}
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/attachments',async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const input=z.object({entityType:z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),entityId:z.string().uuid(),afterId:z.string().uuid().optional()}).strict().parse(req.query);
+   const admission=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
+   const client=await attachmentBackend.connect();
+   try{
+    const authorize=()=>options.management!.authorizeEmployeeAttachment(req.params.appId,()=>resolveRequestIdentity(req),admission,
+     {action:'read',entityType:input.entityType,entityId:input.entityId,requestId:input.entityId});
+    const first=await authorize();let firstUsed=false;
+    const transfer=createAppAttachmentTransfer({storage:attachmentBackend.storage,repository:attachmentBackend.repository(client),directory:attachmentBackend.directory(client),
+     authorize:async()=>{const result=firstUsed?await authorize():first;firstUsed=true;return {organizationId:result.organizationId};}});
+    return await transfer.list(first.context,req.params.appId,input.entityType,input.entityId,input.afterId);
+   }finally{client.release();}
+  });
+  scoped.get<{Params:{appId:string;attachmentId:string}}>('/apps/:appId/attachments/:attachmentId',async(req,reply)=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const attachmentId=z.string().uuid().parse(req.params.attachmentId),admission=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
+   const client=await attachmentBackend.connect();
+   try{
+    const repository=attachmentBackend.repository(client),record=await repository.findAttachmentById(attachmentId);
+    if(!record||record.sourceAppId!==req.params.appId)throw new AppAttachmentError('ACCESS_DENIED');
+    const authorize=()=>options.management!.authorizeEmployeeAttachment(req.params.appId,()=>resolveRequestIdentity(req),admission,
+     {action:'read',entityType:record.sourceEntityType,entityId:record.sourceEntityId,attachmentId,requestId:attachmentId});
+    const first=await authorize();let firstUsed=false;
+    const transfer=createAppAttachmentTransfer({storage:attachmentBackend.storage,repository,directory:attachmentBackend.directory(client),
+     authorize:async()=>{const result=firstUsed?await authorize():first;firstUsed=true;return {organizationId:result.organizationId};}});
+    const file=await transfer.read(first.context,req.params.appId,attachmentId);
+    reply.header('Content-Type',file.contentType).header('Content-Length',file.sizeBytes).header('X-Content-Type-Options','nosniff')
+     .header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`)
+     .header('X-Mop-Attachment-Name',encodeURIComponent(file.fileName));
+    return reply.send(file.stream);
+   }finally{client.release();}
   });
  },{prefix:'/api/employee'});
  app.register(async scoped=>{

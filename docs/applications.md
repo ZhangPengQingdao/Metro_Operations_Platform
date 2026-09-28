@@ -1,6 +1,6 @@
 # 应用接入
 
-待办事项独立应用的任务、人员与车站分配、周期模板及授权说明见 [待办应用说明](../applications/todos/README.md)。故障记录独立应用的首版功能、权限、旧功能对照与安装前验收点见 [故障记录应用方案](fault-records-app-plan.md)。检修管理独立应用的计划组、逐台派工、导入导出及旧功能边界见 [检修管理应用方案](maintenance-app-plan.md)。
+待办事项独立应用的任务、人员与车站分配、周期模板及授权说明见 [待办应用说明](../applications/todos/README.md)。故障记录独立应用的首版功能、权限、旧功能对照与安装前验收点见 [故障记录应用方案](fault-records-app-plan.md)。检修管理独立应用的计划组、逐台派工、导入导出及旧功能边界见 [检修管理应用方案](maintenance-app-plan.md)。在线签字的模板、二维码、本人签名和通知接入见 [在线签字应用说明](../applications/signatures/README.md)。
 
 ## 当前可安装类型
 
@@ -97,7 +97,7 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 
 ## 公开 L2 界面组件（0.5.0）
 
-React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog、TagDropdownPicker 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。`TagDropdownPicker` 的 `inline` 模式在表单内直接展开目标标签。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog、TagDropdownPicker 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。`TagDropdownPicker` 的 `inline` 模式在表单内直接展开目标标签；非内联模式可用 `showTitle={false}` 隐藏触发按钮旁的重复标题，弹层仍保留标题。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
 
 普通单选使用 `DropdownSelect`，选中项以黑底和勾选标记显示。需要在同一输入框中搜索或选择时使用 `SearchSelect`；选项可提供 `detail`，与名称同排展示。目录查询、选中值和是否允许手工输入由应用管理。
 
@@ -105,7 +105,7 @@ React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、F
 
 沙箱应用如需由用户手动导出文件，可在签名清单的 `ui` 声明 `downloads: true`（平台 0.13.0 起支持）。安装预览展示该能力，宿主只对已批准声明的页面增加 `allow-downloads`；未声明的应用仍禁止下载。应用自行检查导出业务权限与数据范围。
 
-从 `@metro/platform-sdk/app-files` 导入 `readSandboxFile`、`readSandboxTextFile` 和 `downloadSandboxFile`。应用使用普通文件选择框获取员工选择的 `File`；读取函数要求显式设置 `maxBytes`（上限 16 MiB），可用 `extensions` 限制扩展名，并在读取前后检查大小。文本读取按 UTF-8 严格解码并去除 BOM。扩展名只是界面校验，解析器仍须校验文件内容、行数和业务字段。生成下载接受 `Blob`、`Uint8Array` 或 `ArrayBuffer`，上限 32 MiB，文件名必须是安全的单个名称。校验失败时抛出带 `code` 的 `AppFileError`，供应用转换为用户提示。
+从 `@metro/platform-sdk/app-files` 导入 `readSandboxFile`、`readSandboxTextFile` 和 `downloadSandboxFile`。应用使用普通文件选择框获取员工选择的 `File`；读取函数要求显式设置 `maxBytes`（SDK 上限 50 MiB，应用可设更小值），可用 `extensions` 限制扩展名，并在读取前后检查大小。文本读取按 UTF-8 严格解码并去除 BOM。扩展名只是界面校验，解析器仍须校验文件内容、行数和业务字段。生成下载接受 `Blob`、`Uint8Array` 或 `ArrayBuffer`，上限 50 MiB，文件名必须是安全的单个名称。校验失败时抛出带 `code` 的 `AppFileError`，供应用转换为用户提示。
 
 ```js
 import * as XLSX from 'xlsx';
@@ -120,7 +120,27 @@ downloadSandboxFile('记录.xlsx',XLSX.write(workbook,{bookType:'xlsx',type:'arr
 
 同一文件 SDK 还提供可复用的照片留证接口。沙箱端从 `@metro/platform-sdk/app-files` 导入 `createSandboxImageClient`，传入应用已声明的 `begin`、`part`、`finish`、`read` 业务 API 名称及调用函数。`upload(file,{organizationId,kind})` 将员工选取的 JPG/PNG/WebP 在本地压缩成 JPEG（原图最多 8 MiB、输出最多 220 KB），分块上传并返回照片 ID；`read({recordId,photoId})` 按业务 API 读取、校验长度与 SHA-256 后返回 `Blob`。已有 JPEG 字节可用 `uploadPrepared`，但必须满足同样的大小及格式约束。每个上传写入都有独立请求 ID，未知写入结果不得自动重试。
 
+照片分块为 11,000 字节，最多 20 块。这个大小保证 Base64 数据连同事务元数据低于托管存储单次写入的 16 KiB 限制。上传过程受应用 Gateway 的每分钟请求配额约束；批量照片应逐张提交并将限流显示给用户，不能自动重放结果未知的写入。
+
 隔离后端从 `@metro/platform-sdk/app-files-backend` 导入 `createAppImageMigrationOperations` 和 `createManagedAppImageStore`。前者将 SDK 需要的 `photos`、`photo_parts` 私有表操作加入应用迁移；后者实现与前端对应的分块写入、校验、关联与读取。应用必须提供 `authorizeWrite` 和 `resolveRead` 回调，分别核对上传组织权限及照片所属记录的读取权限；保存记录时将 `requireReady`、`link` 与业务写入放入同一托管存储事务。应用仍须在签名清单声明相应业务 API 及 `platform.app_data.read/write`，照片不会跨应用共享，也没有独立的平台文件 URL。这是留证照片能力；原始 Excel/CSV 文件仍只解析为业务数据，不留存。未关联照片目前不会自动清理，应用需按容量规划处理。
+
+### 业务原件附件
+
+`createSandboxAttachmentClient(sandbox)` 使用宿主二进制通道保存 Word（`.doc`、`.docx`）、Excel（`.xls`、`.xlsx`）、PDF（`.pdf`）和 ZIP（`.zip`）原件。单文件上限 50 MiB。沙箱内的文件字节不会进入 64 KiB JSON Bridge；宿主经同源员工接口上传，平台在存储前检查文件名、扩展名、文件头和大小，再把对象登记到 `platform_attachments`。这是文件类型的基本校验，不代表对 Office、PDF 或 ZIP 内部内容完成安全解析；应用后续处理内容时仍须使用受限解析器。ZIP 只作为原件存储与下载，不在平台自动解压。
+
+应用须有隔离后端和服务身份。签名清单请求 `platform.attachments.create`、`platform.attachments.read`，并声明带应用业务权限的 `POST authorize-attachment` API，`id` 固定为 `authorize-attachment`，`permission` 与 `businessPermission` 指向已定义的应用权限。后端用 `createAppAttachmentAuthorizationHandler({authorizeUpload,authorizeRead})` 实现该处理器：上传前确认业务记录存在、员工有权添加附件并返回记录所属组织；列表及读取时确认员工有权查看该记录。平台再次核对员工、应用服务授权、附件来源记录和组织，员工本人仍记为上传人。下载还须声明 `ui.downloads: true`。文件只经员工登录态与宿主准入键读取，不向沙箱暴露可直接访问的存储 URL。
+
+```js
+import {createSandboxAttachmentClient} from '@metro/platform-sdk/app-files';
+
+const attachments=createSandboxAttachmentClient(sandbox);
+const intentId=crypto.randomUUID(); // 上传前保存，结果未知时按此 ID 核对，不自动重传
+const uploaded=await attachments.upload(file,{entityType:'plan_item',entityId:itemId,intentId});
+const page=await attachments.list({entityType:'plan_item',entityId:itemId});
+await attachments.download(uploaded.attachmentId);
+```
+
+`list` 每页最多 50 条，以 `nextCursor` 继续；每条返回 `intentId`，供上传结果未知后核对。单条业务记录最多 500 个附件。应用不得在超时、断线或返回值无法确认时用相同或新 `intentId` 自动重放上传，应先查询所属记录。平台无法确认登记写入结果时会保留已写入对象，避免已提交元数据指向缺失文件；运维需对账并清理确认未登记的对象。当前附件为私有且默认无限期保留；跨应用读取和未登记来源记录的直链读取均拒绝。未来增加文件类型时，同时更新前后端白名单与边界测试。
 
 常见组合优先使用 `QueryList`（查询工具栏、表格、分页）、`SidebarDialog`（分区导航弹窗）、`OrganizationPicker` 或 `OrganizationPeoplePicker`（组织及人员选择）。使用示例见 [共享查询列表](shared-list-ui.md) 和 [L2 弹窗与组织选择](shared-dialog-directory-ui.md)。
 
@@ -151,3 +171,7 @@ FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及
 清单中设置 `ui.clientRouting: true` 的沙箱应用可处理同一应用内的页面切换。宿主先按目标路径重新检查员工身份、安装版本与应用准入；准入版本未变时，向现有沙箱通道发送目标路径，应用通过 `sandbox.onRouteChange(listener)` 更新页面并回执。切换中原页面隐藏，回执后显示新页面；未回执时显示可重新打开的错误。安装版本、授权或账号变化仍创建新沙箱。未声明该选项的应用继续按路径加载独立页面。员工工作台最多保留同一账号最近使用的两款沙箱，重新显示前仍检查准入；访问列表移除应用、退出登录或切换账号时销毁对应沙箱。工作台显示且应用列表就绪 0.3 秒后预热上次使用的应用；没有历史记录时只预热列表第一款，避免给全部应用建立沙箱。员工应用容器的 `data-mop-admission-ms`、`data-mop-frame-ms`、`data-mop-route-ms` 和 `data-mop-reused` 可用于测量准入、iframe 加载、路由回执及复用状态，不包含应用首批业务数据读取时间。晨会交接与物料管理已启用应用内路由，前者按目标页读取或命中已授权的短时表单缓存，后者切页时重置搜索、分页和弹窗并抑制旧读取结果。
 
 员工沙箱 frontend JS 的内容寻址缓存实验与 Chrome opaque iframe 实测结果见 [沙箱缓存实验记录](sandbox-cache-experiment.md)；当前保留原有内联 document 与 retained/prewarm 机制。
+
+## 慧策通·计划督办（M1）
+
+独立应用源码位于 `applications/huicetong`，版本 0.1.0。当前交付月度周期、三级分类和草稿条目编制；清单将“计划条目”与“分类字典”注册为平台宿主侧边栏的两个导航入口，分别打开 `/` 和 `/categories`。应用内定义 `read`、`fill`、`review`、`manage` 四项业务权限。员工读写范围由宿主授权与应用后端共同校验；写入使用托管存储事务和审计事件。构建、权限配置及当前范围见 [慧策通应用说明](../applications/huicetong/README.md)，后续完整流程见 [应用规划](huicetong-app-plan.md)。

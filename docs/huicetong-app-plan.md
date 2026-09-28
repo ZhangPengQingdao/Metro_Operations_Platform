@@ -116,7 +116,7 @@ storage:    managed        # 应用自管表 + 追加式迁移
 | `language_patterns` | id PK · category_id(level2) · content_pattern · quality_pattern · example 可空 · enabled · created_by · updated_at | 标准语言库（P1，D2）；P0 预建表不启用功能 |
 | `review_bindings` | id PK · category_id(level2) · person_id · created_at | 归口配置；UNIQUE(category_id, person_id) |
 
-**附件与导出文件**：证明材料、导出 xlsx 统一登记平台 attachments（sourceEntityType 区分 `plan_item` / `cycle_export`），下载用平台一次性地址（60 秒）。
+**附件与导出文件**：证明材料与导出 xlsx 登记到平台 attachments（sourceEntityType 区分 `plan_item` / `cycle_export`）。公开文件 SDK 的宿主二进制通道支持 Word、Excel、PDF、ZIP 原件，单文件 50 MiB；应用须实现 `authorize-attachment` 业务 API，平台再核验员工、应用授权及附件来源记录。下载由宿主使用当前员工登录态和准入键向平台受控读取，不暴露一次性或永久存储地址。上传结果未知时，按预先保存的 `intentId` 列出来源记录附件核对，不自动重放。照片接口只用于 JPEG 留证，不用来保存原件。
 
 **签字**：周期签发用平台 signatures，entityId=cycleId，title=`{部门}N月份工作计划签发`，signer=部门负责人。
 
@@ -225,7 +225,7 @@ draft ──submit──▶ submitted ──approve──▶ approved ──(周
 | `supervision.register` | manage | 登记+生成 source=supervision 条目直入 submitted；周期≥reviewing 时经该分类归口复审后插入 |
 | `supervision.list` | read | 按周期 |
 | `board.stats` | read | cycleId → 状态计数/分类分布/牵头人负载 TopN/逾期清单/督办完成率 |
-| `export.plan` | read | cycleId, scope=all|escalated → 后端生成 xlsx→attachments→返回一次性地址；审计记录 |
+| `export.plan` | read | cycleId, scope=all|escalated → 后端生成 xlsx→业务原件附件登记→按授权下载；审计记录 |
 | `import.preview` / `import.execute` | manage | 粘贴 TSV 解析、分类名匹配预览、确认导入（requestId 幂等） |
 
 ---
@@ -318,7 +318,7 @@ draft ──submit──▶ submitted ──approve──▶ approved ──(周
 - 列序固定：`序号 | 模块 | 业务分类 | 业务模块 | 工作计划内容 | 完成质量标准 | 开始时间 | 完成时间 | 责任人 | 备注`。
 - 模块列、业务分类列按分组纵向合并单元格；日期 `YYYY-MM-DD`；多责任人 `、` 连接；escalated 条目备注列前置"拟提报中心计划"（与历史格式一致），用户 remark 追加其后。
 - scope=all 全量；scope=escalated 仅拟提报中心条目（D1 上报件）。
-- 文件经 attachments 登记，一次性地址下载，审计记录导出人与范围。
+- 文件经业务原件附件 SDK 登记，按员工及应用业务授权核对后下载，审计记录导出人与范围。
 
 ---
 
@@ -394,7 +394,7 @@ draft ──submit──▶ submitted ──approve──▶ approved ──(周
 3. 汇总预览 → 提交签发 → 负责人签字 → 锁定：33 条全部 in_progress。
 4. 变更：新增 1 条（非 escalated，归口通过即生效）；修改 1 条 escalated（归口通过→负责人追认→生效）；两单均留痕。
 5. 督办直插 1 条至锁定周期 → 责任人收到确认提醒。
-6. 完成：2 条提报（含材料上传/预览/一次性下载）→ 归口确认；1 条逾期 → 延期申请批准改期；1 条取消留痕。
+6. 完成：2 条提报（含材料上传/预览/授权下载）→ 归口确认；1 条逾期 → 延期申请批准改期；1 条取消留痕。
 7. 管理岗兜底驳回 1 条已确认（≤7 日）→ 重报再确认。
 8. 导出 scope=all 与 scope=escalated 两份 xlsx，与原表逐列比对一致（含合并单元格、日期格式、责任人顿号连接、备注前缀）。
 9. archive：剩余条目全部终态后归档成功；故意留 1 条 in_progress 验证阻断。

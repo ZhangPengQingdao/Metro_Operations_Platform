@@ -1,4 +1,4 @@
-import {initialModuleValues,lineItems} from './modules.mjs';
+import {initialModuleValues,lineItems,meetingDraftValue,restoreMeetingDraft} from './modules.mjs';
 import {Settings} from './settings.jsx';
 import React,{useState,useEffect,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -936,12 +936,17 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [draftStatus, setDraftStatus] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   const requestId = useRef(crypto.randomUUID());
   const draftRevision = useRef(0);
+  const draftBase = useRef('');
+  const draftPending = useRef(Promise.resolve());
+  const draftTimer = useRef(null);
+  const autoDraftStopped = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -957,15 +962,22 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
         const prior = boot?.previous ?? null;
         draftRevision.current = boot?.draftRevision ?? 0;
         if (!initial) {
-          setForm(f => ({
-            ...f,
-            ...(prior && kind === 'handover' ? { handoverIds: prior.handoverIds, shiftType: prior.shiftType === 'day' ? 'night' : 'day' } : {}),
-            form: {
+          if (kind === 'meeting' && (boot?.draft?.savedOn ?? boot?.draft?.date) === today()) setDraftStatus('已自动恢复本日晨会草稿');
+          setForm(f => {
+            const prepared = {
+              ...f,
+              ...(prior && kind === 'handover' ? { handoverIds: prior.handoverIds, shiftType: prior.shiftType === 'day' ? 'night' : 'day' } : {}),
+              form: {
               ...initialModuleValues(t.modules),
               ...(t.modules.some(m => m.id === 'other_matters' && m.enableCarryOver) ? prior?.form ?? {} : {}),
               ...f.form
-            }
-          }));
+              }
+            };
+            const restored = kind === 'meeting' ? restoreMeetingDraft(prepared, boot?.draft, today()) : null;
+            const next = restored ?? prepared;
+            draftBase.current = JSON.stringify(meetingDraftValue(next, today()));
+            return next;
+          });
         }
         setReady(true);
         if (!initial) onBootstrapped?.(kind);
@@ -975,6 +987,29 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
     })();
     return () => { active = false; };
   }, [form.organizationId, loadAttempt]);
+
+  useEffect(() => {
+    if (kind !== 'meeting' || initial || !ready || busy || uncertain || autoDraftStopped.current) return;
+    const value = meetingDraftValue(form, today());
+    const fingerprint = JSON.stringify(value);
+    if (fingerprint === draftBase.current) return;
+    const timer = setTimeout(() => {
+      draftPending.current = draftPending.current.then(async () => {
+        if (autoDraftStopped.current) return;
+        try {
+          const result = await call('save-draft', {organizationId: form.organizationId, kind, value, revision: draftRevision.current, requestId: crypto.randomUUID()});
+          draftRevision.current = result.revision;
+          draftBase.current = fingerprint;
+          setDraftStatus('晨会草稿已自动保存');
+        } catch (e) {
+          autoDraftStopped.current = true;
+          setDraftStatus(e.unknown ? '草稿保存结果未确认，已停止自动暂存' : `自动暂存失败：${e.message}`);
+        }
+      });
+    }, 900);
+    draftTimer.current = timer;
+    return () => { clearTimeout(timer); if (draftTimer.current === timer) draftTimer.current = null; };
+  }, [form, ready, busy, uncertain, kind, initial]);
 
   useEffect(() => {
     let active = true;
@@ -1004,22 +1039,35 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
 
   async function save() {
     if (busy || uncertain || !ready) return;
+    autoDraftStopped.current = true;
+    clearTimeout(draftTimer.current);
     setBusy(true);
     setError('');
     try {
+      await draftPending.current;
       const result = await call('save', { ...form, modules, kind, requestId: requestId.current });
-      setNotice(
+      let draftNotice = '';
+      if (!initial && draftRevision.current > 0) {
+        try {
+          await call('clear-draft', {organizationId: form.organizationId, kind, revision: draftRevision.current, requestId: crypto.randomUUID()});
+          draftRevision.current = 0;
+        } catch (e) {
+          draftNotice = e.unknown ? '；草稿清理结果未确认，请在记录列表核对后再处理' : '；草稿未清理，请在记录列表核对后再处理';
+        }
+      }
+      setNotice((
         result.notification === 'unconfirmed'
           ? '记录已保存，群机器人推送结果未确认'
           : result.signatureStatus === 'unconfirmed'
           ? '记录已保存，签署关联待核对'
           : '记录已保存成功'
-      );
+        ) + draftNotice);
       setUncertain(true);
       onSaved?.(result);
     } catch (e) {
       setError(e.message);
       if (e.unknown) setUncertain(true);
+      else autoDraftStopped.current = false;
     } finally {
       setBusy(false);
     }
@@ -1068,6 +1116,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
       {!ready && <div className="notice-banner" role="status">{error ? <>表单尚未加载完整。<Button type="button" onClick={() => setLoadAttempt(n => n + 1)}>重新加载</Button></> : '正在加载表单模块和上一班记录…'}</div>}
       {error && <div className="notice-banner error" role="alert">{error}</div>}
       {notice && <div className="notice-banner success" role="status">{notice}</div>}
+      {draftStatus && !initial && kind === 'meeting' && <div className="notice-banner" role="status">{draftStatus}</div>}
 
       {/* Basic Info (Date & Time) Section */}
       <section className="module-card">
@@ -1389,7 +1438,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
         <div className="bottom-bar-feedback">
           {saveStatus && <div className={`bottom-bar-status ${error ? 'error' : saved ? 'success' : ''}`} role={error ? 'alert' : 'status'}>{saveStatus}</div>}
           <div className="bottom-bar-actions">
-            {!initial && (
+            {!initial && kind === 'handover' && (
               <>
                 <Button type="button" variant="ghost" shape="pill" size="sm" disabled={busy || uncertain} onClick={stash}>
                   暂存草稿

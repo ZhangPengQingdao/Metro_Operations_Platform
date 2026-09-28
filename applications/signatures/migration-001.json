@@ -1,0 +1,24 @@
+{
+  "migrationVersion":"1.0",
+  "operations":[
+    {"kind":"createTable","table":"records","columns":[
+      {"name":"id","type":"uuid","nullable":false},
+      {"name":"organization_id","type":"uuid","nullable":false},
+      {"name":"created_by","type":"uuid","nullable":false},
+      {"name":"created_at","type":"timestamptz","nullable":false},
+      {"name":"updated_at","type":"timestamptz","nullable":false},
+      {"name":"intent_id","type":"uuid","nullable":false},
+      {"name":"template_key","type":"text","nullable":false},
+      {"name":"title","type":"text","nullable":false},
+      {"name":"fields","type":"jsonb","nullable":false},
+      {"name":"participants","type":"jsonb","nullable":false},
+      {"name":"score_rows","type":"jsonb","nullable":false},
+      {"name":"signer_ids","type":"jsonb","nullable":false},
+      {"name":"signer_people","type":"jsonb","nullable":false},
+      {"name":"search_text","type":"text","nullable":false},
+      {"name":"cancelled","type":"boolean","nullable":false}
+    ],"primaryKey":["id"]},
+    {"kind":"createIndex","table":"records","name":"signature_intent","columns":["intent_id"],"unique":true},
+    {"kind":"createIndex","table":"records","name":"signature_org_created","columns":["organization_id","created_at","id"],"unique":false}
+  ]
+}

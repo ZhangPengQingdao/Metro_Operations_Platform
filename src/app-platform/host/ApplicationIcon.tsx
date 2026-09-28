@@ -10,6 +10,7 @@ const applicationIcons = new Map([
  ['maintenance','calendar-dots'],
  ['materials','package'],
  ['shifts','sun-horizon'],
+ ['signatures','signature'],
  ['todos','check-square'],
 ]);
 const catalogue = new Map(TRANSIT_ICON_LIST.map(item=>[item.id,item.component]));

@@ -37,6 +37,16 @@ export function validateModules(kind, value) {
 export function initialModuleValues(modules) {
   return Object.fromEntries(modules.map(m => [m.id, m.type === 'text' ? lineItems(m.enableDefaultContent ? m.defaultText : '') : m.type === 'quiz' ? [] : m.type === 'safety' ? Object.fromEntries(m.items.map(i => [i.id, {checked: false, remark: i.remark ?? '', personIds: []}])) : {}]));
 }
+export function meetingDraftValue(form, savedOn) {
+  return {savedOn, date: form.date, time: form.time, hostId: form.hostId, participantIds: form.participantIds, form: form.form};
+}
+export function restoreMeetingDraft(base, draft, currentDay) {
+  if (!draft || typeof draft !== 'object' || (draft.savedOn ?? draft.date) !== currentDay || !draft.form || typeof draft.form !== 'object' || Array.isArray(draft.form)) return null;
+  return {...base, date: typeof draft.date === 'string' ? draft.date : base.date, time: typeof draft.time === 'string' ? draft.time : base.time,
+    hostId: typeof draft.hostId === 'string' ? draft.hostId : base.hostId,
+    participantIds: Array.isArray(draft.participantIds) ? draft.participantIds : base.participantIds,
+    form: {...base.form, ...draft.form}};
+}
 export function validateForm(modules, input, personIds = []) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail();
   const out = {};
