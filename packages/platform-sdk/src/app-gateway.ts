@@ -125,6 +125,12 @@ export function createPlatformSignaturesClient(gateway:Pick<ReturnType<typeof cr
   sign(entityId:string,image:string,signal?:AbortSignal){return gateway.invoke('platform.signatures.sign',{entityId,image},signal);},
  });
 }
+export function createPlatformNotificationsClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({
+  create(params:{id:string;entityId:string;personId:string;title:string;body:string},signal?:AbortSignal){return gateway.invoke('platform.notifications.create',params,signal);},
+  cancel(id:string,signal?:AbortSignal){return gateway.invoke('platform.notifications.cancel',{id},signal);}
+ });
+}
 export function createPlatformWebhookClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
  return Object.freeze({send(params:{url:string;message:string;messageType?:'text'|'markdown'},signal?:AbortSignal){return gateway.invoke('platform.webhook.send',params,signal);}});
 }

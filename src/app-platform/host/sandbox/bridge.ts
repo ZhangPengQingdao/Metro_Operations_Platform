@@ -6,19 +6,30 @@ export interface SandboxBridgeOperation {
   execute(params: SandboxJson, signal: AbortSignal): Promise<SandboxJson>;
 }
 export type SandboxBridgeError = 'INVALID_REQUEST' | 'UNKNOWN_METHOD' | 'LIMIT_EXCEEDED' | 'DENIED' | 'FAILED';
+export type SandboxFileError = SandboxBridgeError | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE' | 'INVALID_FILE' | 'ATTACHMENT_LIMIT' | 'ACCESS_DENIED';
 export type SandboxBridgeResponse = {
   version: '1.0'; type: 'response'; appId: string; session: string; id: number;
 } & ({ ok: true; result: SandboxJson } | { ok: false; error: SandboxBridgeError });
+export type SandboxFileResponse = {
+  version:'1.0';type:'file-response';appId:string;session:string;id:number;
+} & ({ok:true;result:SandboxJson|{blob:Blob;fileName:string}}|{ok:false;error:SandboxFileError});
+export interface SandboxFileOperations {
+  upload(params:SandboxJson,blob:Blob,signal:AbortSignal):Promise<SandboxJson>;
+  read(params:SandboxJson,signal:AbortSignal):Promise<{blob:Blob;fileName:string}>;
+  list(params:SandboxJson,signal:AbortSignal):Promise<SandboxJson>;
+}
 export interface SandboxBridgeOptions {
   appId: string;
   session: string;
   source: object;
   origin?: string;
-  send(response: SandboxBridgeResponse): void;
+  send(response: SandboxBridgeResponse | SandboxFileResponse): void;
   operations: ReadonlyMap<string, SandboxBridgeOperation>;
+  files?:SandboxFileOperations;
 }
 
 const MAX_BYTES = 64 * 1024;
+const MAX_FILE_BYTES=50*1024*1024;
 const MAX_DEPTH = 16;
 const encoder = new TextEncoder();
 
@@ -91,6 +102,7 @@ export class SandboxBridgeBroker {
   private readonly active = new Set<AbortController>();
   private closed = false;
   private lastId = 0;
+  private activeFiles=0;
 
   constructor(options: SandboxBridgeOptions) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(options.appId) || !/^[a-f0-9]{32}$/.test(options.session)
@@ -107,7 +119,7 @@ export class SandboxBridgeBroker {
     for (const controller of pending) controller.abort();
   }
 
-  private respond(response: SandboxBridgeResponse): void {
+  private respond(response: SandboxBridgeResponse|SandboxFileResponse): void {
     if (this.closed) return;
     try { this.options.send(Object.freeze(response)); } catch { this.close(); }
   }
@@ -117,7 +129,7 @@ export class SandboxBridgeBroker {
     const data = event.data;
     let id: number;
     try {
-      if (!data || typeof data !== 'object' || own(data, 'version') !== '1.0' || own(data, 'type') !== 'request'
+      if (!data || typeof data !== 'object' || own(data, 'version') !== '1.0' || own(data,'type')!=='request'&&own(data,'type')!=='file-request'
         || own(data, 'appId') !== this.options.appId || own(data, 'session') !== this.options.session) return;
       const candidate = own(data, 'id');
       if (typeof candidate !== 'number' || !Number.isInteger(candidate) || candidate < 1 || candidate > 2147483647
@@ -125,6 +137,10 @@ export class SandboxBridgeBroker {
       id = candidate;
     } catch { return; }
     this.lastId = id;
+    if(own(data,'type')==='file-request'){
+      await this.receiveFile(data as object,id);
+      return;
+    }
     const base = { version: '1.0', type: 'response', appId: this.options.appId, session: this.options.session, id } as const;
     const reject = (error: SandboxBridgeError) => this.respond({ ...base, ok: false, error });
     let params: SandboxJson;
@@ -159,5 +175,44 @@ export class SandboxBridgeBroker {
       this.respond(response);
     } catch { if (live()) reject('FAILED'); }
     finally { this.active.delete(controller); }
+  }
+  private async receiveFile(data:object,id:number):Promise<void>{
+    const base={version:'1.0',type:'file-response',appId:this.options.appId,session:this.options.session,id} as const;
+    const reject=(error:SandboxFileError)=>this.respond({...base,ok:false,error});
+    if(!this.options.files){reject('UNKNOWN_METHOD');return;}
+    let method:'upload'|'read'|'list',params:SandboxJson,blob:Blob|undefined;
+    try{
+      const keys=Object.keys(data).sort().join(',');
+      method=own(data,'method') as 'upload'|'read'|'list';
+      if(method==='upload'&&keys!=='appId,blob,id,method,params,session,type,version'||method!=='upload'&&keys!=='appId,id,method,params,session,type,version'||!['upload','read','list'].includes(method))throw Error();
+      params=snapshot(own(data,'params'));
+      if(method==='upload'){
+        const value=own(data,'blob');
+        if(!(value instanceof Blob)||value.size<1||value.size>MAX_FILE_BYTES)throw Error();
+        blob=value;
+      }
+    }catch{reject('INVALID_REQUEST');return;}
+    if(this.active.size>=8||this.activeFiles>=2){reject('LIMIT_EXCEEDED');return;}
+    const controller=new AbortController();this.active.add(controller);this.activeFiles++;
+    const live=()=>!this.closed&&!controller.signal.aborted;
+    try{
+      if(method==='upload'){
+        const result=snapshot(await this.options.files.upload(params,blob!,controller.signal));
+        if(live()){snapshot({...base,ok:true,result});this.respond({...base,ok:true,result});}
+      }else if(method==='read'){
+        const result=await this.options.files.read(params,controller.signal);
+        if(!(result.blob instanceof Blob)||result.blob.size<1||result.blob.size>MAX_FILE_BYTES||typeof result.fileName!=='string'||result.fileName.length>180)throw Error();
+        if(live())this.respond({...base,ok:true,result});
+      }else{
+        const result=snapshot(await this.options.files.list(params,controller.signal));
+        if(live()){snapshot({...base,ok:true,result});this.respond({...base,ok:true,result});}
+      }
+    }catch(error){
+      if(live()){
+        const code=error&&typeof error==='object'&&'code' in error?error.code:undefined;
+        reject(['FILE_TOO_LARGE','UNSUPPORTED_FILE','INVALID_FILE','ATTACHMENT_LIMIT','ACCESS_DENIED'].includes(code as string)?code as SandboxFileError:'FAILED');
+      }
+    }
+    finally{this.active.delete(controller);this.activeFiles--;}
   }
 }

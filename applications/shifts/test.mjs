@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {createShiftsHandlers} from './handlers.mjs';
-import {defaults} from './modules.mjs';
+import {defaults,meetingDraftValue,restoreMeetingDraft} from './modules.mjs';
 const org='61000000-0000-4000-8000-000000000001',other='61000000-0000-4000-8000-000000000002',person='61000000-0000-4000-8000-000000000003',second='61000000-0000-4000-8000-000000000004';
 function fixture(){
  const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[],signed=new Set();let failPush=false,failTransaction=false,failSignatureRead=false;
@@ -14,7 +14,7 @@ function fixture(){
   if(item.order)rows.sort((a,b)=>String(a[item.order.column]).localeCompare(String(b[item.order.column]))*(item.order.direction==='desc'?-1:1));
   return {rows:structuredClone(rows.slice(0,item.pageSize)),nextCursor:null};}))};
   if(op==='platform.app_data.get')return {row:structuredClone(tables[p.table].get(p.id)??null)};
-  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>(current?.[k]??null)!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations){const current=tables[m.table].get(m.id);tables[m.table].set(m.id,{...(m.action==='update'?current:{}),id:m.id,...m.values});}if(failTransaction){failTransaction=false;throw Error('ACK_LOST');}return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
+  if(op==='platform.app_data.transaction'){for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='insert'&&current||m.expected&&Object.entries(m.expected).some(([k,v])=>(current?.[k]??null)!==v))throw Error('STORAGE_CONFLICT');}for(const m of p.operations){const current=tables[m.table].get(m.id);if(m.action==='delete')tables[m.table].delete(m.id);else tables[m.table].set(m.id,{...(m.action==='update'?current:{}),id:m.id,...m.values});}if(failTransaction){failTransaction=false;throw Error('ACK_LOST');}return {results:p.operations.map(m=>({row:tables[m.table].get(m.id)}))};}
   if(op==='platform.app_data.list'){const match=(r,f)=>f.contains?f.contains.every(w=>r[f.column].some(v=>Object.entries(w).every(([k,x])=>v[k]===x))):(r[f.column]??null)===f.value;let rows=[...tables[p.table].values()].filter(r=>(p.filters??[]).every(f=>match(r,f))&&(!p.anyOf||p.anyOf.some(g=>g.every(f=>match(r,f)))));if(p.search)rows=rows.filter(r=>String(r[p.search.column]).toLowerCase().includes(p.search.text.toLowerCase()));if(p.range)rows=rows.filter(r=>(!p.range.from||r[p.range.column]>=p.range.from)&&(!p.range.to||r[p.range.column]<=p.range.to));return {rows:rows.slice(0,p.pageSize??20),nextCursor:null};}
   if(op==='platform.people.organization_context')return {organizations:[{id:p.organizationUnitId,name:'工班',unitType:'workgroup'}]};
   if(op==='platform.people.members')return {rows:[person,second].filter(id=>!p.personId||p.personId===id).filter(id=>!p.personIds||p.personIds.includes(id)).map(id=>({id,name:id===person?'甲':'乙',organizationUnitId:org}))};
@@ -64,6 +64,23 @@ test('record deletion requires its own scoped grant and refuses signed or unveri
  assert.equal(h.tables.records.get(q.id).deleted_at,undefined);
 });
 test('drafts are isolated by person and organization and use optimistic revisions',async()=>{const h=fixture(),value=h.form(),payload={organizationId:org,kind:'meeting',value,revision:0,requestId:randomUUID()};assert.equal((await h.call('save-draft',payload)).result.revision,1);assert.equal((await h.call('load-draft',{organizationId:org,kind:'meeting'})).result.draft.id,value.id);assert.equal((await h.call('load-draft',{organizationId:org,kind:'meeting'},{...h.employee,personId:second})).result.draft,null);assert.equal((await h.call('save-draft',{...payload,requestId:randomUUID()})).error.code,'CONFLICT');assert.equal((await h.call('save-draft',{...payload,revision:1,requestId:randomUUID()})).result.revision,2);});
+test('clearing a saved draft checks revision and leaves another employee draft alone',async()=>{
+ const h=fixture(),value=h.form(),base={organizationId:org,kind:'meeting'};
+ await h.call('save-draft',{...base,value,revision:0,requestId:randomUUID()});
+ assert.equal((await h.call('clear-draft',{...base,revision:0,requestId:randomUUID()})).error.code,'CONFLICT');
+ assert.equal((await h.call('clear-draft',{...base,revision:1,requestId:randomUUID()},{...h.employee,personId:second})).ok,true);
+ assert.deepEqual((await h.call('load-draft',base)).result.draft,value);
+ assert.equal((await h.call('clear-draft',{...base,revision:1,requestId:randomUUID()})).ok,true);
+ assert.equal((await h.call('load-draft',base)).result.draft,null);
+});
+test('meeting draft restores this day only and keeps new record identity',()=>{
+ const form={id:randomUUID(),organizationId:org,date:'2026-09-20',time:'08:30',hostId:person,participantIds:[second],form:{safety_prediction:{'item-1':{checked:true}}}};
+ const draft=meetingDraftValue(form,'2026-09-20');
+ const next={...form,id:randomUUID(),form:{safety_prediction:{'item-1':{checked:false}}}};
+ assert.equal(restoreMeetingDraft(next,draft,'2026-09-20').id,next.id);
+ assert.equal(restoreMeetingDraft(next,draft,'2026-09-20').form.safety_prediction['item-1'].checked,true);
+ assert.equal(restoreMeetingDraft(next,draft,'2026-09-21'),null);
+});
 test('form bootstrap reads template, private draft and previous record in one storage admission',async()=>{
  const h=fixture(),form=h.form('handover');await h.call('save',form);
  const draft={organizationId:org,kind:'handover',value:{time:'08:30'},revision:0,requestId:randomUUID()};await h.call('save-draft',draft);

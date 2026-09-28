@@ -13,7 +13,7 @@ test('platform grant batch is atomic, excludes business permissions, and require
  const client={query:(sql:string,args?:readonly unknown[])=>db.query(sql,[...(args??[])])};
  let allowed=true,writeActive=false;
  const context={actorType:'administrator',administrator:{id:'10000000-0000-4000-8000-000000000001'},execution:{type:'platform'},authorize:async()=>({allowed})} as unknown as PlatformManagementContext;
- const registry=new AppRegistryService(new PostgresAppRegistryRepository(client),{host:()=>({platformVersion:'0.0.1',capabilities:[],applications:[]}),authorization:{listPermissions:async()=>[{code:'platform.app_data.read',status:'active'},{code:'platform.app_data.write',status:writeActive?'active':'inactive'}] as never}});
+ const registry=new AppRegistryService(new PostgresAppRegistryRepository(client),{host:()=>({platformVersion:'0.0.1',capabilities:[],applications:[]}),authorization:{listPermissions:async()=>[{code:'platform.app_data.read',status:'active'},{code:'platform.app_data.write',status:writeActive?'active':'inactive'},{code:'platform.attachments.create',status:'active'},{code:'platform.attachments.read',status:'active'}] as never}});
  const manifest=JSON.parse(await readFile(new URL('../../examples/app-sdk/dist/sandbox/manifest.json',import.meta.url),'utf8')) as AppManifest;
  manifest.permissions.requested=['platform.app_data.read','platform.app_data.write'];
  manifest.routes=manifest.routes.map(r=>({...r,permission:'platform.app_data.read'}));
@@ -33,6 +33,12 @@ test('platform grant batch is atomic, excludes business permissions, and require
  const issued=await registry.issueServiceCredential(context,serviceManifest.id,serviceRecord.revision);
  serviceRecord=await approveInstalledPlatformGrants(registry,context,serviceManifest.id);
  assert.ok(serviceRecord.grants.every(g=>g.mode==='service'&&g.serviceIdentityId===issued.installation.serviceIdentityId));
+ const fileManifest={...serviceManifest,id:'attachment-grants-check',permissions:{...serviceManifest.permissions,requested:['platform.app_data.read','platform.attachments.create','platform.attachments.read']}};
+ await registry.register(context,fileManifest);
+ const fileRecord=await registry.get(context,fileManifest.id);
+ await registry.issueServiceCredential(context,fileManifest.id,fileRecord.revision);
+ const fileGrants=(await approveInstalledPlatformGrants(registry,context,fileManifest.id)).grants;
+ for(const code of ['platform.attachments.create','platform.attachments.read'])assert.deepEqual(fileGrants.filter(g=>g.permissionCode===code).map(g=>g.mode),['service']);
  assert.throws(()=>requestedPlatformCapabilities({...manifest,permissions:{...manifest.permissions,requested:['platform.authorization.manage']}}),/APP_CAPABILITIES_NOT_SUPPORTED/);
  }finally{await db.close();}
 });

@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "0.19.0",
+  "version": "0.21.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -24,16 +24,17 @@
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.2.9",
+    "@metro/platform-sdk": "0.21.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/ext-apps": "2.0.0",
     "@phosphor-icons/react": "^2.1.10",
+    "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.0",
     "xlsx": "^0.18.5",
-    "zod": "4.2.0",
-    "@metro/platform-sdk": "0.19.0"
+    "zod": "4.2.0"
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",
@@ -42,10 +43,10 @@
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.27",
+    "esbuild": "^0.25.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "esbuild": "^0.25.0"
+    "vite": "^6.2.0"
   }
 }

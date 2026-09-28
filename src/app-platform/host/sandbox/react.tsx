@@ -1,6 +1,6 @@
 import {readThemePreference} from '../../identity/theme';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation } from './bridge.js';
+import { SandboxBridgeBroker, createSandboxSession, type SandboxBridgeOperation,type SandboxFileOperations } from './bridge.js';
 
 export type SandboxFrameResource = { mode: 'isolated-origin'; url: string; platformOrigin: string; frontendRunMode?:'trusted' }
   | { mode: 'local-demo'; html: string; platformOrigin: string };
@@ -10,6 +10,7 @@ export interface SandboxFrameProps {
   instanceKey: string;
   resource: SandboxFrameResource;
   operations: ReadonlyMap<string, SandboxBridgeOperation>;
+  files?:SandboxFileOperations;
   enabled: boolean;
   /** Hidden warm frames must not leave the surrounding platform shell inert. */
   visible?: boolean;
@@ -49,7 +50,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
   }
   return <MountedFrame key={`${props.appId}:${props.instanceKey}`} {...props} />;
 }
-function MountedFrame({ appId, resource, operations, title, downloads, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
+function MountedFrame({ appId, resource, operations, files, title, downloads, route, initialRoute, onRouteReady, onFrameLoad, visible=true }: SandboxFrameProps) {
   const trusted=resource.mode==='isolated-origin'&&resource.frontendRunMode==='trusted';
   const frameOrigin=trusted?new URL(resource.url).origin:'null';
   const targetOrigin=trusted?frameOrigin:'*';
@@ -57,7 +58,7 @@ function MountedFrame({ appId, resource, operations, title, downloads, route, in
   const broker=useRef<SandboxBridgeBroker | null>(null);
   const loaded=useRef(false);
   const active=useRef(false);
-  const config=useRef({resource,operations});
+  const config=useRef({resource,operations,files});
   const lastSentRoute=useRef(initialRoute);
   const routeRef=useRef(route),routeReadyRef=useRef(onRouteReady);
   const frameLoadRef=useRef(onFrameLoad);
@@ -81,7 +82,7 @@ function MountedFrame({ appId, resource, operations, title, downloads, route, in
   },[modalOpen,failed,visible]);
   // Resource/operations replacement revokes channel even if the caller forgot its revision key.
   useLayoutEffect(()=>{
-    if(config.current.resource!==resource || config.current.operations!==operations){setFailed(true);return;}
+    if(config.current.resource!==resource || config.current.operations!==operations || config.current.files!==files){setFailed(true);return;}
     active.current=true;
     const onMessage=(event:MessageEvent)=>{
       if(event.source===frame.current?.contentWindow&&event.origin===frameOrigin){
@@ -115,7 +116,7 @@ function MountedFrame({ appId, resource, operations, title, downloads, route, in
       authorize:async()=>true,
       execute:async params=>{setModalOpen((params as {open:boolean}).open);return {ok:true};},
     });
-    broker.current=new SandboxBridgeBroker({appId,session,source:target,origin:frameOrigin,operations:frameOperations,
+    broker.current=new SandboxBridgeBroker({appId,session,source:target,origin:frameOrigin,operations:frameOperations,files,
       send:response=>target.postMessage(response,targetOrigin)});
     // Bootstrap contains no platform identity or bearer secret.
     target.postMessage({version:'1.0',type:'init',appId,session},targetOrigin);

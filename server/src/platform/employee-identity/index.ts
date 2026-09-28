@@ -141,7 +141,7 @@ export class EmployeeIdentityService{
  }
  async notifications(token?:string){
   const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
-  const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.created_at AS "createdAt",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));
+  const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.navigation_ref AS navigation,n.created_at AS "createdAt",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));
   if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   return {notifications};
  }

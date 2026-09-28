@@ -17,6 +17,7 @@ export interface TagDropdownPickerProps {
   selectedIds: string[];
   onChange: (selectedIds: string[]) => void;
   title?: string;
+  showTitle?: boolean;
   buttonText?: string;
   buttonVariant?: 'primary' | 'secondary' | 'soft' | 'ghost' | 'outline';
   emptyText?: string;
@@ -33,6 +34,7 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
   selectedIds,
   onChange,
   title = '',
+  showTitle = true,
   buttonText,
   buttonVariant = 'primary',
   emptyText = '未选择项目',
@@ -300,10 +302,10 @@ export const TagDropdownPicker: React.FC<TagDropdownPickerProps> = ({
   );
 
   return (
-    <div className={`relative inline-block ${showTagsBelow || title ? 'w-full space-y-2' : ''} ${className}`}>
+    <div className={`relative inline-block ${showTagsBelow || title && showTitle ? 'w-full space-y-2' : ''} ${className}`}>
       {/* 头部触发按钮行 */}
-      <div className={`flex items-center ${title ? 'justify-between' : 'justify-start'}`}>
-        {title ? <span className="text-xs font-bold text-neutral-900">{title}</span> : null}
+      <div className={`flex items-center ${title && showTitle ? 'justify-between' : 'justify-start'}`}>
+        {title && showTitle ? <span className="text-xs font-bold text-neutral-900">{title}</span> : null}
         <button
           ref={triggerRef}
           type="button"

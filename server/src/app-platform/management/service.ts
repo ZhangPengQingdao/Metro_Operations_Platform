@@ -30,6 +30,7 @@ import {EmployeeAppSessions} from '../employee/app-session.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
 import {buildSandboxDocument} from '../sandbox/document.js';
+import {bindEmployeeAttachmentActor} from '../employee/attachment-service.js';
 /** Opt-in application management composition; does not run schema migrations on startup. */
 export async function createAppManagement(configFile:string,origin:string){
  const config=await loadAppManagementConfig(configFile);
@@ -204,6 +205,30 @@ export async function createAppManagement(configFile:string,origin:string){
   async invokeEmployeeApi(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:Parameters<Awaited<ReturnType<typeof runtime.getHost>>['invokeEmployeeApi']>[1],admissionKey:string){
    assertOpen();const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},request);
+  },
+  async authorizeEmployeeAttachment(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],admissionKey:string,
+   request:{action:'upload'|'read';entityType:string;entityId:string;attachmentId?:string;requestId:string}){
+   assertOpen();
+   const first=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(first,admissionKey);
+   const route=first.installation.manifest.api.find(api=>api.id==='authorize-attachment'&&api.method==='POST'&&api.businessPermission);
+   if(!route)throw new GatewayError('ACCESS_DENIED',403);
+   const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   const result=await host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},
+    {apiId:route.id,method:'POST',path:route.path,payload:request});
+   if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).sort().join(',')!=='organizationId')throw new GatewayError('ACCESS_DENIED',403);
+   const authorization=result as Record<string,unknown>;
+   if(typeof authorization.organizationId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorization.organizationId))throw new GatewayError('ACCESS_DENIED',403);
+   const fresh=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(fresh,admissionKey);
+   if(fresh.identity.userId!==first.identity.userId||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
+   const serviceIdentityId=fresh.installation.serviceIdentityId;
+   if(!serviceIdentityId)throw new GatewayError('ACCESS_DENIED',403);
+   const person=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:fresh.identity,execution:{type:'application',appId},requestId:request.requestId,traceId:request.requestId});
+   const service=await apiAuthorization.contextResolver.resolve({actorType:'service',trustedIdentity:{source:'service'},execution:{type:'service',appId,serviceIdentityId},requestId:request.requestId,traceId:request.requestId});
+   if(person.actorType!=='person'||service.actorType!=='service')throw new GatewayError('ACCESS_DENIED',403);
+   // The app's approved service grant bounds storage access; the employee remains
+   // the recorded uploader after its signed business API authorizes this record.
+   const context=bindEmployeeAttachmentActor(person,service);
+   return {context,organizationId:authorization.organizationId};
   },
   migrationHistory:(context:PlatformManagementContext,appId:string,afterSequence:number)=>queue.run(async()=>{
    const installation=await registry.get(context,appId);

@@ -9,6 +9,7 @@ import test from 'node:test';
 import { createAppGatewayClient, AppGatewayClientError } from '../../packages/platform-sdk/src/app-gateway.ts';
 import { createServer } from 'node:http';
 import { AppGateway, createAppGatewayHttpHandler, GatewayError, type AppGatewayOperation } from '../src/app-platform/gateway/index.ts';
+import { GatewayAdmission } from '../src/app-platform/gateway/limits.ts';
 import { AppRegistryService, MemoryAppRegistryRepository, type AppRegistryRepository } from '../src/app-platform/registry/index.ts';
 import { buildAuthorizationSeed, createAuthorizationService, createMemoryAuthorizationRepository, AUTHORIZATION_ROLE_SEEDS } from '../src/platform/authorization/index.ts';
 import { createPlatformActorContextResolver } from '../src/platform/context/index.ts';
@@ -101,6 +102,13 @@ test('app rate budget survives credential rotation and global preauth is shared'
  await assert.rejects(f.gateway.invokeService(f.r.appId,rotated.credential,f.request),/RATE_LIMITED/);
  const g=await gatewayFixture({globalRequests:1});await assert.rejects(g.gateway.invokeService('other','bad',g.request));await assert.rejects(g.call(),/RATE_LIMITED/);
 });
+test('service calls use the aggregate app budget while people retain their actor budget',()=>{
+ const admission=new GatewayAdmission({appRequests:4,actorRequests:2});
+ for(let index=0;index<4;index++)admission.authenticated('files','service');
+ admission.authenticated('people','person-1');admission.authenticated('people','person-1');
+ assert.throws(()=>admission.authenticated('people','person-1'),/RATE_LIMITED/);
+ assert.throws(()=>admission.authenticated('files','service'),/RATE_LIMITED/);
+});
 test('HTTP POST bearer boundary rejects spoofed identities, cookies and oversized bodies',async()=>{
  const f=await gatewayFixture({requestBytes:512});const server=createServer(createAppGatewayHttpHandler(f.gateway,f.r.appId));
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const addr=server.address();assert.ok(addr&&typeof addr==='object');const url=`http://127.0.0.1:${addr.port}`;
@@ -134,7 +142,7 @@ test('strict JSON rejects cycles, prototypes, sparse arrays and getters without 
  assert.equal(getters,0);
 });
 test('bounded admission refuses new keys without evicting live windows',async()=>{
- const f=await gatewayFixture({maxRateKeys:2});await assert.rejects(f.call(),/RATE_LIMITED/);
+ const f=await gatewayFixture({maxRateKeys:1});await assert.rejects(f.call(),/RATE_LIMITED/);
 });
 
 test('delegated person freshness rejects inactive identity before returning data',async()=>{

@@ -1,4 +1,4 @@
-/** Browser-side file helpers for signed sandbox apps. Files never cross the Bridge. */
+/** Browser-side file helpers for signed sandbox apps. Attachment Blobs use a separate host channel. */
 import type {AppGatewayJson} from './app-gateway.js';
 export class AppFileError extends Error {
   constructor(readonly code: 'INVALID_FILE' | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE' | 'INVALID_TEXT' | 'INVALID_DOWNLOAD' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE') {
@@ -8,17 +8,21 @@ export class AppFileError extends Error {
 }
 
 export interface SandboxFileOptions {
-  /** Maximum bytes to read; the SDK hard limit is 16 MiB. */
+  /** Maximum bytes to read; the SDK hard limit is 50 MiB. */
   maxBytes: number;
   /** File extension checks are a UI guard, not proof of the file format. */
   extensions?: readonly string[];
 }
 
-const MAX_READ_BYTES = 16 * 1024 * 1024;
-const MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024;
+const MAX_READ_BYTES = 50 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+export const APP_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+export const APP_ATTACHMENT_EXTENSIONS = Object.freeze(['.doc','.docx','.xls','.xlsx','.pdf','.zip'] as const);
 export const APP_IMAGE_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
 export const APP_IMAGE_MAX_BYTES = 220_000;
-export const APP_IMAGE_PART_BYTES = 22_000;
+/** Base64 plus managed-storage transaction metadata must fit its 16 KiB request limit. */
+export const APP_IMAGE_PART_BYTES = 11_000;
+export const APP_IMAGE_MAX_PARTS = Math.ceil(APP_IMAGE_MAX_BYTES / APP_IMAGE_PART_BYTES);
 const safeName = (name: string) => typeof name === 'string' && name.length > 0 && name.length <= 180
   && name.trim() === name && !/[\\/\u0000-\u001f\u007f<>:"|?*]/.test(name) && name !== '.' && name !== '..';
 
@@ -124,7 +128,7 @@ export function createSandboxImageClient(invoke: SandboxImageInvoke, operations:
     async read(input: {recordId: string; photoId: string}): Promise<Blob> {
       if (!imageId(input?.recordId) || !imageId(input?.photoId)) throw new AppFileError('INVALID_IMAGE');
       const first = await invoke(operations.read, {...input, index: 0}, false) as {data: string; index: number; parts: number; mime: string; bytes: number; sha256: string};
-      if (first?.index !== 0 || !Number.isInteger(first.parts) || first.parts < 1 || first.parts > 16 || !Number.isInteger(first.bytes) || first.bytes < 5 || first.bytes > APP_IMAGE_MAX_BYTES || first.mime !== 'image/jpeg' || !/^[0-9a-f]{64}$/.test(first.sha256)) throw new AppFileError('INVALID_IMAGE');
+      if (first?.index !== 0 || !Number.isInteger(first.parts) || first.parts < 1 || first.parts > APP_IMAGE_MAX_PARTS || !Number.isInteger(first.bytes) || first.bytes < 5 || first.bytes > APP_IMAGE_MAX_BYTES || first.mime !== 'image/jpeg' || !/^[0-9a-f]{64}$/.test(first.sha256)) throw new AppFileError('INVALID_IMAGE');
       const chunks = [decodeBase64(first.data)];
       for (let index = 1; index < first.parts; index++) {
         const part = await invoke(operations.read, {...input, index}, false) as {data: string; index: number; parts: number; bytes: number; sha256: string};
@@ -135,6 +139,46 @@ export function createSandboxImageClient(invoke: SandboxImageInvoke, operations:
       let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
       if (bytes.length !== first.bytes || await sha256(bytes) !== first.sha256) throw new AppFileError('INVALID_IMAGE');
       return new Blob([bytes], {type: first.mime});
+    }
+  });
+}
+
+export interface SandboxAttachmentTransport {
+  uploadAttachment(blob:Blob,params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
+  readAttachment(params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
+  listAttachments(params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
+}
+
+/** A signed app supplies its own record authorization API; the host transports the Blob outside the JSON Bridge. */
+export function createSandboxAttachmentClient(transport:SandboxAttachmentTransport){
+  if(!transport||typeof transport.uploadAttachment!=='function'||typeof transport.readAttachment!=='function'||typeof transport.listAttachments!=='function')throw new AppFileError('INVALID_FILE');
+  return Object.freeze({
+    async upload(file:Blob&{name:string},input:{entityType:string;entityId:string;intentId:string},signal?:AbortSignal){
+      if(!file||typeof file.size!=='number'||!safeName(file.name)||!APP_ATTACHMENT_EXTENSIONS.some(extension=>file.name.toLowerCase().endsWith(extension)))throw new AppFileError('UNSUPPORTED_FILE');
+      if(!Number.isSafeInteger(file.size)||file.size<1)throw new AppFileError('INVALID_FILE');
+      if(file.size>APP_ATTACHMENT_MAX_BYTES)throw new AppFileError('FILE_TOO_LARGE');
+      if(!input||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||!imageId(input.entityId)||!imageId(input.intentId))throw new AppFileError('INVALID_FILE');
+      const result=await transport.uploadAttachment(file,{entityType:input.entityType,entityId:input.entityId,intentId:input.intentId,fileName:file.name},signal) as {attachmentId?:unknown;fileName?:unknown;sizeBytes?:unknown;contentType?:unknown};
+      if(!imageId(result?.attachmentId)||result.fileName!==file.name||result.sizeBytes!==file.size||typeof result.contentType!=='string')throw new AppFileError('INVALID_FILE');
+      return result as {attachmentId:string;fileName:string;sizeBytes:number;contentType:string};
+    },
+    async read(attachmentId:string,signal?:AbortSignal){
+      if(!imageId(attachmentId))throw new AppFileError('INVALID_FILE');
+      const result=await transport.readAttachment({attachmentId},signal) as {blob?:unknown;fileName?:unknown};
+      const blob=result?.blob,fileName=result?.fileName;
+      if(!(blob instanceof Blob)||typeof fileName!=='string'||!safeName(fileName)||blob.size<1||blob.size>APP_ATTACHMENT_MAX_BYTES||!APP_ATTACHMENT_EXTENSIONS.some(extension=>fileName.toLowerCase().endsWith(extension)))throw new AppFileError('INVALID_FILE');
+      return {blob,fileName};
+    },
+    async list(input:{entityType:string;entityId:string;afterId?:string},signal?:AbortSignal){
+      if(!input||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||!imageId(input.entityId)||input.afterId!==undefined&&!imageId(input.afterId))throw new AppFileError('INVALID_FILE');
+      const result=await transport.listAttachments({entityType:input.entityType,entityId:input.entityId,...(input.afterId?{afterId:input.afterId}:{})},signal) as {attachments?:unknown;nextCursor?:unknown};
+      if(!Array.isArray(result?.attachments)||result.attachments.length>50||result.nextCursor!==null&&!(typeof result.nextCursor==='string'&&imageId(result.nextCursor))
+        ||result.attachments.some(row=>!row||typeof row!=='object'||!imageId(row.attachmentId)||!imageId(row.intentId)||!safeName(row.fileName)||!Number.isSafeInteger(row.sizeBytes)||row.sizeBytes<1||row.sizeBytes>APP_ATTACHMENT_MAX_BYTES||typeof row.contentType!=='string'||typeof row.createdAt!=='string'))throw new AppFileError('INVALID_FILE');
+      return result as {attachments:{attachmentId:string;intentId:string;fileName:string;contentType:string;sizeBytes:number;createdAt:string}[];nextCursor:string|null};
+    },
+    async download(attachmentId:string,signal?:AbortSignal){
+      const {blob,fileName}=await this.read(attachmentId,signal);
+      downloadSandboxFile(fileName,blob,blob.type||'application/octet-stream');
     }
   });
 }

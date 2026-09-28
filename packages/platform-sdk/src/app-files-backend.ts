@@ -2,7 +2,7 @@
 import {createHash} from 'node:crypto';
 import {createAppDataClient, type AppDataMutation, type createAppGatewayClient} from './app-gateway.js';
 import type {AppBackendEmployeeContext} from './app-backend.js';
-import {APP_IMAGE_MAX_BYTES,APP_IMAGE_PART_BYTES} from './app-files.js';
+import {APP_IMAGE_MAX_BYTES,APP_IMAGE_MAX_PARTS,APP_IMAGE_PART_BYTES} from './app-files.js';
 
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const plain = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -71,7 +71,7 @@ export function createManagedAppImageStore(gateway: Pick<ReturnType<typeof creat
         indexes.add(part.part_index); found.push(part);
       }
       after = result.nextCursor;
-    } while (after && found.length <= 16);
+    } while (after && found.length <= APP_IMAGE_MAX_PARTS);
     if (found.length !== row.parts || found.some(part => part.part_index < 0 || part.part_index >= row.parts)) fail('PHOTO_INCOMPLETE');
     found.sort((a,b) => a.part_index - b.part_index);
     return found.map(part => Buffer.from(part.data,'base64'));
@@ -80,7 +80,7 @@ export function createManagedAppImageStore(gateway: Pick<ReturnType<typeof creat
     async begin(input: Record<string, unknown>, employee: Employee, signal?: AbortSignal) {
       if (!plain(input) || !keys(input,['requestId','id','organizationId','kind','bytes','sha256','parts']) || !uuid(input.requestId) || !uuid(input.id) || !uuid(input.organizationId)
         || typeof input.kind !== 'string' || !/^[a-z][a-z0-9_-]{0,31}$/.test(input.kind) || !Number.isInteger(input.bytes) || (input.bytes as number) < 1 || (input.bytes as number) > APP_IMAGE_MAX_BYTES
-        || !Number.isInteger(input.parts) || (input.parts as number) < 1 || (input.parts as number) > 16 || input.parts !== Math.ceil((input.bytes as number) / APP_IMAGE_PART_BYTES)
+        || !Number.isInteger(input.parts) || (input.parts as number) < 1 || (input.parts as number) > APP_IMAGE_MAX_PARTS || input.parts !== Math.ceil((input.bytes as number) / APP_IMAGE_PART_BYTES)
         || typeof input.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(input.sha256)) fail('INVALID_INPUT');
       await options.authorizeWrite(employee,input.organizationId as string,signal);
       await data.transaction(input.requestId as string,[{action:'insert',table:'photos',id:input.id as string,values:{organization_id:input.organizationId as string,created_by:employee.personId,created_at:clock().toISOString(),kind:input.kind as string,mime:'image/jpeg',bytes:input.bytes as number,sha256:input.sha256 as string,parts:input.parts as number,ready:false,record_id:null}}],signal);
@@ -105,7 +105,7 @@ export function createManagedAppImageStore(gateway: Pick<ReturnType<typeof creat
       return {id:row.id};
     },
     async read(input: Record<string, unknown>, employee: Employee, signal?: AbortSignal) {
-      if (!plain(input) || !keys(input,['recordId','photoId','index']) || !uuid(input.recordId) || !uuid(input.photoId) || !Number.isInteger(input.index) || (input.index as number) < 0 || (input.index as number) > 15) fail('INVALID_INPUT');
+      if (!plain(input) || !keys(input,['recordId','photoId','index']) || !uuid(input.recordId) || !uuid(input.photoId) || !Number.isInteger(input.index) || (input.index as number) < 0 || (input.index as number) >= APP_IMAGE_MAX_PARTS) fail('INVALID_INPUT');
       const access = await options.resolveRead(employee,input.recordId as string,input.photoId as string,signal);
       const row = await photo(input.photoId as string,signal);
       if (!uuid(access?.organizationId) || !row.ready || row.record_id !== input.recordId || row.organization_id !== access.organizationId || (input.index as number) >= row.parts) fail('ACCESS_DENIED');
@@ -123,4 +123,26 @@ export function createManagedAppImageStore(gateway: Pick<ReturnType<typeof creat
       return {action:'update',table:'photos',id:row.id,expected:{record_id:row.record_id,ready:true},values:{record_id:recordId}};
     }
   });
+}
+
+export interface AppAttachmentAuthorizationOptions {
+  /** Check the employee's permission to add an original file to this existing business record. */
+  authorizeUpload(employee:Employee,source:{entityType:string;entityId:string},signal?:AbortSignal):Promise<{organizationId:string}>;
+  /** Check record visibility; the platform independently checks the attachment-to-record binding. */
+  authorizeRead(employee:Employee,source:{entityType:string;entityId:string;attachmentId?:string},signal?:AbortSignal):Promise<{organizationId:string}>;
+}
+
+/** Handler for the manifest-declared POST authorize-attachment API. Never infer access from a file ID alone. */
+export function createAppAttachmentAuthorizationHandler(options:AppAttachmentAuthorizationOptions){
+  if(!options||typeof options.authorizeUpload!=='function'||typeof options.authorizeRead!=='function')fail('INVALID_ATTACHMENT_OPTIONS');
+  return async(input:Record<string,unknown>,employee:Employee,signal?:AbortSignal)=>{
+    if(!plain(input)||!keys(input,['action','entityType','entityId','attachmentId','requestId'])||
+      input.action!=='upload'&&input.action!=='read'||typeof input.entityType!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||
+      !uuid(input.entityId)||!uuid(input.requestId)||input.attachmentId!==undefined&&!uuid(input.attachmentId)||
+      input.action==='upload'&&input.attachmentId!==undefined)fail('INVALID_INPUT');
+    const source={entityType:input.entityType as string,entityId:input.entityId as string};
+    const access=input.action==='upload'?await options.authorizeUpload(employee,source,signal):await options.authorizeRead(employee,{...source,...(input.attachmentId?{attachmentId:input.attachmentId as string}:{})},signal);
+    if(!uuid(access?.organizationId))fail('ACCESS_DENIED');
+    return {organizationId:access.organizationId};
+  };
 }

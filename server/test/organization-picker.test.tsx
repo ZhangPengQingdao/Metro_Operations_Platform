@@ -17,3 +17,9 @@ test('picker accepts parent selection, displays full path and excludes inactive 
  assert.doesNotMatch(render('disabled'),/<option value="disabled"/);
  assert.doesNotMatch(render('team','department'),/<option value="team"/);
 });
+test('picker can restrict selectable levels without marking a branch inactive',()=>{
+ const render=(value:string)=>renderToStaticMarkup(<OrganizationPicker options={options} value={value} label="业务模块" selectable={option=>option.id==='team'} required onChange={()=>{}}/>);
+ assert.match(render(''),/请选择业务模块/);
+ assert.doesNotMatch(render('department'),/<option value="department"/);
+ assert.match(render('team'),/<option value="team" selected=""/);
+});

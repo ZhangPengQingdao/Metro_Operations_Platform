@@ -1,6 +1,7 @@
 import {createOrganizationContextOperation} from '../gateway/organization-context.js';
 import {createWebhookOperation} from '../gateway/webhook.js';
 import {createSignatureGatewayOperations} from '../gateway/signatures.js';
+import {createNotificationGatewayOperations} from '../gateway/notifications.js';
 import {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {ConnectablePool,QueryableClient} from '../../core/database/index.js';
 import {createPostgresCoreTechnicalAuditRepository} from '../../core/observability/index.js';
@@ -43,7 +44,7 @@ export function createManagementGateway(pool:ConnectablePool&QueryableClient,add
  const {contextResolver,authenticateServiceCredential}=createManagementContexts(pool);
  return new AppGateway({registry:{authenticateServiceCredential},contextResolver,
   auditRepository:createPostgresCoreTechnicalAuditRepository(pool),
-  operations:[createOrganizationContextOperation(createPostgresPeopleDirectoryRepository(pool)),createWebhookOperation(),createAiCompletionOperation(),...createSignatureGatewayOperations(pool),createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listResponsibleStations:createResponsibleStationReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations],limits:{timeoutMs:30_000}});
+  operations:[createOrganizationContextOperation(createPostgresPeopleDirectoryRepository(pool)),createWebhookOperation(),createAiCompletionOperation(),...createSignatureGatewayOperations(pool),...createNotificationGatewayOperations(pool),createPeopleDirectoryOperation(createPostgresPeopleDirectoryRepository(pool)),...createDirectoryGatewayOperations({listLocations:createLocationListReader(pool),listResponsibleStations:createResponsibleStationReader(pool),listAssets:createAssetListReader(pool),locations:createPostgresLocationDirectoryRepository(pool),assets:createPostgresAssetDirectoryRepository(pool)}),...additionalOperations],limits:{timeoutMs:30_000}});
 }
 /** Without a trusted business resource adapter, only truly unrestricted grants can pass {}. */
 export function createManagementApiAuthorization(pool:ConnectablePool&QueryableClient){

@@ -13,7 +13,7 @@ import {AdminShell,type AdminApplication} from '../admin/AdminShell';
 import '../admin/admin.css';
 import {employeeRequest,EmployeeRequestError} from './client';
 import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
-import type {SandboxJson} from '../host/sandbox/bridge';
+import type {SandboxJson,SandboxFileOperations} from '../host/sandbox/bridge';
 import {rememberApp,type RetainedApp} from './retained-apps';
 
 type Account={id:string;personId:string;username:string;name?:string;passwordChangeRequired?:boolean};
@@ -59,21 +59,65 @@ function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{accou
    execute:(params,signal)=>invoke('gateway',{version:'1.0',operation,params},signal),
   });
   routes.set('platform.ui.navigation',{validate:params=>{if(!params||typeof params!=='object'||Array.isArray(params))return false;const ids=(params as {ids?:SandboxJson}).ids;return Array.isArray(ids)&&ids.length<=32&&ids.every((id:SandboxJson)=>typeof id==='string');},authorize:async()=>true,execute:async params=>{onNavigation(appId!, (params as {ids:string[]}).ids);return {ok:true};}});
+  routes.set('platform.ui.context',{validate:params=>!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===0,authorize:async()=>true,execute:async()=>{
+   const hash=window.location.hash,query=hash.includes('?')?hash.slice(hash.indexOf('?')+1):'';
+   const taskId=appId==='signatures'&&hash.startsWith('#/employee/app/signatures')?new URLSearchParams(query).get('task'):null;
+   return {baseUrl:window.location.origin,taskId:taskId&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId)?taskId:null};
+  }});
   return routes;
  },[appId,account.id,current,onNavigation]);
+ const files=useMemo<SandboxFileOperations|undefined>(()=>{
+  if(!current?.api.some(route=>route.id==='authorize-attachment'&&route.method==='POST')||!appId)return undefined;
+  const request=async(path:string,options:RequestInit)=>{
+   const response=await fetch(`/api/employee/apps/${appId}/attachments${path}`,{...options,credentials:'same-origin',headers:{...options.headers,'X-Mop-Employee-Admission':current.admissionKey}});
+   if(!response.ok){
+    const value=await response.json().catch(()=>null);
+    const error=new EmployeeRequestError(response.status,typeof value?.error==='string'?value.error:'EMPLOYEE_REQUEST_FAILED');
+    if(response.status===401||response.status===403){setCurrent(null);setError(error.message);}
+    throw error;
+   }
+   return response;
+  };
+  return {
+   async upload(params,blob,signal){
+    if(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).sort().join(',')!=='entityId,entityType,fileName,intentId')throw Error('INVALID_FILE_REQUEST');
+    const p=params as Record<string,SandboxJson>;
+    if(Object.values(p).some(value=>typeof value!=='string'))throw Error('INVALID_FILE_REQUEST');
+    const query=new URLSearchParams(p as Record<string,string>);
+    const response=await request(`?${query}`,{method:'POST',body:blob,signal,headers:{'Content-Type':'application/octet-stream'}});
+    return await response.json();
+   },
+   async read(params,signal){
+    if(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).join(',')!=='attachmentId'||typeof (params as {attachmentId?:unknown}).attachmentId!=='string')throw Error('INVALID_FILE_REQUEST');
+    const response=await request(`/${encodeURIComponent((params as {attachmentId:string}).attachmentId)}`,{signal});
+    const encoded=response.headers.get('X-Mop-Attachment-Name');
+    if(!encoded)throw Error('INVALID_FILE_RESPONSE');
+    const fileName=decodeURIComponent(encoded),blob=await response.blob();
+    return {fileName,blob};
+   },
+   async list(params,signal){
+    if(!params||typeof params!=='object'||Array.isArray(params)||typeof (params as {entityType?:unknown}).entityType!=='string'||typeof (params as {entityId?:unknown}).entityId!=='string')throw Error('INVALID_FILE_REQUEST');
+    const p=params as Record<string,SandboxJson>;
+    if(Object.keys(p).some(key=>!['entityType','entityId','afterId'].includes(key))||Object.values(p).some(value=>typeof value!=='string'))throw Error('INVALID_FILE_REQUEST');
+    const response=await request(`?${new URLSearchParams(p as Record<string,string>)}`,{signal});
+    return await response.json();
+   }
+  };
+ },[appId,current]);
  const waiting=pending||activeRoute!==requestedRoute;
- return <section ref={section} className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&visible&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} enabled visible={visible} title={current.name} downloads={current.downloads} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onFrameLoad={()=>record('frame')} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute){record('route');setPending(false);}}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
+ return <section ref={section} className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&visible&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} files={files} enabled visible={visible} title={current.name} downloads={current.downloads} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onFrameLoad={()=>record('frame')} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute){record('route');setPending(false);}}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
 }
 export default function EmployeeApp(){
  const [owned,setOwned]=useState<ManagedApplication[]>([]);
  const [menus,setMenus]=useState<Record<string,string[]>>({});
- const {pathname}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const {pathname,search}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
  useEffect(()=>{
   const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(pathname);
   const app=apps.find(item=>item.appId===match?.[1]),ids=app&&menus[app.appId];
   if(!app||!ids?.length)return;
   const currentPath=match?.[2]??'/';
+  if(app.appId==='signatures'&&currentPath==='/sign')return;
   const current=app.navigation.find(item=>app.routes.some(route=>route.id===item.routeId&&route.path===currentPath));
   if(current&&ids.includes(current.id))return;
   const first=app.navigation.find(item=>ids.includes(item.id)&&app.routes.some(route=>route.id===item.routeId));
@@ -114,7 +158,7 @@ export default function EmployeeApp(){
  useEffect(()=>()=>{for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();},[]);
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
- if(!account)return <Navigate to="/login" replace/>;
+ if(!account)return <Navigate to="/login" state={{returnTo:pathname+search}} replace/>;
  if(account.passwordChangeRequired)return <PasswordChangeRequired kind="employee" onChanged={()=>{setAccount(null);setApps([]);setRetainedApps([]);navigate('/login',{replace:true});}}/>;
  const visibleApps=apps;
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
@@ -150,8 +194,13 @@ function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean
  <label>确认新密码<Input required type="password" minLength={8} maxLength={72} autoComplete="new-password" disabled={busy} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label>
  <p className="afc-muted">修改后需要重新登录，其他设备的登录也会失效。</p><div className="afc-profile-actions"><Button type="submit" disabled={busy}>修改密码</Button></div></form>}/>:!error&&<p role="status">正在读取个人资料…</p>}</>;
 }
+function safeNotificationHref(value:string|null|undefined){
+ if(!value)return null;
+ if(/^\/employee\/app\/signatures\/sign\?task=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))return value;
+ return /^\/employee\/app\/[a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)*$/.test(value)?value:null;
+}
 function EmployeeMessages(){
- const [messages,setMessages]=useState<{id:string;display:{title:string;body?:string;summary?:string};createdAt:string}[]|null>(null),[error,setError]=useState('');
+ const [messages,setMessages]=useState<{id:string;display:{title:string;body?:string;summary?:string};navigation?:{href?:string|null}|null;createdAt:string}[]|null>(null),[error,setError]=useState('');
  useEffect(()=>{const c=new AbortController();employeeRequest<{notifications:NonNullable<typeof messages>}>('/notifications',{signal:c.signal}).then(v=>setMessages(v.notifications)).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[]);
- return error?<p role="alert" className="afc-error">{error}</p>:messages?messages.length?<div className="employee-message-list">{messages.map(item=><article key={item.id}><h2>{item.display.title}</h2><p>{item.display.body??item.display.summary}</p><time className="afc-muted">{new Date(item.createdAt).toLocaleString()}</time></article>)}</div>:<p className="afc-empty">暂无消息</p>:<p role="status">正在读取消息…</p>;
+ return error?<p role="alert" className="afc-error">{error}</p>:messages?messages.length?<div className="employee-message-list">{messages.map(item=>{const href=safeNotificationHref(item.navigation?.href);return <article key={item.id}><h2>{item.display.title}</h2><p>{item.display.body??item.display.summary}</p><time className="afc-muted">{new Date(item.createdAt).toLocaleString()}</time>{href&&<p><Link to={href}>{href.startsWith('/employee/app/signatures/sign?task=')?'打开签字任务':'打开应用'}</Link></p>}</article>;})}</div>:<p className="afc-empty">暂无消息</p>:<p role="status">正在读取消息…</p>;
 }
