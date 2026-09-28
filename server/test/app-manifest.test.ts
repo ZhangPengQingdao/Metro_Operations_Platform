@@ -113,6 +113,23 @@ test('cross references, ownership, uniqueness and runtime modes are checked', ()
   for (const change of changes) rejects(change);
 });
 
+test('cross-application exposure reuses the declared business permission', () => {
+  const provider=fixture();
+  provider.api[0].businessPermission='app.tool-lending.borrow';
+  provider.api[0].expose={contractVersion:'1.0',mode:'write'};
+  assert.equal(validateAppManifest(provider).ok,true);
+  rejects(m=>{m.api[0].expose={contractVersion:'1.0',mode:'write'};});
+  rejects(m=>{m.api[0].businessEntry=true;m.api[0].businessPermission='app.tool-lending.borrow';m.api[0].expose={contractVersion:'1.0',mode:'write'};});
+  const readRpc=fixture();readRpc.api[0].businessPermission='app.tool-lending.borrow';readRpc.api[0].expose={contractVersion:'1.0',mode:'read'};
+  assert.equal(validateAppManifest(readRpc).ok,true); // Existing app read APIs use POST as their RPC transport.
+  const consumer=headless();consumer.id='work-items';consumer.permissions.defined=[];
+  consumer.compatibility.applications=[{id:'tool-lending',version:{minInclusive:'1.0.0',maxExclusive:'2.0.0'}}];
+  consumer.permissions.requested=['app.tool-lending.borrow'];
+  assert.equal(validateAppManifest(consumer).ok,true);
+  consumer.compatibility.applications=[];
+  assert.equal(validateAppManifest(consumer).ok,false);
+});
+
 test('compatibility checks explicit ranges, SemVer prerelease order and exact capability contracts', () => {
   assert.equal(checkAppManifestCompatibility(fixture(), host).ok, true);
   for (const v of ['0.0.1-alpha.33', '2.0.0']) assert.equal(checkAppManifestCompatibility(fixture(), { ...host, platformVersion: v }).ok, false);

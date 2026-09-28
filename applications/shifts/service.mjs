@@ -155,8 +155,8 @@ export function createShiftsService(gateway){
   },
   async 'delete-record'(input,employee,signal){
    if(!uuid(input.id)||!uuid(input.requestId)||!Number.isInteger(input.revision)||input.revision<1)throw Error('INVALID_INPUT');
-   const row=await record(input.id,employee,signal);
-   if(!canDelete(employee,row))throw Error('ACCESS_DENIED');
+   const {row}=await data.get('records',input.id,signal);
+   if(!row||row.deleted_at||!canDelete(employee,row))throw Error('ACCESS_DENIED');
    if(row.revision!==input.revision)throw Error('CONFLICT');
    if(row.kind==='meeting'){
     let signatureInfo;

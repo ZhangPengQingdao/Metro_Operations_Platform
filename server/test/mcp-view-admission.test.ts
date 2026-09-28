@@ -88,7 +88,7 @@ test('denied admission never starts a resource read', async()=>{
 });
 
 test('installed view calls use current Gateway grants and close on extension replacement',async()=>{
- const f=await fixture();const permission='app.fixture.use';
+ const f=await fixture();const permission=`app.${f.installation.appId}.use`;
  f.installation.manifest.permissions.requested.push(permission);
  f.installation.manifest.routes=[];f.installation.manifest.navigation=[];
  f.installation.serviceIdentityId='fixture';

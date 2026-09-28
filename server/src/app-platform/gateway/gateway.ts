@@ -82,9 +82,10 @@ export class AppGateway {
     // One terminal audit attempt per invocation. A hung sink cannot hold the reply
     // indefinitely; AUDIT_FAILED means persistence was not confirmed (it may complete later).
     let terminalAudit: Promise<void> | undefined;
+    let routingAudit:Readonly<Record<string,string>>={};
     const recordTerminal=(outcome:'succeeded'|'failed',errorCode?:string,mode?:'read'|'write')=>{
       if(!terminalAudit) terminalAudit=Promise.resolve().then(async()=>{
-        await this.options.auditRepository?.append({category:'app',action:trace.operation??'gateway',outcome,context:{...trace},...(errorCode?{errorCode}:{}),metadata:{phase:'operation',deliveryConfirmed:false,...(mode?{mode}:{}),...(outcome==='failed'?{writeOutcome:writeStarted?'unknown':'not_started'}:{})}});
+        await this.options.auditRepository?.append({category:'app',action:trace.operation??'gateway',outcome,context:{...trace},...(errorCode?{errorCode}:{}),metadata:{phase:'operation',deliveryConfirmed:false,...routingAudit,...(mode?{mode}:{}),...(outcome==='failed'?{writeOutcome:writeStarted?'unknown':'not_started'}:{})}});
       });
       return terminalAudit;
     };
@@ -126,6 +127,7 @@ export class AppGateway {
       trace.actorId=context.actorType==='person'?context.person.id:context.execution.serviceIdentityId;
       this.admission.authenticated(appId,context.actorType==='person'?context.person.id:'service');
       if(!operation.validateParams(request.params)) throw new GatewayError('INVALID_PARAMS');
+      routingAudit=operation.auditMetadata?.(request.params)??{};
       const authorize=async(refresh=true)=>{
         if(refresh)context=await fresh();check();
         const resources=await operation.resolveResources(context,request.params);check();

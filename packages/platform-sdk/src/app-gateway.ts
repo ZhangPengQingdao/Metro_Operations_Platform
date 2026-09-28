@@ -139,3 +139,13 @@ export function createPlatformWebhookClient(gateway:Pick<ReturnType<typeof creat
 export function createPlatformAiClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
  return Object.freeze({complete(params:{system:string;prompt:string},signal?:AbortSignal){return gateway.invoke('platform.ai.complete',params,signal) as Promise<{content:string}>;}});
 }
+
+/** Invoke only capabilities explicitly exposed by another installed application. */
+export function createAppCapabilityClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({call(appId:string,apiId:string,params:AppGatewayJson,signal?:AbortSignal){
+  if(!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(appId)||appId.length>64||
+     !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(apiId)||apiId.length>64)
+   return Promise.reject(new AppGatewayClientError('INVALID_REQUEST','not_started'));
+  return gateway.invoke('platform.apps.invoke',{appId,apiId,params},signal);
+ }});
+}

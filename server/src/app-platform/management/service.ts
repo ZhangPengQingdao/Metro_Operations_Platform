@@ -23,9 +23,11 @@ import {createManagementQueue} from './queue.js';
 import {readInstalledAdminUi,AppManagementError} from './ui.js';
 import {createManagedStorageComposition,createStorageArtifactReader} from './storage.js';
 import {createManagementGateway,createManagementApiAuthorization} from './gateway.js';
+import {createAppCapabilityOperation} from '../gateway/app-capabilities.js';
 import {GatewayError} from '../gateway/model.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {EmployeeAppAccess} from '../employee/access.js';
+import {AppCapabilityPublication} from '../capabilities/publication.js';
 import {EmployeeAppSessions} from '../employee/app-session.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
@@ -63,12 +65,24 @@ export async function createAppManagement(configFile:string,origin:string){
   adminDatabaseUrl:process.env.MOP_APP_STORAGE_ADMIN_DATABASE_URL,apiClient:db,
   registry:client=>new AppRegistryService(new PostgresAppRegistryRepository(client),{authorization,host:()=>{throw new Error('STORAGE_REGISTRY_READ_ONLY');}}),
   reader:createStorageArtifactReader({getInstallation:appId=>repository.findByAppId(appId),readArtifact})}):undefined;
- const gateway=createManagementGateway(getDatabasePool()!,storage?.runtimeData.operations());
  const employeeAccess=new EmployeeAppAccess(getDatabasePool()!);
+ const publications=new AppCapabilityPublication(getDatabasePool()!);
  const employeeAppSessions=new EmployeeAppSessions();
  const apiAuthorization=createManagementApiAuthorization(getDatabasePool()!);
+ let runtime:ReturnType<typeof createAppRuntimeComposition>;
+ const capabilityOperation=createAppCapabilityOperation({
+  getInstallation:id=>repository.findByAppId(id),
+  assertEmployeeAccess:async(id,personId)=>{await assertRuntimeApproval(undefined,id);await employeeAccess.assert(id,personId);},
+  isPublished:(installation,apiId)=>publications.isPublished(installation,apiId),
+  resolveEmployee:(identity,appId,requestId,traceId)=>apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId},requestId,traceId}),
+  invokeTarget:async(appId,actor,request,signal,assertAdmission)=>{
+   const host=runtime?.findHost(appId);if(!host)throw new GatewayError('OPERATION_DENIED',403);
+   return host.invokeApi(actor,request,signal,assertAdmission);
+  },
+ });
+ const gateway=createManagementGateway(getDatabasePool()!,[...(storage?.runtimeData.operations()??[]),capabilityOperation]);
  const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
- const runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:apiAuthorization,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
+ runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:apiAuthorization,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
  const approve=async(_context:PlatformManagementContext,manifest:Parameters<typeof manifestApprovalDigest>[0])=>{
   const fresh=await loadAppManagementConfig(configFile);
   return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&(await approvals.current()).approvedManifestDigests.includes(manifestApprovalDigest(manifest));

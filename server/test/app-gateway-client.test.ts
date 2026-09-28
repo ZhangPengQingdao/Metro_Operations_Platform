@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAppGatewayClient,AppGatewayClientError} from '../../packages/platform-sdk/src/app-gateway.ts';
+import {createAppGatewayClient,createAppCapabilityClient,AppGatewayClientError} from '../../packages/platform-sdk/src/app-gateway.ts';
 test('client snapshots immutable parameters and uses only injected transport once',async()=>{
   let calls=0;
   const client=createAppGatewayClient(async request=>{calls++;assert.ok(Object.isFrozen(request.params));return {version:'1.0',requestId:'r',traceId:'t',result:{ok:true}};});
@@ -19,4 +19,13 @@ test('client rejects malformed/large responses and invalid params without invoki
   let calls=0;const c=createAppGatewayClient(async()=>{calls++;return null;});let accessed=false;
   await assert.rejects(c.invoke('demo.read',{get bad(){accessed=true;return 'x';}}),/INVALID_JSON/);assert.equal(accessed,false);assert.equal(calls,0);
   const controller=new AbortController();controller.abort();await assert.rejects(c.invoke('demo.read',{},controller.signal),/ABORTED/);assert.equal(calls,0);
+});
+test('capability client sends one bounded gateway call and does not retry an uncertain write',async()=>{
+  const requests:unknown[]=[];
+  const gateway=createAppGatewayClient(async request=>{requests.push(request);throw Error('lost response');});
+  const capabilities=createAppCapabilityClient(gateway);
+  await assert.rejects(capabilities.call('provider','create',{title:'test'}),error=>error instanceof AppGatewayClientError&&error.writeOutcome==='unknown');
+  assert.deepEqual(JSON.parse(JSON.stringify(requests)),[{version:'1.0',operation:'platform.apps.invoke',params:{appId:'provider',apiId:'create',params:{title:'test'}}}]);
+  await assert.rejects(capabilities.call('BAD','create',{}),error=>error instanceof AppGatewayClientError&&error.writeOutcome==='not_started');
+  assert.equal(requests.length,1);
 });

@@ -9,8 +9,8 @@
 | 方法 | 路径 | 请求体 |
 | --- | --- | --- |
 | GET | `/api/admin/employee-accounts` | `search?`、`status?`、`page?`、`pageSize?` 查询参数 |
-| GET | `/api/admin/apps/:appId/employee-access` | 员工使用授权及版本 |
-| PUT | `/api/admin/apps/:appId/employee-access` | `{personId,enabled,revision}`，首次授权 revision 为 null |
+| GET | `/api/admin/apps/:appId/employee-access` | 仅供尚未切换应用角色模式的旧应用读取历史使用授权 |
+| PUT | `/api/admin/apps/:appId/employee-access` | 仅供旧应用过渡使用；新应用请配置人员范围和业务角色 |
 | POST | `/api/admin/employee-accounts` | `{personId, username, password}` |
 | PATCH | `/api/admin/employee-accounts/:id` | `{status?, password?}`，至少一项 |
 
@@ -56,7 +56,7 @@ Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，
 
 位置列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, status?}`。设备列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, lifecycleState?, locationId?, typeId?, typeName?}`，`typeName` 为精确名称过滤。页大小默认 20、最多 50；search 为名称、编码和设备类型名称的字面子串（最多 100 字符），status 仅 active/inactive，lifecycleState 为 planned/active/suspended/retired。数据库按 UUID 升序有界读取，用返回的 nextCursor 续页；不返回总数。未指定组织时必须具有完整目录授权；指定组织时对该组织做授权并限制 SQL 查询范围，返回每行再次检查真实范围。组织参数是待验证资源，不是授权声明。范围不足时连空页也拒绝；逐对象授权仍用 get 查询。游标不要求记录仍存在，删除游标记录不会回到第一页。
 
-管理员还需在应用授权页面分配“员工使用范围”；安装或授予目录权限不会自动允许所有员工打开应用。授权使用比较并更新版本，防止管理员覆盖其他人的变更；审计记录应用安装 ID 和员工 ID。
+采用应用角色模式的应用由负责人在“应用管理 → 人员管理、角色配置”维护可使用人员和业务操作范围；具备生效业务角色即允许进入，不再另分配“员工使用范围”开关。只在尚未切换的旧应用中保留历史使用授权过渡能力；切换前仍需原有授权，避免升级直接扩权。安装或授予目录权限不会自动允许所有员工打开应用。
 
 应用必须声明权限且经管理员批准。员工还需具有相应角色权限；两者取交集。服务调用沿隔离后端的 Gateway 传输入口，要求独立服务凭据与服务授权，不能借用员工角色。默认组织树和责任范围解析器尚未装配，这些范围保持拒绝；可使用已实现的 all、organization 和 explicit 范围。
 

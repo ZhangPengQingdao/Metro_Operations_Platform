@@ -1,5 +1,6 @@
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
+import {appCapabilityCatalog} from './app-capability-catalog';
 import {RegistrationReview} from './RegistrationReview';
 import {Pulse,ShieldCheck,UploadSimple,Pause,Play,Plus,GearSix} from '@phosphor-icons/react';
 import {ProfileSections} from '../identity/ProfileSections';
@@ -20,7 +21,7 @@ import {AdminApplicationOutlet} from './AdminApplicationOutlet';
 import {ApplicationStatusDialog} from './ApplicationStatusDialog';
 import {AppGrantsDialog} from './AppGrantsDialog';
 export interface Installation {serviceIdentityId?:string|null;id:string;appId:string;manifest:AppManifest;enabled:boolean;frontendRunMode?:'standard'|'trusted';revision:number;grants:{grantId:string;permissionCode:string;mode:string;status:string;scope:{kind:string;targets:{type:string;id:string}[]}}[];lifecycle?:{action:string;status:string};}
-function useRead<T>(path:string){const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);useEffect(()=>{const controller=new AbortController();setData(null);setError('');adminRequest<T>(path,{signal:controller.signal}).then(setData).catch(e=>{if(!controller.signal.aborted)setError(e instanceof Error?e.message:'读取失败');});return()=>controller.abort();},[path,serial]);return {data,error,reload:()=>setSerial(v=>v+1)};}
+function useRead<T>(path:string){const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);useEffect(()=>{const controller=new AbortController();setData(null);setError('');adminRequest<T>(path,{signal:controller.signal}).then(setData).catch(e=>{if(!controller.signal.aborted)setError(e instanceof Error?e.message:'读取失败');});return()=>controller.abort();},[path,serial]);const reload=useCallback(()=>setSerial(v=>v+1),[]);return {data,error,reload};}
 function ErrorNotice({error,reload}:{error:string;reload?:()=>void}){return <div className="afc-error" role="alert">{error}{reload&&<Button variant="secondary" onClick={reload}>重试读取</Button>}</div>;}
 function Overview(){const {data,error,reload}=useRead<{installed:number;enabled:number;attention:number;runtimeConfigured:boolean;installConfigured:boolean}>('/overview');return <><h1>系统总览</h1>{error?<ErrorNotice error={error} reload={reload}/>:!data?<p role="status">正在读取平台状态…</p>:<><div className="admin-metrics">{[['已注册应用',data.installed],['已启用应用',data.enabled],['需核对的操作',data.attention]].map(([label,value])=><section className="admin-card" key={label}><span>{label}</span><strong>{value}</strong></section>)}</div><section className="admin-card"><h2>平台服务</h2><dl className="afc-details"><dt>平台版本</dt><dd>{metadata.version}</dd><dt>应用安装服务</dt><dd>{data.installConfigured?'已接入':'尚未配置'}</dd><dt>应用运行宿主</dt><dd>{data.runtimeConfigured?'已接入':'尚未配置'}</dd></dl></section></>}<section className="admin-card"><h2>快捷管理</h2><div className="admin-links"><Link to="/admin/apps">应用安装与更新 →</Link><Link to="/admin/data">人员、车站与设备 →</Link><Link to="/admin/accounts">管理员账号 →</Link></div></section></>;}
 function RuntimeStatus({app}:{app:Installation}){
@@ -57,7 +58,23 @@ function AppsPage({onChange}:{onChange:()=>void}){
 
  </>;
 }
-function DeveloperPage(){const {data,error,reload}=useRead<{capabilities:{id:string;contractVersion:string;permissions:string[]}[]}>('/capabilities');return <><h1>开发者中心</h1><a className="afc-button afc-button--secondary afc-button--md afc-button--pill" href="https://github.com/ZhangPengQingdao/Metro_Operations_Platform/tree/main/docs" target="_blank" rel="noreferrer">查看 SDK 与接入文档</a>{error&&<ErrorNotice error={error} reload={reload}/>}<div className="admin-app-grid">{data?.capabilities.map(c=><section className="admin-card" key={c.id}><h2>{c.id}</h2><p>契约版本 {c.contractVersion}</p><p className="afc-muted">{c.permissions.join(' · ')||'由接入入口控制访问'}</p></section>)}</div></>;}
+function DeveloperPage(){
+ const apps=useRead<{applications:Installation[]}>('/apps');
+ const publication=useRead<{publications:{appId:string;apiId:string}[]}>('/app-capabilities');
+ const platform=useRead<{capabilities:{id:string;contractVersion:string;permissions:string[]}[]}>('/capabilities');
+ const catalog=appCapabilityCatalog(apps.data?.applications??[],publication.data?.publications??[]);
+ const exposedCount=catalog.reduce((count,app)=>count+app.capabilities.filter(cap=>cap.published).length,0);
+ const refresh=()=>{apps.reload();publication.reload();platform.reload();};
+ useEffect(()=>{const onFocus=()=>refresh();window.addEventListener('focus',onFocus);const interval=window.setInterval(refresh,30000);return()=>{window.removeEventListener('focus',onFocus);window.clearInterval(interval);};},[apps.reload,publication.reload,platform.reload]);
+ return <>
+  <div className="admin-heading developer-heading"><div><h1>开发者中心</h1><p className="afc-muted">应用能力目录从当前安装清单生成。只有明确开放的接口才能供其他应用调用。</p></div><div className="developer-actions"><Button size="sm" variant="secondary" onClick={refresh}>刷新目录</Button><a className="afc-button afc-button--secondary afc-button--sm afc-button--pill" href="https://github.com/ZhangPengQingdao/Metro_Operations_Platform/blob/main/docs/app-capabilities.md" target="_blank" rel="noreferrer">接入文档</a></div></div>
+  {apps.error&&<ErrorNotice error={apps.error} reload={apps.reload}/>}
+  {publication.error&&<ErrorNotice error={publication.error} reload={publication.reload}/>}
+  {!apps.data&&!apps.error&&<p role="status">正在读取已安装应用…</p>}
+  {apps.data&&publication.data&&<><p className="developer-summary">已安装 {catalog.length} 个应用，开放 {exposedCount} 项业务接口。应用负责人可在应用管理中更改开放状态；员工可操作的数据仍受目标应用角色和范围限制。</p>{catalog.length===0?<section className="admin-card"><p>尚未安装应用。</p></section>:<div className="developer-app-list">{catalog.map(app=><section className="admin-card developer-app-card" key={app.appId}><header><div><h2>{app.name}</h2><p className="afc-muted">{app.appId} · v{app.version}</p></div><span className="admin-status">{app.enabled?'已启用':'已停用'}</span></header>{app.capabilities.length===0?<p className="afc-muted">当前版本没有可开放的业务接口。已有 {app.apiCount} 个本应用 API。</p>:<ul className="developer-capability-list">{app.capabilities.map(cap=><li key={cap.id}><div className="developer-capability-title"><div><strong>{cap.description||cap.id}</strong><code>{cap.id}</code></div><span>{cap.published?'已开放':'未开放'} · {cap.mode==='write'?'写入':'读取'}</span></div>{cap.published&&<><dl className="afc-details"><dt>接口</dt><dd>{cap.method} {cap.path}（经 SDK 调用）</dd><dt>契约版本</dt><dd>{cap.contractVersion}</dd></dl><pre><code>{`const client = createAppCapabilityClient(gateway);\nawait client.call('${app.appId}', '${cap.apiId}', params);`}</code></pre></>}</li>)}</ul>}</section>)}</div>}</>}
+  <section className="developer-platform"><h2>平台能力</h2><p className="afc-muted">平台提供的基础能力，按应用清单和平台授权使用。</p>{platform.error&&<ErrorNotice error={platform.error} reload={platform.reload}/>}<div className="admin-app-grid">{platform.data?.capabilities.map(cap=><section className="admin-card" key={cap.id}><h3>{cap.id}</h3><p>契约版本 {cap.contractVersion}</p><p className="afc-muted">{cap.permissions.join(' · ')||'由接入入口控制访问'}</p></section>)}</div></section>
+ </>;
+}
 function NotificationsPanel(){const {data,error}=useRead<{notifications:{id:string;title:string;description:string;path:string}[]}>('/notifications');return <><FailureNotifications error={error}/>{data?.notifications.map(item=><section className="admin-card" key={item.id}><h3>{item.title}</h3><p>{item.description}</p><Link to="/admin/apps">查看应用</Link></section>)}{data?.notifications.length===0&&<p className="afc-muted">暂无需要处理的应用通知。</p>}</>;}
 function FailureNotifications({error}:{error:string}){return error?<ErrorNotice error={error}/>:null;}
 export default function AdminApp(){

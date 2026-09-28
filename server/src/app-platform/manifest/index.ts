@@ -46,7 +46,8 @@ const schema = z.object({
     z.object({ mode: z.literal('managed'), migrations: list(z.object({ id, artifactId: id }).strict()) }).strict(),
     z.object({ mode: z.literal('external'), configurationRef: id }).strict()]),
   routes: list(z.object({ id, path: routePath, permission: code.optional() }).strict()),
-  api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional(), businessPermission:code.optional(), businessEntry:z.literal(true).optional() }).strict()),
+  api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional(), businessPermission:code.optional(), businessEntry:z.literal(true).optional(),
+    expose:z.object({contractVersion:z.literal('1.0'),mode:z.enum(['read','write'])}).strict().optional() }).strict()),
   navigation: list(z.object({ id, label, routeId: id, order: z.number().int().min(0).max(10000) }).strict()),
   events: z.object({ publish: list(event), subscribe: list(z.object({ event, handler: id }).strict()) }).strict(),
   tools: list(z.object({ name: id, contributionArtifactId: id, uiResourceId: id.optional() }).strict()),
@@ -78,6 +79,10 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+export function isAppVersionInRange(value:string,range:{minInclusive:string;maxExclusive:string}):boolean{
+ return compareVersions(value,range.minInclusive)>=0&&compareVersions(value,range.maxExclusive)<0;
+}
+
 function crossChecks(m: AppManifest): AppManifestIssue[] {
   const issues: AppManifestIssue[] = [];
   const fail = (path: string, message: string) => issues.push({ path, code: 'INVALID_REFERENCE', message });
@@ -102,6 +107,9 @@ function crossChecks(m: AppManifest): AppManifestIssue[] {
   if (m.routes.some((x) => x.permission && !permissions.has(x.permission))) fail('routes', 'Route permission must be declared');
   if (m.api.some(x=>x.businessPermission&&(!m.permissions.defined.some(p=>p.code===x.businessPermission)||x.businessEntry))) fail('api','Business permission must be application-defined and not an entry');
   if (m.api.some((x) => x.permission && !permissions.has(x.permission))) fail('api', 'API permission must be declared');
+  if (m.api.some(x=>x.expose&&(!x.businessPermission||x.permission!==x.businessPermission||x.businessEntry))) fail('api','Exposed API requires one application-defined business permission');
+  if (m.permissions.requested.some(permission=>permission.startsWith('app.')&&!permission.startsWith(`app.${m.id}.`)
+    && !m.compatibility.applications.some(app=>permission.startsWith(`app.${app.id}.`)))) fail('permissions.requested','Cross-application permission requires a declared application dependency');
   if (m.backend.mode === 'none' && m.api.length) fail('api', 'API declarations require a backend runtime');
   if (m.navigation.some((x) => !m.routes.some((r) => r.id === x.routeId))) fail('navigation', 'Navigation must reference a declared route');
   const usedArtifacts = new Set<string>();
