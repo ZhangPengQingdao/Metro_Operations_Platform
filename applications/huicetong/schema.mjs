@@ -25,3 +25,9 @@ export const migration={migrationVersion:'1.0',operations:[
  index('review_bindings','bindings_org_category_person_unique',['organization_id','category_id','person_id'],true),
  index('audit_events','audit_org_entity_idx',['organization_id','entity_type','entity_id'])
 ]};
+
+export const confirmationMigration={migrationVersion:'1.0',operations:[
+ {kind:'addColumn',table:'plan_cycles',column:column('confirmed_by','uuid',true)},
+ {kind:'addColumn',table:'plan_cycles',column:column('confirmed_at','timestamptz',true)},
+ {kind:'addColumn',table:'plan_items',column:column('via_change','boolean',true)}
+]};

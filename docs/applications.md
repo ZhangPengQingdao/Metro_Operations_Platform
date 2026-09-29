@@ -174,6 +174,6 @@ FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及
 
 员工沙箱 frontend JS 的内容寻址缓存实验与 Chrome opaque iframe 实测结果见 [沙箱缓存实验记录](sandbox-cache-experiment.md)；当前保留原有内联 document 与 retained/prewarm 机制。
 
-## 慧策通·计划督办（M1）
+## 慧策通·计划督办（M2）
 
-独立应用源码位于 `applications/huicetong`，版本 0.1.0。当前交付月度周期、三级分类和草稿条目编制；清单将“计划条目”与“分类字典”注册为平台宿主侧边栏的两个导航入口，分别打开 `/` 和 `/categories`。应用内定义 `read`、`fill`、`review`、`manage` 四项业务权限。员工读写范围由宿主授权与应用后端共同校验；写入使用托管存储事务和审计事件。构建、权限配置及当前范围见 [慧策通应用说明](../applications/huicetong/README.md)，后续完整流程见 [应用规划](huicetong-app-plan.md)。
+独立应用源码位于 `applications/huicetong`，版本 0.2.0。提供周期与分类编制、归口绑定与审核、负责人确认签发、锁定后变更和 xlsx 导出；宿主侧边栏“计划条目”和“分类字典”仍分别打开 `/` 与 `/categories`，其余视图在应用内切换。业务权限为 `read`、`fill`、`review`、`manage`、独立的 `sign`；管理岗代管提交或复审还需分别授予 `fill`、`review`。写入沿用托管事务与审计，服务端签发暂采用应用内确认+审计（待平台 L2 签字板就绪）。导出服务端生成经员工授权后由沙箱下载、尚未登记为业务原件附件；清单声明 `ui.downloads`。构建及完整的降级说明见 [慧策通应用说明](../applications/huicetong/README.md)，后续流程见 [应用规划](huicetong-app-plan.md)。
