@@ -47,7 +47,7 @@ const schema = z.object({
     z.object({ mode: z.literal('external'), configurationRef: id }).strict()]),
   routes: list(z.object({ id, path: routePath, permission: code.optional() }).strict()),
   api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional(), businessPermission:code.optional(), businessEntry:z.literal(true).optional(),
-    expose:z.object({contractVersion:z.literal('1.0'),mode:z.enum(['read','write'])}).strict().optional() }).strict()),
+    expose:z.object({contractVersion:z.literal('1.0'),mode:z.enum(['read','write']),title:z.string().min(1).max(80).optional()}).strict().optional() }).strict()),
   navigation: list(z.object({ id, label, routeId: id, order: z.number().int().min(0).max(10000) }).strict()),
   events: z.object({ publish: list(event), subscribe: list(z.object({ event, handler: id }).strict()) }).strict(),
   tools: list(z.object({ name: id, contributionArtifactId: id, uiResourceId: id.optional() }).strict()),
