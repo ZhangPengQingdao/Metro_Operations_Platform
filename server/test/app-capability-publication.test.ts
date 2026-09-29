@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {initializePlatformDatabase} from '../src/setup/schema.ts';
-import {AppCapabilityPublication} from '../src/app-platform/capabilities/publication.ts';
+import {AppCapabilityPublication,appCapabilityPublicationContractMigration} from '../src/app-platform/capabilities/publication.ts';
+import {manifestApprovalDigest} from '../src/app-platform/management/config.ts';
 import {AppBusinessAuthorization} from '../src/app-platform/business-authorization/service.ts';
 import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
 import {createPostgresAuthorizationRepository} from '../src/platform/authorization/index.ts';
 import type {AppManifest} from '../src/app-platform/manifest/index.ts';
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 
-test('only owner can publish signed candidates; withdrawal and upgrades fail closed',async()=>{
+test('owner publication survives metadata upgrades but closes when the API contract changes',async()=>{
  const pg=new PGlite(),db={query:async(sql:string,args?:readonly unknown[])=>args?pg.query(sql,[...args]):(await pg.exec(sql)).at(-1)!,release(){}},pool={...db,connect:async()=>db};
  try{
   await initializePlatformDatabase(db);
@@ -19,13 +20,16 @@ test('only owner can publish signed candidates; withdrawal and upgrades fail clo
   await pg.query("INSERT INTO platform_positions(id,code,name,status,created_at,updated_at) VALUES($1,'worker','Worker','active',now(),now())",[position]);
   for(const person of [owner,other])await pg.query("INSERT INTO platform_people(id,employee_no,name,organization_unit_id,position_id,employment_status,created_at,updated_at) VALUES($1::uuid,$1::text,$1::text,$2,$3,'active',now(),now())",[person,org,position]);
   const context:PlatformAdministratorContext={actorType:'administrator',administrator:{id:randomUUID(),username:'admin',displayName:'Admin'},execution:{type:'platform'},request:{requestId:'test',traceId:'test',startedAt:new Date().toISOString()},authorize:async permissionCode=>({id:'test',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'administrator',effectiveScopes:[],decidedAt:new Date().toISOString()})};
-  const manifest:AppManifest={manifestVersion:'1.0',id:'provider',version:'1.0.0',name:'Provider',description:'Test',publisherId:'test',compatibility:{platform:{minInclusive:'0.0.1',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:[],defined:[{code:'app.provider.create',description:'创建记录',scopeKinds:['workgroup']}]},ui:{mode:'none'},backend:{mode:'isolated',runtime:'node',entryArtifactId:'backend',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:30}},storage:{mode:'none'},routes:[],api:[{id:'create',method:'POST',path:'/create',handler:'create',permission:'app.provider.create',businessPermission:'app.provider.create',expose:{contractVersion:'1.0',mode:'write'}},{id:'internal',method:'POST',path:'/internal',handler:'internal',permission:'app.provider.create',businessPermission:'app.provider.create'}],navigation:[],events:{publish:[],subscribe:[]},tools:[],jobs:[],resources:[],artifacts:[{id:'backend',kind:'backend',path:'entry.cjs',bytes:1,sha256:'0'.repeat(64)}],network:{frontendOrigins:[],backendOrigins:[]}};
+  const manifest:AppManifest={manifestVersion:'1.0',id:'provider',version:'1.0.0',name:'Provider',description:'Test',publisherId:'test',compatibility:{platform:{minInclusive:'0.0.1',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:[],defined:[{code:'app.provider.create',description:'创建记录',scopeKinds:['workgroup']}]},ui:{mode:'none'},backend:{mode:'isolated',runtime:'node',entryArtifactId:'backend',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:30}},storage:{mode:'none'},routes:[],api:[{id:'create',method:'POST',path:'/create',handler:'create',permission:'app.provider.create',businessPermission:'app.provider.create',expose:{contractVersion:'1.0',mode:'write',title:'创建业务记录'}},{id:'internal',method:'POST',path:'/internal',handler:'internal',permission:'app.provider.create',businessPermission:'app.provider.create'}],navigation:[],events:{publish:[],subscribe:[]},tools:[],jobs:[],resources:[],artifacts:[{id:'backend',kind:'backend',path:'entry.cjs',bytes:1,sha256:'0'.repeat(64)}],network:{frontendOrigins:[],backendOrigins:[]}};
   const registry=new AppRegistryService(new PostgresAppRegistryRepository(db),{authorization:createPostgresAuthorizationRepository(db),host:()=>({platformVersion:'1.0.0',capabilities:[],applications:[]})});
   let installation=await registry.register(context,manifest);installation=await registry.setEnabled(context,manifest.id,installation.revision,true);
   const authorization=new AppBusinessAuthorization(pool);
   await authorization.setOwner(context,manifest.id,{personId:owner,revision:null});
   const publication=new AppCapabilityPublication(pool);
-  assert.equal((await publication.state(manifest.id,owner)).capabilities[0].enabled,false);
+  const firstCapability=(await publication.state(manifest.id,owner)).capabilities[0];
+  assert.equal(firstCapability.enabled,false);
+  assert.equal(firstCapability.title,'创建业务记录');
+  assert.equal(firstCapability.permissionDescription,'创建记录');
   assert.equal(await publication.isPublished(installation,'create'),false);
   await assert.rejects(publication.state(manifest.id,other),/APP_OWNER_REQUIRED/);
   await assert.rejects(publication.set(manifest.id,other,{apiId:'create',enabled:true,revision:null}),/APP_OWNER_REQUIRED/);
@@ -37,23 +41,32 @@ test('only owner can publish signed candidates; withdrawal and upgrades fail clo
   state=await publication.set(manifest.id,owner,{apiId:'create',enabled:false,revision:state.capabilities[0].revision});
   assert.equal(await publication.isPublished(installation,'create'),false);
   state=await publication.set(manifest.id,owner,{apiId:'create',enabled:true,revision:state.capabilities[0].revision});
-  await pg.query("UPDATE platform_app_installations SET record=jsonb_set(record,'{manifest,version}',to_jsonb('1.0.1'::text)) WHERE app_id='provider'");
-  const updated={...installation,manifest:{...installation.manifest,version:'1.0.1'}};
-  assert.equal(await publication.isPublished(updated,'create'),false);
+  await pg.query('UPDATE platform_app_capability_publications SET manifest_digest=$1 WHERE installation_id=$2 AND api_id=$3',[manifestApprovalDigest(installation.manifest),installation.id,'create']);
+  assert.equal(await publication.isPublished(installation,'create'),false);
+  await appCapabilityPublicationContractMigration.run({client:db});
+  assert.equal(await publication.isPublished(installation,'create'),true);
+  await pg.query("UPDATE platform_app_installations SET record=jsonb_set(jsonb_set(record,'{manifest,version}',to_jsonb('1.0.1'::text)),'{manifest,api,0,expose,title}',to_jsonb('创建记录'::text)) WHERE app_id='provider'");
+  const updated={...installation,manifest:{...installation.manifest,version:'1.0.1',api:installation.manifest.api.map(api=>api.id==='create'?{...api,expose:{...api.expose!,title:'创建记录'}}:api)}};
+  assert.equal(await publication.isPublished(updated,'create'),true);
+  assert.deepEqual((await publication.catalog()).publications,[{appId:'provider',apiId:'create'}]);
+  assert.equal((await publication.state(manifest.id,owner)).capabilities[0].enabled,true);
+  await pg.query("UPDATE platform_app_installations SET record=jsonb_set(record,'{manifest,api,0,path}',to_jsonb('/create-v2'::text)) WHERE app_id='provider'");
+  const changed={...updated,manifest:{...updated.manifest,api:updated.manifest.api.map(api=>api.id==='create'?{...api,path:'/create-v2'}:api)}};
+  assert.equal(await publication.isPublished(changed,'create'),false);
   assert.deepEqual((await publication.catalog()).publications,[]);
   assert.deepEqual((await publication.state(manifest.id,owner)).capabilities.map(cap=>({enabled:cap.enabled,revision:cap.revision})),[{enabled:false,revision:null}]);
   state=await publication.set(manifest.id,owner,{apiId:'create',enabled:true,revision:null});
-  assert.equal(state.capabilities[0].enabled,true);assert.equal(await publication.isPublished(updated,'create'),true);
+  assert.equal(state.capabilities[0].enabled,true);assert.equal(await publication.isPublished(changed,'create'),true);
   const ownerState=await authorization.administratorState(context,manifest.id);
   await authorization.setOwner(context,manifest.id,{personId:other,revision:ownerState.revision});
-  assert.equal(await publication.isPublished(updated,'create'),false);
+  assert.equal(await publication.isPublished(changed,'create'),false);
   assert.deepEqual((await publication.catalog()).publications,[]);
   assert.deepEqual((await publication.state(manifest.id,other)).capabilities.map(cap=>({enabled:cap.enabled,revision:cap.revision})),[{enabled:false,revision:null}]);
   await assert.rejects(publication.state(manifest.id,owner),/APP_OWNER_REQUIRED/);
   state=await publication.set(manifest.id,other,{apiId:'create',enabled:true,revision:null});
-  assert.equal(state.capabilities[0].enabled,true);assert.equal(await publication.isPublished(updated,'create'),true);
+  assert.equal(state.capabilities[0].enabled,true);assert.equal(await publication.isPublished(changed,'create'),true);
   await pg.query("UPDATE platform_people SET employment_status='inactive' WHERE id=$1",[other]);
-  assert.equal(await publication.isPublished(updated,'create'),false);
+  assert.equal(await publication.isPublished(changed,'create'),false);
   assert.deepEqual((await publication.catalog()).publications,[]);
  }finally{await pg.close();}
 });

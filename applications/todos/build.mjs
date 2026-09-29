@@ -17,7 +17,14 @@ for(const [id,kind,path] of [['backend','backend','entry.cjs'],['frontend','fron
 const pkg=JSON.parse(await readFile(root+'package.json','utf8'));
 const names={read:'查看待办',create:'发布普通待办',handle:'办理待办子项',manage:'修改及删除待办',recurring:'管理周期模板',score:'设置任务分值'};
 const permissions=Object.entries(names).map(([name,description])=>({code:`app.todos.${name}`,description,scopeKinds:['read','handle','manage'].includes(name)?['self','workgroup','department','organizations','all']:['workgroup','department','organizations','all']}));
+const exposedTitles={
+ 'create-task':'创建待办任务',
+ 'update-task':'更新待办任务',
+ 'delete-task':'删除待办任务',
+ 'save-template':'保存周期任务模板',
+ 'template-state':'启停周期任务模板'
+};
 const exposedWrite=new Map([['create-task','create'],['update-task','manage'],['delete-task','manage'],['save-template','recurring'],['template-state','recurring']]);
-const api=['session','directory','list','detail','create-task','update-task','delete-task','handle-item','save-template','template-state','trigger'].map(id=>({id,method:'POST',path:`/${id}`,handler:id,permission:'app.todos.'+(exposedWrite.get(id)??'read'),...(exposedWrite.has(id)?{businessPermission:'app.todos.'+exposedWrite.get(id),expose:{contractVersion:'1.0',mode:'write'}}:{businessEntry:true})}));
+const api=['session','directory','list','detail','create-task','update-task','delete-task','handle-item','save-template','template-state','trigger'].map(id=>({id,method:'POST',path:`/${id}`,handler:id,permission:'app.todos.'+(exposedWrite.get(id)??'read'),...(exposedWrite.has(id)?{businessPermission:'app.todos.'+exposedWrite.get(id),expose:{title:exposedTitles[id],contractVersion:'1.0',mode:'write'}}:{businessEntry:true})}));
 const manifest={manifestVersion:'1.0',id:'todos',version:pkg.version,name:'待办事项',icon:JSON.parse(await readFile(root+'icon.json','utf8')),description:'工班待办、车站和人员子项、周期自动任务',publisherId:'metro-apps',compatibility:{platform:{minInclusive:'0.22.0',maxExclusive:'2.0.0'},capabilities:[],applications:[]},permissions:{requested:['platform.app_data.read','platform.app_data.write','platform.people.read','platform.locations.read'],defined:permissions},ui:{mode:'sandbox',entryArtifactId:'frontend',clientRouting:true},backend:{mode:'isolated',runtime:'node',entryArtifactId:'backend',limits:{memoryMiB:128,cpuMillis:500,timeoutSeconds:30}},health:{path:'/health',timeoutSeconds:1},storage:{mode:'managed',migrations:[{id:'initial',artifactId:'schema'}]},routes:[{id:'tasks',path:'/',permission:'app.todos.read'},{id:'recurring',path:'/recurring',permission:'app.todos.recurring'}],navigation:[{id:'tasks',routeId:'tasks',label:'待办事项',order:0},{id:'recurring',routeId:'recurring',label:'周期待办',order:1}],api,events:{publish:[],subscribe:[]},jobs:[],tools:[],resources:[],network:{frontendOrigins:[],backendOrigins:[]},artifacts};
 await writeFile(out+'manifest.json',JSON.stringify(manifest,null,2)+'\n');
