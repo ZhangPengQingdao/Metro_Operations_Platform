@@ -265,3 +265,16 @@
 .station-membership>label{min-width:0;}
 .station-membership>.afc-button{margin-bottom:2px;}
 @media(max-width:560px){.station-membership{grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;}.station-memberships{padding:12px;}}
+
+/* Safari 26+ chrome 取色源：body 背景跟随平台主题 */
+html[data-mop-theme="dark"] body { background-color: #121212; }
+html[data-mop-theme="light"] body { background-color: #fafafa; }
+/* 视口底部固定色带，供 Safari 26 采样底栏 tint */
+body::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0;
+  height: 8px; z-index: 1; pointer-events: none;
+  background: #fafafa;
+}
+html[data-mop-theme="dark"] body::after { background: #121212; }
+/* viewport-fit=cover 后，底部内容避让 Home Indicator */
+.afc-admin-main { padding-bottom: max(32px, env(safe-area-inset-bottom)); }

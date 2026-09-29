@@ -1,6 +1,6 @@
 import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {ApplicationIcon} from '../host/ApplicationIcon';
-import {readThemePreference,saveThemePreference} from '../identity/theme';
+import {readThemePreference,saveThemePreference,resolveEffectiveTheme,applyBrowserChromeTheme} from '../identity/theme';
 import {SettingsSections} from './SettingsSections';
 import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {NavLink, useLocation} from 'react-router-dom';
@@ -46,6 +46,14 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const [accountOpen, setAccountOpen] = useState(false);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'preferences' | 'notifications' | null>(null);
   const [theme, setTheme] = useState(readThemePreference);
+  useEffect(() => {
+    const sync = () => applyBrowserChromeTheme(resolveEffectiveTheme(theme));
+    sync();
+    if (theme !== 'system' || typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, [theme]);
   const [confirmLogout,setConfirmLogout]=useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
