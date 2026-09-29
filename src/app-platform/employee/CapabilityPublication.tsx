@@ -3,7 +3,7 @@ import {Globe} from '@phosphor-icons/react';
 import {Button,DataList,Dialog,TableActionButton} from '../../components/ui';
 import {employeeRequest} from './client';
 
-type Capability={apiId:string;description:string;mode:'read'|'write';enabled:boolean;revision:string|null};
+type Capability={apiId:string;title:string;permissionDescription:string;mode:'read'|'write';enabled:boolean;revision:string|null};
 type State={appId:string;version:string;capabilities:Capability[]};
 
 export function CapabilityPublication({appId,name,onClose}:{appId:string;name:string;onClose:()=>void}){
@@ -18,6 +18,6 @@ export function CapabilityPublication({appId,name,onClose}:{appId:string;name:st
   <p className="afc-muted">仅能开放已由应用包声明并通过审核的业务接口。员工实际可操作的数据仍受该应用的角色和范围限制；应用更新后需要重新确认开放。</p>
   {error&&<p className="afc-error" role="alert">{error} <Button size="sm" variant="secondary" onClick={()=>void reload()}>重新读取</Button></p>}
   {!state&&!error&&<p role="status">正在读取接口…</p>}
-  {state&&<DataList emptyState={!state.capabilities.length?'当前版本没有可开放的业务接口，请由开发者更新应用包。':undefined}><thead><tr><th>业务接口</th><th>类型</th><th>状态</th><th>操作</th></tr></thead><tbody>{state.capabilities.map(cap=><tr key={cap.apiId}><td><strong>{cap.description}</strong><br/><code>{appId}.{cap.apiId}</code></td><td>{cap.mode==='write'?'写入':'读取'}</td><td>{cap.enabled?'已开放':'未开放'}</td><td><TableActionButton icon={<Globe size={18}/>} disabled={busy} onClick={()=>void toggle(cap)}>{cap.enabled?'关闭':'开放'}</TableActionButton></td></tr>)}</tbody></DataList>}
+  {state&&<DataList emptyState={!state.capabilities.length?'当前版本没有可开放的业务接口，请由开发者更新应用包。':undefined}><thead><tr><th>业务接口</th><th>类型</th><th>状态</th><th>操作</th></tr></thead><tbody>{state.capabilities.map(cap=><tr key={cap.apiId}><td><strong>{cap.title}</strong><br/><code>{appId}.{cap.apiId}</code><br/><span className="afc-muted">所需权限：{cap.permissionDescription}</span></td><td>{cap.mode==='write'?'写入':'读取'}</td><td>{cap.enabled?'已开放':'未开放'}</td><td><TableActionButton icon={<Globe size={18}/>} disabled={busy} onClick={()=>void toggle(cap)}>{cap.enabled?'关闭':'开放'}</TableActionButton></td></tr>)}</tbody></DataList>}
  </Dialog>;
 }

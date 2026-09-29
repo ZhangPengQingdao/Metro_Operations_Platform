@@ -56,7 +56,7 @@ export interface AppManifest {
   routes: { id: string; path: string; permission?: string }[];
   api: { id: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; handler: string; permission?: string; businessPermission?:string; businessEntry?:true;
     /** Opt-in cross-application capability. The stable ID is `${manifest.id}.${api.id}`. */
-    expose?: {contractVersion:'1.0';mode:'read'|'write'}
+    expose?: {contractVersion:'1.0';mode:'read'|'write';title?:string}
   }[];
   navigation: { id: string; label: string; routeId: string; order: number }[];
   events: { publish: string[]; subscribe: { event: string; handler: string }[] };

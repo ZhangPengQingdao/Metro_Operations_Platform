@@ -116,8 +116,10 @@ test('cross references, ownership, uniqueness and runtime modes are checked', ()
 test('cross-application exposure reuses the declared business permission', () => {
   const provider=fixture();
   provider.api[0].businessPermission='app.tool-lending.borrow';
-  provider.api[0].expose={contractVersion:'1.0',mode:'write'};
+  provider.api[0].expose={contractVersion:'1.0',mode:'write',title:'借用工具'};
   assert.equal(validateAppManifest(provider).ok,true);
+  provider.api[0].expose={contractVersion:'1.0',mode:'write',title:''};
+  assert.equal(validateAppManifest(provider).ok,false);
   rejects(m=>{m.api[0].expose={contractVersion:'1.0',mode:'write'};});
   rejects(m=>{m.api[0].businessEntry=true;m.api[0].businessPermission='app.tool-lending.borrow';m.api[0].expose={contractVersion:'1.0',mode:'write'};});
   const readRpc=fixture();readRpc.api[0].businessPermission='app.tool-lending.borrow';readRpc.api[0].expose={contractVersion:'1.0',mode:'read'};

@@ -1,1 +1,1 @@
-{"name":"@metro-apps/todos","private":true,"version":"0.1.4","type":"module","scripts":{"build":"node build.mjs","test":"node --test test.mjs"}}
+{"name":"@metro-apps/todos","private":true,"version":"0.1.5","type":"module","scripts":{"build":"node build.mjs","test":"node --test test.mjs"}}

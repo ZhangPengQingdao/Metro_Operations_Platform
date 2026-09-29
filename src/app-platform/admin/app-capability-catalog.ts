@@ -13,7 +13,8 @@ export function appCapabilityCatalog(installations:readonly CatalogInstallation[
     const exposed=manifest.api.filter(api=>api.expose).map(api=>({
       id:`${manifest.id}.${api.id}`,
       apiId:api.id,
-      description:manifest.permissions.defined.find(permission=>permission.code===api.businessPermission)?.description??'',
+      title:api.expose!.title??`${api.method} ${api.path}`,
+      permissionDescription:manifest.permissions.defined.find(permission=>permission.code===api.businessPermission)?.description??'',
       method:api.method,
       path:api.path,
       permission:api.businessPermission!,
