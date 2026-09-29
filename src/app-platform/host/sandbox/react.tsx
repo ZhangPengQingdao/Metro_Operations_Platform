@@ -131,7 +131,7 @@ function MountedFrame({ appId, resource, operations, files, title, downloads, ro
     src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark,downloads]);
+    style={{width:'100%',flex:'1 1 auto',height:'auto',minHeight:360,border:0,background:isDark?'#121212':'#fafafa',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark,downloads]);
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
   return frameElement;
 }

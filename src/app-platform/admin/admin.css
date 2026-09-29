@@ -260,3 +260,30 @@
 .station-membership>label{min-width:0;}
 .station-membership>.afc-button{margin-bottom:2px;}
 @media(max-width:560px){.station-membership{grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;}.station-memberships{padding:12px;}}
+
+/* 沙箱应用：消除白边，iframe 填充可用高度（仅影响含 .employee-application 的页面） */
+.afc-admin-main:has(.employee-application) {
+  padding: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 72px);
+}
+.afc-admin-main:has(.employee-application) .employee-application {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.afc-admin-main:has(.employee-application) .employee-application > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .afc-admin-main:has(.employee-application) {
+    min-height: calc(100dvh - 64px);
+  }
+}
