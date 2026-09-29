@@ -132,11 +132,11 @@ const revision=f=>f.tables.get('plan_cycles').get(f.cycleId).revision;
 async function bind(f){return f.service['binding-upsert']({id:randomUUID(),requestId:randomUUID(),organizationId:f.department,categoryId:f.parent,personId:f.person,personOrganizationId:f.team},f.employee);}
 async function locked(f){
  await bind(f);await f.service['item-submit']({id:f.itemId,requestId:randomUUID(),expectedVersion:1},f.employee);
- await f.service['cycle.submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
  await f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'approve'},f.employee);
- await f.service['cycle.submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
- await f.service['cycle.confirm-signature']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
- await f.service['cycle.lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-confirm-signature']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
 }
 
 test('submission requires a level-2 binding and only the author or manager can submit',async()=>{
@@ -153,14 +153,14 @@ test('submission requires a level-2 binding and only the author or manager can s
 test('review is scoped to a binding, requires reviewing, and a return comment',async()=>{
  const f=await prepared();await bind(f);await f.service['item-submit']({id:f.itemId,requestId:randomUUID(),expectedVersion:1},f.employee);
  await assert.rejects(f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'approve'},f.employee),/REVIEW_NOT_OPEN/);
- await f.service['cycle.submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
  const reviewer={...f.employee,personId:f.colleague,organizationUnitId:f.otherTeam,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>['app.huicetong.read','app.huicetong.review'].includes(grant.permission))}};
  await assert.rejects(f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'approve'},reviewer),/ACCESS_DENIED/);
  await assert.rejects(f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'return',comment:''},f.employee),/INVALID_INPUT/);
  await f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'return',comment:'请完善标准'},f.employee);
  assert.equal(f.tables.get('plan_items').get(f.itemId).status,'draft');
  await assert.rejects(f.service['item-update']({id:f.itemId,requestId:randomUUID(),expectedVersion:3,draft:f.draft},f.employee),/CYCLE_LOCKED/);
- await f.service['cycle.return-draft']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-return-draft']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
  assert.ok([...f.tables.get('audit_events').values()].some(row=>row.action==='return-notification-pending'));
  await f.service['item-update']({id:f.itemId,requestId:randomUUID(),expectedVersion:3,draft:f.draft},f.employee);
  await assert.rejects(f.service['item-update']({id:f.itemId,requestId:randomUUID(),expectedVersion:3,draft:f.draft},f.employee),/CONFLICT/);
@@ -168,15 +168,15 @@ test('review is scoped to a binding, requires reviewing, and a return comment',a
 
 test('signature fallback is audited and locking atomically starts approved items',async()=>{
  const f=await prepared();await bind(f);await f.service['item-submit']({id:f.itemId,requestId:randomUUID(),expectedVersion:1},f.employee);
- await f.service['cycle.submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
- await assert.rejects(f.service['cycle.submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee),/REVIEW_PENDING/);
+ await f.service['cycle-submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await assert.rejects(f.service['cycle-submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee),/REVIEW_PENDING/);
  await f.service['item-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:2,action:'approve'},f.employee);
- await f.service['cycle.submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
- await assert.rejects(f.service['cycle.lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee),/SIGNATURE_PENDING/);
- await f.service['cycle.confirm-signature']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
- assert.equal((await f.service['cycle.signature-status']({cycleId:f.cycleId},f.employee)).status,'completed');
- await assert.rejects(f.service['cycle.lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)-1},f.employee),/CONFLICT/);
- await f.service['cycle.lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await f.service['cycle-submit-countersign']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ await assert.rejects(f.service['cycle-lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee),/SIGNATURE_PENDING/);
+ await f.service['cycle-confirm-signature']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
+ assert.equal((await f.service['cycle-signature-status']({cycleId:f.cycleId},f.employee)).status,'completed');
+ await assert.rejects(f.service['cycle-lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)-1},f.employee),/CONFLICT/);
+ await f.service['cycle-lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
  assert.equal(f.tables.get('plan_items').get(f.itemId).status,'in_progress');
  assert.ok([...f.tables.get('audit_events').values()].some(row=>row.action==='signature-confirmed-fallback'));
  await assert.rejects(f.service['item-create']({id:randomUUID(),cycleId:f.cycleId,requestId:randomUUID(),draft:f.draft},f.employee),/CYCLE_LOCKED/);
@@ -184,17 +184,17 @@ test('signature fallback is audited and locking atomically starts approved items
 
 test('escalated changes wait for owner countersign, ordinary changes apply after review',async()=>{
  const f=await prepared();await locked(f);const version=f.tables.get('plan_items').get(f.itemId).version;
- const ordinary=randomUUID();await f.service['change.create']({id:ordinary,itemId:randomUUID(),cycleId:f.cycleId,requestId:randomUUID(),type:'add',draft:f.draft},f.employee);
- await f.service['change.review']({id:ordinary,requestId:randomUUID(),action:'approve'},f.employee);
+ const ordinary=randomUUID();await f.service['change-create']({id:ordinary,itemId:randomUUID(),cycleId:f.cycleId,requestId:randomUUID(),type:'add',draft:f.draft},f.employee);
+ await f.service['change-review']({id:ordinary,requestId:randomUUID(),action:'approve'},f.employee);
  assert.ok(f.tables.get('plan_items').size===2);
- const escalated=randomUUID();await f.service['change.create']({id:escalated,itemId:f.itemId,cycleId:f.cycleId,requestId:randomUUID(),type:'update',expectedVersion:version,draft:{...f.draft,escalated:true,content:'拟提报中心'}},f.employee);
- await f.service['change.review']({id:escalated,requestId:randomUUID(),action:'approve'},f.employee);
+ const escalated=randomUUID();await f.service['change-create']({id:escalated,itemId:f.itemId,cycleId:f.cycleId,requestId:randomUUID(),type:'update',expectedVersion:version,draft:{...f.draft,escalated:true,content:'拟提报中心'}},f.employee);
+ await f.service['change-review']({id:escalated,requestId:randomUUID(),action:'approve'},f.employee);
  assert.equal(f.tables.get('plan_items').get(f.itemId).content,'九月工作计划');
  const noSign={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>grant.permission!=='app.huicetong.sign')}};
- await assert.rejects(f.service['change.countersign']({id:escalated,requestId:randomUUID()},noSign),/ACCESS_DENIED/);
- await f.service['change.countersign']({id:escalated,requestId:randomUUID()},f.employee);
+ await assert.rejects(f.service['change-countersign']({id:escalated,requestId:randomUUID()},noSign),/ACCESS_DENIED/);
+ await f.service['change-countersign']({id:escalated,requestId:randomUUID()},f.employee);
  assert.equal(f.tables.get('plan_items').get(f.itemId).content,'拟提报中心');
- assert.equal((await f.service['change.list']({cycleId:f.cycleId},f.employee)).rows.length,2);
+ assert.equal((await f.service['change-list']({cycleId:f.cycleId},f.employee)).rows.length,2);
 });
 
 test('xlsx export preserves ten columns, merged headers, dates, names, and escalated prefix',async()=>{
@@ -204,7 +204,7 @@ test('xlsx export preserves ten columns, merged headers, dates, names, and escal
  const decoded=XLSX.read(XLSX.write(workbook,{bookType:'xlsx',type:'buffer'}),{type:'buffer'}).Sheets['月度工作计划'];
  assert.deepEqual(XLSX.utils.sheet_to_json(decoded,{header:1})[1],planColumns);
  assert.equal(decoded['!merges'].length,3);assert.equal(decoded.A1.v,'AFC 维保部9月份工作计划');assert.equal(decoded.G3.v,'2026-09-01');
- const exported=await f.service['export.plan']({cycleId:f.cycleId,scope:'escalated',requestId:randomUUID()},f.employee);
+ const exported=await f.service['export-plan']({cycleId:f.cycleId,scope:'escalated',requestId:randomUUID()},f.employee);
  assert.equal(exported.count,1);assert.ok(exported.base64.length>0);
  assert.ok([...f.tables.get('audit_events').values()].some(row=>row.action==='export'&&row.after.scope==='escalated'));
 });
@@ -212,7 +212,7 @@ test('xlsx export preserves ten columns, merged headers, dates, names, and escal
 test('33 plan rows export as a single worksheet with two vertical category merges',async()=>{
  const f=await prepared(),base=f.tables.get('plan_items').get(f.itemId);
  for(let index=1;index<33;index++){const id=randomUUID();f.tables.get('plan_items').set(id,{...base,id,content:`九月条目 ${index}`,created_at:new Date(Date.UTC(2026,8,1,0,index)).toISOString()});}
- const result=await f.service['export.plan']({cycleId:f.cycleId,scope:'all',requestId:randomUUID()},f.employee);
+ const result=await f.service['export-plan']({cycleId:f.cycleId,scope:'all',requestId:randomUUID()},f.employee);
  assert.equal(result.count,33);
  const book=XLSX.read(Buffer.from(result.base64,'base64'),{type:'buffer'}),sheet=book.Sheets['月度工作计划'];
  assert.equal(XLSX.utils.sheet_to_json(sheet,{header:1}).length,35);
