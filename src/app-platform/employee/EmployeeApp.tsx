@@ -43,7 +43,17 @@ function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{accou
      }
     }
     const value=await employeeRequest<Resource>(`/apps/${appId}/ui?path=${route}`,{signal:controller.signal});
-    if(active){if(first)record('admission');admitted={...value,initialRoute:requestedRoute};setError('');setCurrent(admitted);setActiveRoute(requestedRoute);setPending(false);first=false;}
+    if(active){if(first)record('admission');const next:Resource={...value,initialRoute:requestedRoute};admitted=next;setError('');setCurrent(prev=>{
+     // 避免无实质变化时重建 iframe：resource 引用不变则 SandboxFrame 的 useMemo 不会重建 <iframe>
+     if(prev&&prev.instanceKey===next.instanceKey){
+      const sameResource=prev.resource.mode===next.resource.mode&&(prev.resource.mode==='local-demo'?prev.resource.html===(next.resource as {html:string}).html:prev.resource.url===(next.resource as {url:string}).url);
+      if(sameResource){
+       if(prev.admissionKey===next.admissionKey)return prev;
+       return {...prev,admissionKey:next.admissionKey};
+      }
+     }
+     return next;
+    });setActiveRoute(requestedRoute);setPending(false);first=false;}
    }catch(e){if(active){admitted=null;setCurrent(null);setPending(false);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
   }
   void load();const timer=visible?setInterval(()=>void load(),5000):undefined;const focus=()=>void load();if(visible)window.addEventListener('focus',focus);
