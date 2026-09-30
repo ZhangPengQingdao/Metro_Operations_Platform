@@ -2,7 +2,7 @@ import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {ApplicationIcon} from '../host/ApplicationIcon';
 import {readThemePreference,saveThemePreference} from '../identity/theme';
 import {SettingsSections} from './SettingsSections';
-import React, {useEffect, useId, useRef, useState, type ReactNode} from 'react';
+import React, {useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {NavLink, useLocation} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
@@ -39,6 +39,7 @@ export function AdminDialog({title, children, onClose, className}: {title: strin
 export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent, notificationCount=0}: AdminShellProps) {
   const {pathname} = useLocation();
   const base=mode==='admin'?'/admin':'/employee';
+  const applicationCanvas=pathname.startsWith(`${base}/app/`);
   const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
@@ -46,6 +47,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const [accountOpen, setAccountOpen] = useState(false);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'preferences' | 'notifications' | null>(null);
   const [theme, setTheme] = useState(readThemePreference);
+  useLayoutEffect(()=>{document.documentElement.dataset.theme=theme;},[theme]);
   const [confirmLogout,setConfirmLogout]=useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
@@ -104,7 +106,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
       </div>
 
     </aside>
-    <div className="afc-admin-workspace"><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
+    <div className={`afc-admin-workspace${applicationCanvas?' afc-admin-workspace--application':''}`}><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
     <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
     {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => {if(!panelBusy)setPanel(null);}}>
       {panel === 'profile' && ((typeof profileContent==='function'?profileContent(savedPanel,setPanelBusy):profileContent) ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}

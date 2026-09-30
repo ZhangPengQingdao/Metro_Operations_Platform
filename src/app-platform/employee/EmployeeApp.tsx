@@ -15,6 +15,7 @@ import {employeeRequest,EmployeeRequestError} from './client';
 import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
 import type {SandboxJson,SandboxFileOperations} from '../host/sandbox/bridge';
 import {rememberApp,type RetainedApp} from './retained-apps';
+import {readThemePreference} from '../identity/theme';
 
 type Account={id:string;personId:string;username:string;name?:string;passwordChangeRequired?:boolean};
 type App={appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;runtimeRevision:number;frontendRunMode:'standard'|'trusted';bundleUrl?:string;navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
@@ -158,7 +159,7 @@ export default function EmployeeApp(){
  },[pathname,appsLoaded,apps,retainedApps,account?.id]);
  useEffect(()=>()=>{for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();},[]);
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
- if(loading)return <main className="afc-admin"><p role="status">正在检查员工会话…</p></main>;
+ if(loading)return <main className="afc-admin afc-theme-neutral" data-theme={readThemePreference()}><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" state={{returnTo:pathname+search}} replace/>;
  if(account.passwordChangeRequired)return <PasswordChangeRequired kind="employee" onChanged={()=>{setAccount(null);setApps([]);setRetainedApps([]);navigate('/login',{replace:true});}}/>;
  const visibleApps=apps;
