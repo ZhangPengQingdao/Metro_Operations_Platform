@@ -37,8 +37,7 @@ export function validateSandboxResource(resource: SandboxFrameResource): boolean
 }
 
 export function themedSandboxHtml(html:string,theme:'light'|'dark'):string {
-  const background=theme==='dark'?'#121212':'#fafafa',color=theme==='dark'?'#fafafa':'#171717';
-  return html.replace('<html>',`<html class="afc-theme-neutral" data-theme="${theme}">`).replace(/(<style nonce="[A-Za-z0-9+/=]+">)/,`$1html,body{background:${background};color:${color};color-scheme:${theme}}`);
+  return html.replace('<html>',`<html class="afc-theme-neutral" data-theme="${theme}">`);
 }
 
 /** Render only AFTER platform installation/session admission. Resource server must enforce response CSP. */
@@ -62,6 +61,7 @@ function MountedFrame({ appId, resource, operations, files, title, downloads, ro
   const lastSentRoute=useRef(initialRoute);
   const routeRef=useRef(route),routeReadyRef=useRef(onRouteReady);
   const frameLoadRef=useRef(onFrameLoad);
+  const syncTheme=useRef(()=>{});
   routeRef.current=route;routeReadyRef.current=onRouteReady;frameLoadRef.current=onFrameLoad;
   const [session]=useState(createSandboxSession);
   const [initialTheme]=useState<'dark'|'light'>(()=>{
@@ -70,7 +70,24 @@ function MountedFrame({ appId, resource, operations, files, title, downloads, ro
   });
   const [initialHtml]=useState(()=>resource.mode==='local-demo'?themedSandboxHtml(resource.html,initialTheme):undefined);
   const [failed,setFailed]=useState(false);
+  const [frameReady,setFrameReady]=useState(false);
   const [modalOpen,setModalOpen]=useState(false);
+  useLayoutEffect(()=>{
+    const shell=frame.current?.closest('.afc-admin');
+    const media=window.matchMedia('(prefers-color-scheme: dark)');
+    const sync=()=>{
+      const preference=shell?.getAttribute('data-theme')??readThemePreference();
+      const theme=preference==='dark'||preference==='system'&&media.matches?'dark':'light';
+      // Update appearance without changing src/srcDoc or revoking a retained frame's channel.
+      if(frame.current)frame.current.style.colorScheme=theme;
+      if(loaded.current&&!failed)frame.current?.contentWindow?.postMessage({version:'1.0',type:'theme',theme},targetOrigin);
+    };
+    syncTheme.current=sync;
+    const observer=new MutationObserver(sync);
+    if(shell)observer.observe(shell,{attributes:true,attributeFilter:['data-theme']});
+    media.addEventListener('change',sync);sync();
+    return()=>{observer.disconnect();media.removeEventListener('change',sync);syncTheme.current=()=>{};};
+  },[targetOrigin,failed]);
   useEffect(()=>{
     if(!modalOpen||failed||!visible)return;
     const shell=frame.current?.closest('.afc-admin');
@@ -120,8 +137,10 @@ function MountedFrame({ appId, resource, operations, files, title, downloads, ro
       send:response=>target.postMessage(response,targetOrigin)});
     // Bootstrap contains no platform identity or bearer secret.
     target.postMessage({version:'1.0',type:'init',appId,session},targetOrigin);
+    syncTheme.current();
     if(routeRef.current&&routeRef.current!==lastSentRoute.current){target.postMessage({version:'1.0',type:'route',appId,session,path:routeRef.current},targetOrigin);lastSentRoute.current=routeRef.current;}
     frameLoadRef.current?.();
+    setFrameReady(true);
   };
   const isDark=initialTheme==='dark';
   // Keep the actual frame element stable while the host hides or shows a retained application.
@@ -131,7 +150,7 @@ function MountedFrame({ appId, resource, operations, files, title, downloads, ro
     src={resource.mode==='isolated-origin'?`${resource.url}#mop-theme=${isDark?'dark':'light'}`:undefined}
     srcDoc={initialHtml}
     onLoad={onLoad} onError={()=>{broker.current?.close();setFailed(true);}}
-    style={{width:'100%',height:'calc(100dvh - 150px)',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark,downloads]);
+    style={{display:'block',width:'100%',height:'var(--afc-app-height, calc(100dvh - 150px))',minHeight:360,border:0,background:'transparent',colorScheme:isDark?'dark':'light'}} />,[resource,initialHtml,title,isDark,downloads]);
   if(failed)return <div role="alert">沙箱页面重新导航或加载异常，通道已关闭，请重新打开。</div>;
-  return frameElement;
+  return <div className="afc-sandbox-frame" aria-busy={!frameReady}><div style={{visibility:frameReady?'visible':'hidden'}}>{frameElement}</div>{!frameReady&&<p className="afc-sandbox-loading" role="status">正在加载应用…</p>}</div>;
 }
