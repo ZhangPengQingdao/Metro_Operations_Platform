@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {createHuicetongService} from './service.mjs';
 import {createHuicetongHandlers} from './handlers.mjs';
 import {migration} from './schema.mjs';
@@ -9,6 +10,13 @@ import * as XLSX from 'xlsx';
 import {planRows,planWorkbook,planColumns} from './plan-export.mjs';
 import {validMonth,monthCycle} from './month.mjs';
 import {serializeAppInvocations} from './invocation.mjs';
+
+test('plan menu keeps export visible but disabled without a cycle, and removes all refresh actions',async()=>{
+ const ui=await readFile(new URL('./ui.jsx',import.meta.url),'utf8');
+ assert.doesNotMatch(ui,/id:'refresh'|label:'刷新'|ArrowsClockwise/);
+ assert.match(ui,/id:'export',label:'导出 xlsx',icon:<ArrowLineDown size=\{16\}\/>\s*,disabled:!cycle\|\|blocked\|\|contextLoading/);
+ assert.doesNotMatch(ui,/cycle&&!blocked\?\[\{id:'export'/);
+});
 
 test('frame dispatch serializes concurrent context reads and preserves each caller payload',async()=>{
  let active=0,maxActive=0;const dispatched=[];

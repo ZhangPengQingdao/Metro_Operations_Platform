@@ -94,4 +94,7 @@ test('pickers and query menus use one native top-layer portal without timer or i
     assert.doesNotMatch(source, /className=["`][^"`]*\babsolute\b[^"`]*z-\[99999\]/);
   }
   assert.doesNotMatch(timePicker, /setTimeout\(/);
+  assert.match(filterBar, /disabled\?: boolean/);
+  assert.match(filterBar, /disabled=\{action\.disabled\}/);
+  assert.match(filterBar, /if \(action\.disabled\) return;/);
 });

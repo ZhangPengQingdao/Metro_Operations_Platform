@@ -48,6 +48,8 @@ npm --prefix server run app-cli -- validate ../examples/installable-app/dist/0.0
 
 员工沙箱调用自身后端的 SDK 入口为 `createAppApiClient`（从 `@metro/platform-sdk/app-sandbox` 导入），例如 `createAppApiClient(sandbox).invoke('stock-in', payload)`。API ID 必须在清单声明；宿主按已验证清单固定请求方法和路径，每次请求核验员工登录态。员工应用准入与业务授权在单进程内最多复用 30 秒；本进程通过员工账号、应用使用授权、应用业务授权、审批和应用生命周期操作后立即失效，其他进程或直接改库的变化可能延迟最多 30 秒生效。后端 handler 通过第三参数读取可信员工上下文，handler 内的 Gateway 请求自动保留原调用绑定。配置 Docker 的隔离后端可接收本应用定义且逐接口声明权限的 API；其余未装配的工具、任务、事件和外联仍拒绝。物料的实际 Docker 托管全链路尚待验收。
 
+平台 0.23.6 起，员工应用列表只返回具有声明 `routes[].permission` 权限的路由及关联导航；没有可访问路由的应用不返回。直接加载或切换应用路径也使用相同检查，不能通过输入地址访问被隐藏的入口。应用业务授权模式按已解析的业务角色检查权限，旧平台授权模式沿用员工与应用授权交集；未声明路由权限的旧入口保留现有行为，业务接口仍须独立校验资源范围。
+
 CLI 的直接 install 子命令需要另行配置受控管理凭据入口，默认管理端不挂载该入口；本版通过管理端上传导出的签名 JSON 包安装。
 
 ## 前端运行模式与资源域名
@@ -100,6 +102,8 @@ npx mop-app export-upload dist/sandbox signature.json my-app-install.json
 ## 公开 L2 界面组件（0.5.0）
 
 React 应用可以从 `@metro/platform-sdk/ui` 引入 Button、Input、Field、FilterBar、Table、Dialog、TagDropdownPicker 等组件；从 `@metro/platform-sdk/ui-styles` 引入 `platformUiCss`，使用宿主提供的脚本 nonce 安装样式。`TagDropdownPicker` 的 `inline` 模式在表单内直接展开目标标签；非内联模式可用 `showTitle={false}` 隐藏触发按钮旁的重复标题，弹层仍保留标题。组件构建自平台同一 L2 源文件，发布包只含构建产物。React / React DOM 是可选 peer 依赖；无 UI 的后端应用无需引入。
+
+FilterBar 的 `moreActions` 支持 `disabled` 与 `title`：暂不可用的功能可保留入口、原生禁用并提供原因；禁用项不会关闭菜单或执行 `onClick`。
 
 普通单选使用 `DropdownSelect`，选中项以黑底和勾选标记显示。需要在同一输入框中搜索或选择时使用 `SearchSelect`；选项可提供 `detail`，与名称同排展示。目录查询、选中值和是否允许手工输入由应用管理。
 
@@ -178,4 +182,4 @@ FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及
 
 ## 慧策通·计划督办（M2）
 
-独立应用源码位于 `applications/huicetong`，0.3.1 修复版基于同仓库 `origin/huicetong-simplify` 的 0.3.0 源码。宿主仅有“计划提报”(`/`，`read`) 和“基础配置”(`/bindings`，`manage`) 两条入口；首次填报按授权组织和年月在事务中创建周期，责任人或管理岗可更新进度。提报、归口配置、分类字典和汇总弹窗统一 L2 QueryList，搜索默认收起，默认授权组织和月份并入筛选，功能菜单与新增操作同排，适配暗色与窄屏。组织继续采用首个授权组织，不增加手动切换。前端不展示旧审核、签发与变更流程，后端及其 `review`、`sign` 权限仍保留；填报使用 `fill`，基础配置使用 `manage`。写入沿用托管事务、审计和乐观锁，未知结果不重放。xlsx 由服务端生成经授权后沙箱下载，尚未登记为业务原件附件；清单声明 `ui.downloads`。部署结果见 [生产发布记录](production-deployment-runbook.md)。构建及限制见 [慧策通应用说明](../applications/huicetong/README.md)，后续流程见 [应用规划](huicetong-app-plan.md)。
+独立应用源码位于 `applications/huicetong`，当前源码版本 0.3.2，基于同仓库 `origin/huicetong-simplify` 的 0.3.0 源码。宿主仅有“计划提报”(`/`，`read`) 和“基础配置”(`/bindings`，`manage`) 两条入口；平台 0.23.6 按员工权限过滤入口并检查直接路径访问。首次填报按授权组织和年月在事务中创建周期，责任人或管理岗可更新进度。提报、归口配置、分类字典和汇总弹窗统一 L2 QueryList，搜索默认收起，默认授权组织和月份并入筛选，功能菜单与新增操作同排，适配暗色与窄屏。功能菜单保留汇总预览与 xlsx 导出，没有可导出周期时禁用导出，不提供刷新功能项。组织继续采用首个授权组织，不增加手动切换。前端不展示旧审核、签发与变更流程，后端及其 `review`、`sign` 权限仍保留；填报使用 `fill`，基础配置使用 `manage`。写入沿用托管事务、审计和乐观锁，未知结果不重放。xlsx 由服务端生成经授权后沙箱下载，尚未登记为业务原件附件；清单声明 `ui.downloads`。实际部署版本与结果见 [生产发布记录](production-deployment-runbook.md)。构建及限制见 [慧策通应用说明](../applications/huicetong/README.md)，后续流程见 [应用规划](huicetong-app-plan.md)。
