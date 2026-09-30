@@ -36,5 +36,10 @@ test('frame refuses forged loopback configuration when actual parent origin is p
 test('local sandbox first document uses the host theme before application scripts run',async()=>{
  const {themedSandboxHtml}=await import('../../src/app-platform/host/sandbox/react.tsx');
  const html='<!doctype html><html><head><style nonce="abc123">.x{}</style></head><body><script nonce="abc123">boot()</script></body></html>';
- const themed=themedSandboxHtml(html,'dark');assert.match(themed,/<html class="afc-theme-neutral" data-theme="dark">/);assert.match(themed,/<style nonce="abc123">html,body\{background:#121212/);assert.ok(themed.indexOf('background:#121212')<themed.indexOf('boot()'));assert.match(themed,/<script nonce="abc123">boot\(\)/);
+ const themed=themedSandboxHtml(html,'dark');assert.match(themed,/<html class="afc-theme-neutral" data-theme="dark">/);assert.ok(themed.indexOf('data-theme="dark"')<themed.indexOf('boot()'));assert.match(themed,/<style nonce="abc123">\.x\{\}/);assert.match(themed,/<script nonce="abc123">boot\(\)/);
+});
+test('sandbox starts hidden on the platform canvas until its document has loaded',()=>{
+ const html=renderToString(<SandboxFrame appId="demo" instanceKey="1" enabled title="demo" operations={new Map()}
+  resource={{mode:'isolated-origin',platformOrigin:'https://platform.example.com',url:`https://demo.apps.example.net/document/${'a'.repeat(64)}`}}/>);
+ assert.match(html,/aria-busy="true"/);assert.match(html,/visibility:hidden/);assert.match(html,/background:transparent/);assert.match(html,/正在加载应用/);
 });

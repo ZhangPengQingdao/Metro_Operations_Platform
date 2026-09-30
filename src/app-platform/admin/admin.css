@@ -52,6 +52,12 @@
 .afc-admin-workspace { margin-left:calc(var(--afc-sidebar-width) + 24px); min-width:0; transition:margin-left .2s ease; }
 .afc-page-header { height:72px; padding:0 32px; display:flex; align-items:center; gap:12px; font-size:13px; color:var(--afc-muted); }
 .afc-admin-main { padding:16px 32px 48px; max-width:1600px; margin:auto; }
+.afc-admin-workspace--application { --afc-app-height:calc(100dvh - 72px); }
+.afc-admin-workspace--application .afc-admin-main { max-width:none; margin:0; padding:0; }
+.afc-sandbox-frame { position:relative; min-height:360px; background:var(--afc-page,transparent); }
+.afc-sandbox-loading { position:absolute; inset:24px auto auto 24px; color:var(--afc-muted); }
+.admin-application:not(:has(.afc-sandbox-frame)), .employee-application:not(:has(.afc-sandbox-frame)) { padding:24px; }
+.afc-admin-workspace--application .afc-admin-main>p { padding:16px 24px; }
 /* Dialog 关闭后焦点 uphill 落到该编程聚焦容器时，避免整页蓝色聚焦框。 */
 .afc-admin-main:focus, .afc-admin-main:focus-visible { outline:none; }
 .afc-page-header .afc-mobile-toggle, .afc-mobile-backdrop { display:none; }
@@ -105,6 +111,7 @@
  .afc-sidebar-island.is-open { visibility:visible; transform:none; }
  .afc-admin-workspace { margin-left:0; }
  .afc-page-header { height:64px; padding:0 20px; }
+ .afc-admin-workspace--application { --afc-app-height:calc(100dvh - 64px); }
  .afc-admin-main { padding:12px 20px 32px; }
  .afc-page-header .afc-mobile-toggle { display:inline-flex; }
  .afc-mobile-backdrop { display:block; position:fixed; inset:0; z-index:25; border:0; background:rgb(0 0 0 / .2); }

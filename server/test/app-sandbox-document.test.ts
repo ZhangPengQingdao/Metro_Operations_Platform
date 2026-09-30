@@ -34,14 +34,29 @@ test('production sandbox applies explicit host theme before CSS and app code, in
  for(const [hash,systemDark,expected] of [['#mop-theme=dark',false,'dark'],['#mop-theme=light',true,'light'],['',true,'dark'],['#mop-theme=invalid',false,'light']] as const){
   const classes=new Set<string>(),dataset:Record<string,string>={};
   const documentElement={dataset,classList:{add:(v:string)=>classes.add(v)}};
-  runInNewContext(boot,{location:{hash},document:{documentElement},matchMedia:()=>({matches:systemDark})});
+  runInNewContext(boot,{location:{hash},document:{documentElement},matchMedia:()=>({matches:systemDark}),window:{addEventListener(){}}});
   assert.equal(dataset.theme,expected);assert.ok(classes.has('afc-theme-neutral'));
  }
+});
+test('document theme updates require the embedding platform and a valid appearance-only message',()=>{
+ const html=buildSandboxDocument({script:part('0'),platformOrigin:'https://platform.example.com'}).html;
+ const boot=html.match(/<script nonce="[^"]+">([^<]+)<\/script>/)![1];
+ const parent={},dataset:Record<string,string>={};let receive:(event:unknown)=>void=()=>{};
+ runInNewContext(boot,{location:{hash:'#mop-theme=dark'},document:{documentElement:{dataset,classList:{add(){}}}},window:{parent,addEventListener:(_type:string,fn:typeof receive)=>{receive=fn;}},matchMedia:()=>({matches:false})});
+ const event={source:parent,origin:'https://platform.example.com',data:{version:'1.0',type:'theme',theme:'light'}};
+ for(const invalid of [{...event,source:{}},{...event,origin:'https://evil.example'}, {...event,data:{...event.data,theme:'system'}},{...event,data:{...event.data,session:'forged'}},{...event,data:{...event.data,type:'init'}}]){
+  receive(invalid);assert.equal(dataset.theme,'dark');
+ }
+ receive(event);assert.equal(dataset.theme,'light');
+ receive({...event,data:{...event.data,theme:'dark'}});assert.equal(dataset.theme,'dark');
+ assert.match(html,/background:transparent!important/);
 });
 test('trusted document keeps admission HTML small and references only its verified hash bundle',()=>{
  const script=part('document.body.textContent="large";');
  const result=buildSandboxDocument({platformOrigin:'https://platform.example.com',script,trusted:{appId:'materials'}});
  assert.match(result.html,new RegExp(`/assets/materials/${script.sha256}/ui\\.js`));
+ const nonce=result.html.match(/<style nonce="([^"]+)"/)![1];
+ assert.match(result.html,new RegExp(`<script nonce="${nonce.replace(/[+]/g,'\\+')}" data-app-route="%2F" data-platform-origin="https://platform.example.com" src=`));
  assert.doesNotMatch(result.html,/document\.body\.textContent/);
  assert.match(result.headers['Content-Security-Policy'],/script-src 'nonce-[^']+' 'self'/);
  assert.match(result.headers['Content-Security-Policy'],/sandbox allow-scripts allow-same-origin/);

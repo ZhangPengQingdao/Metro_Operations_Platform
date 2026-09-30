@@ -1,3 +1,4 @@
+import {readThemePreference} from '../identity/theme';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
 import {appCapabilityCatalog} from './app-capability-catalog';
@@ -84,7 +85,7 @@ export default function AdminApp(){
  useEffect(()=>{let active=true;adminRequest<AdminUser>('/auth/me').then(value=>{if(active)setUser(value);}).catch(e=>{if(active&&!(e instanceof AdminRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
  useEffect(()=>{if(user&&!user.passwordChangeRequired)reloadApps();},[user,reloadApps]);
  async function logout(){await adminRequest('/auth/logout',{method:'POST'});setUser(null);setApplications([]);navigate('/login');}
- if(loading)return <div className="afc-admin"><p role="status">正在检查管理员会话…</p></div>;
+ if(loading)return <div className="afc-admin afc-theme-neutral" data-theme={readThemePreference()}><p role="status">正在检查管理员会话…</p></div>;
  if(!user)return <Navigate to="/login" replace/>;
  if(user.passwordChangeRequired)return <PasswordChangeRequired kind="admin" onChanged={()=>{setUser(null);setApplications([]);navigate('/login',{replace:true});}}/>;
  if(location.pathname==='/admin/login'||location.pathname==='/admin/updates'||location.pathname==='/admin/audit')return <Navigate to="/admin" replace/>;
