@@ -7,6 +7,7 @@ import {downloadSandboxFile} from '@metro/platform-sdk/app-files';
 import {PlanList,CategoryList} from './lists.jsx';
 import {WorkflowList} from './workflow-list.jsx';
 import {validMonth,monthCycle} from './month.mjs';
+import {serializeAppInvocations} from './invocation.mjs';
 
 const script=document.currentScript,origin=script?.dataset.platformOrigin;
 if(!origin)throw Error('PLATFORM_ORIGIN_REQUIRED');
@@ -19,6 +20,7 @@ html,body{margin:0;background:transparent;color:var(--afc-color-ink);font-family
 `;document.head.append(style);
 const sandbox=createAppSandboxClient({appId:'huicetong',platformOrigin:origin,port:{parent:window.parent,send:(data,target)=>window.parent.postMessage(data,target),listen:listener=>{window.addEventListener('message',listener);return()=>window.removeEventListener('message',listener);}}});
 const api=createAppApiClient(sandbox);
+const invoke=serializeAppInvocations((name,payload)=>api.invoke(name,payload));
 const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const blankItem=(month=today().slice(0,7))=>({categoryId:'',content:'',qualityStandard:'',startDate:`${month}-01`,endDate:new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10),escalated:false,remark:'',assignees:[]});
 const blankCategory=()=>({id:null,level:3,parentId:null,name:'',sort:0,enabled:true,expectedRevision:undefined});
@@ -39,7 +41,7 @@ function App(){
  async function call(name,payload,write=false){
   if(write&&(writing.current||uncertain.current))throw Error(uncertain.current?`请求 ${uncertain.current} 的写入结果待核对，请勿重试`:'正在保存');
   if(write)writing.current=true;
-  try{const response=await api.invoke(name,payload);if(!response.ok){const definitive=response.error?.writeOutcome==='not_started';if(write&&!definitive)uncertain.current=payload.requestId;const failure=Error(messages[response.error?.code]??(write?'写入结果未确认，请核对后再处理':'读取失败，请重试'));failure.definitive=definitive;throw failure;}return response.result;}
+  try{const response=await invoke(name,payload);if(!response.ok){const definitive=response.error?.writeOutcome==='not_started';if(write&&!definitive)uncertain.current=payload.requestId;const failure=Error(messages[response.error?.code]??(write?'写入结果未确认，请核对后再处理':'读取失败，请重试'));failure.definitive=definitive;throw failure;}return response.result;}
   catch(failure){if(write&&!failure.definitive)uncertain.current=payload.requestId;throw failure;}
   finally{if(write)writing.current=false;}
  }

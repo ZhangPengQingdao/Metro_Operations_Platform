@@ -8,6 +8,40 @@ import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import * as XLSX from 'xlsx';
 import {planRows,planWorkbook,planColumns} from './plan-export.mjs';
 import {validMonth,monthCycle} from './month.mjs';
+import {serializeAppInvocations} from './invocation.mjs';
+
+test('frame dispatch serializes concurrent context reads and preserves each caller payload',async()=>{
+ let active=0,maxActive=0;const dispatched=[];
+ const invoke=serializeAppInvocations(async(name,payload)=>{
+  active++;maxActive=Math.max(maxActive,active);dispatched.push({name,payload});
+  await new Promise(resolve=>setTimeout(resolve,5));active--;
+  return {ok:true,result:name};
+ });
+ const payload=Object.freeze({organizationId:randomUUID()});
+ const names=['cycle-list','category-list','binding-list','members','item-list'];
+ const results=await Promise.all(names.map(name=>invoke(name,payload)));
+ assert.equal(maxActive,1);
+ assert.deepEqual(dispatched.map(value=>value.name),names);
+ assert.ok(dispatched.every(value=>value.payload===payload));
+ assert.deepEqual(results.map(value=>value.result),names);
+});
+
+test('failed or unknown frame calls are never replayed and later distinct reads still run',async()=>{
+ const dispatched=[];const unknown=Object.freeze({ok:false,error:{code:'OPERATION_UNCONFIRMED',writeOutcome:'unknown'}});
+ const failure=Error('network failed');
+ const invoke=serializeAppInvocations(async(name,payload)=>{
+  dispatched.push({name,payload});
+  if(name==='cycle-list')throw failure;
+  return name==='item-create'?unknown:{ok:true,result:name};
+ });
+ const requestId=randomUUID();
+ const failed=invoke('cycle-list',{}),write=invoke('item-create',{requestId}),read=invoke('item-list',{});
+ await assert.rejects(failed,error=>error===failure);
+ assert.equal(await write,unknown);
+ assert.equal((await read).result,'item-list');
+ assert.deepEqual(dispatched.map(value=>value.name),['cycle-list','item-create','item-list']);
+ assert.equal(dispatched[1].payload.requestId,requestId);
+});
 
 function fixture(){
  const department=randomUUID(),otherDepartment=randomUUID(),team=randomUUID(),otherTeam=randomUUID(),person=randomUUID(),colleague=randomUUID(),outside=randomUUID();
