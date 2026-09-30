@@ -59,7 +59,7 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   const policy={policyVersion:'1.0' as const,revision:1,keys:[{keyId:'test-key',publisherId:'test',publicKeyPem:keys.publicKey.export({type:'spki',format:'pem'}).toString(),revoked:false,appIds:['upgrade-fault','storage-test','storage-fault','storage-other'],validFrom:'2020-01-01T00:00:00Z',validUntil:'2099-01-01T00:00:00Z'}]};
   const installer=new AppInstaller({registry,journal,artifactRoot:join(root,'packages'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:r=>runtime!.getHost(r.appId)});
   const versions=new AppVersionService({registry,journal:versionsJournal,installJournal:journal,artifactRoot:join(root,'packages'),loadPublisherPolicy:async()=>policy,approve:async()=>true,getHost:id=>runtime!.getHost(id)});
-  const migration=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'createTable',table:'records',columns:[{name:'id',type:'integer',nullable:false},{name:'value',type:'text',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'inventory',columns:[{name:'id',type:'uuid',nullable:false},{name:'quantity',type:'integer',nullable:false},{name:'version',type:'integer',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'entries',columns:[{name:'id',type:'uuid',nullable:false},{name:'value',type:'jsonb',nullable:false},{name:'occurred_at',type:'timestamptz',nullable:true}],primaryKey:['id']}]});
+  const migration=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'createTable',table:'records',columns:[{name:'id',type:'integer',nullable:false},{name:'value',type:'text',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'inventory',columns:[{name:'id',type:'uuid',nullable:false},{name:'quantity',type:'integer',nullable:false},{name:'version',type:'integer',nullable:false}],primaryKey:['id']},{kind:'createTable',table:'entries',columns:[{name:'id',type:'uuid',nullable:false},{name:'value',type:'jsonb',nullable:false},{name:'occurred_at',type:'timestamptz',nullable:true},{name:'scheduled_on',type:'date',nullable:true}],primaryKey:['id']}]});
   async function bundle(id:string,version:string,incremental=false){
    const directory=join(root,id+'-'+version);await mkdir(directory);
    const manifest:AppManifest={manifestVersion:'1.0',id,version,name:id,description:'test',publisherId:'test',
@@ -124,6 +124,31 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   const page=await call({table:'entries',pageSize:1,filters:[{column:'id',value:id}]},'list');
   assert.equal(page.rows[0].id,id);assert.equal(page.nextCursor,null);
   assert.deepEqual((await call({table:'entries',afterId:id},'list')).rows,[]);
+  // Declared date columns must work through the real runtime role, not just the migration parser.
+  for(const scheduled_on of ['2026-02-30','2025-02-29','2026-9-01','2026-09-01T00:00:00Z','0000-01-01',20260901]){
+   const invalidIntent=randomUUID();
+   await assert.rejects(call({table:'entries',id,requestId:invalidIntent,action:'update',values:{scheduled_on}},true),/INVALID_PARAMS/);
+   assert.equal((await admin.query('SELECT count(*)::int n FROM public.platform_app_runtime_storage_writes WHERE request_id=$1',[invalidIntent])).rows[0].n,0);
+  }
+  await call({table:'entries',id,requestId:randomUUID(),action:'update',values:{scheduled_on:'2028-02-29'}},true);
+  assert.equal((await call({table:'entries',id})).row.scheduled_on,'2028-02-29');
+  const datedId=randomUUID();
+  const dates=await call({requestId:randomUUID(),operations:[
+   {table:'entries',id,action:'update',values:{scheduled_on:'2028-03-01'},expected:{scheduled_on:'2028-02-29'}},
+   {table:'entries',id:datedId,action:'insert',values:{value:{note:'dated'},scheduled_on:'2028-03-02'}},
+  ]},'transaction');
+  assert.deepEqual(dates.results.map((entry:{row:{scheduled_on:string}})=>entry.row.scheduled_on),['2028-03-01','2028-03-02']);
+  const dateOptions={table:'entries',pageSize:1,order:{column:'scheduled_on',direction:'asc'},range:{column:'scheduled_on',from:'2028-03-01',to:'2028-03-02'}};
+  const datedPage=await call(dateOptions,'list');
+  assert.deepEqual(datedPage.rows.map((row:{id:string})=>row.id),[id]);
+  assert.deepEqual({...datedPage.nextCursor},{id,value:'2028-03-01'});
+  assert.deepEqual((await call({...dateOptions,after:datedPage.nextCursor},'list')).rows.map((row:{id:string})=>row.id),[datedId]);
+  const dateBatch=await call({operations:[{table:'entries',id},{...dateOptions,filters:[{column:'scheduled_on',value:'2028-03-02'}]}]},'read_batch');
+  assert.equal(dateBatch.results[0].row.scheduled_on,'2028-03-01');
+  assert.deepEqual(dateBatch.results[1].rows.map((row:{id:string})=>row.id),[datedId]);
+  await call({table:'entries',id,requestId:randomUUID(),action:'update',values:{scheduled_on:null}},true);
+  assert.equal((await call({table:'entries',id})).row.scheduled_on,null);
+  await call({table:'entries',id:datedId,requestId:randomUUID(),action:'delete'},true);
   await assert.rejects(call(insert,true),/STORAGE_REQUEST_ALREADY_RECORDED/);
   await assert.rejects(call({table:'public.platform_people',id}));
   await assert.rejects(call({table:'entries',id,schema:'public'}));
