@@ -7,6 +7,7 @@ import {migration} from './schema.mjs';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import * as XLSX from 'xlsx';
 import {planRows,planWorkbook,planColumns} from './plan-export.mjs';
+import {validMonth,monthCycle} from './month.mjs';
 
 function fixture(){
  const department=randomUUID(),otherDepartment=randomUUID(),team=randomUUID(),otherTeam=randomUUID(),person=randomUUID(),colleague=randomUUID(),outside=randomUUID();
@@ -130,6 +131,30 @@ async function prepared(){
 }
 const revision=f=>f.tables.get('plan_cycles').get(f.cycleId).revision;
 async function bind(f){return f.service['binding-upsert']({id:randomUUID(),requestId:randomUUID(),organizationId:f.department,categoryId:f.parent,personId:f.person,personOrganizationId:f.team},f.employee);}
+
+test('binding handler accepts its target person but keeps trusted actor and permission checks',async()=>{
+ const f=await prepared(),handlers=createHuicetongHandlers(f.gateway);
+ const payload={id:randomUUID(),requestId:randomUUID(),organizationId:f.department,categoryId:f.parent,personId:f.colleague,personOrganizationId:f.otherTeam};
+ const handler=handlers.get('binding-upsert');
+ assert.equal((await handler.execute(payload,undefined,f.employee)).ok,true);
+ assert.equal(f.tables.get('review_bindings').get(payload.id).person_id,f.colleague);
+ assert.equal([...f.tables.get('audit_events').values()].find(row=>row.entity_id===payload.id).actor_id,f.person);
+ const writes=f.writes.length;
+ const readOnly={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>grant.permission==='app.huicetong.read')}};
+ for(const [input,actor,code] of [
+  [{...payload,id:randomUUID()},readOnly,'ACCESS_DENIED'],
+  [{...payload,id:randomUUID(),organizationId:f.otherDepartment},f.employee,'ACCESS_DENIED'],
+  [{...payload,id:randomUUID(),personId:f.outside,personOrganizationId:f.otherDepartment},f.employee,'PERSON_INVALID'],
+  [{...payload,employee:{personId:f.colleague}},f.employee,'INVALID_INPUT'],
+  [{...payload,businessAuthorization:{}},f.employee,'INVALID_INPUT']
+ ]){
+  const response=await handler.execute(input,undefined,actor);
+  assert.equal(response.error.code,code);assert.equal(response.error.writeOutcome,'not_started');
+ }
+ assert.equal((await handlers.get('category-upsert').execute({personId:f.colleague},undefined,f.employee)).error.code,'INVALID_INPUT');
+ assert.equal(f.writes.length,writes);
+});
+
 async function locked(f){
  await bind(f);await f.service['item-submit']({id:f.itemId,requestId:randomUUID(),expectedVersion:1},f.employee);
  await f.service['cycle-submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
@@ -138,6 +163,55 @@ async function locked(f){
  await f.service['cycle-confirm-signature']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
  await f.service['cycle-lock']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);
 }
+
+test('month selection matches year and month, not a cycle status or adjacent month',()=>{
+ const cycles=[{id:'first',year:2026,month:9},{id:'second',year:2027,month:9}];
+ assert.equal(monthCycle(cycles,'2027-09')?.id,'second');
+ assert.equal(monthCycle(cycles,'2026-10'),null);
+ assert.equal(validMonth('2026-13'),false);
+ assert.equal(validMonth('2026-09'),true);
+});
+
+test('session only offers organizations covered by the read grant',async()=>{
+ const f=fixture();f.employee.businessAuthorization.organizations.unshift({id:f.otherDepartment,name:'未授权部门'});
+ const session=await f.service.session({},f.employee);
+ assert.deepEqual(session.organizations.map(row=>row.id),[f.department]);
+});
+
+test('fill-only contributor creates monthly container atomically and reuses it',async()=>{
+ const f=await prepared(),fillOnly={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>['app.huicetong.read','app.huicetong.fill'].includes(grant.permission))}};
+ const create=()=>f.service['item-create']({id:randomUUID(),requestId:randomUUID(),organizationId:f.department,year:2026,month:10,draft:f.draft},fillOnly);
+ await Promise.all([create(),create()]);
+ const cycles=[...f.tables.get('plan_cycles').values()].filter(row=>row.month===10);
+ assert.equal(cycles.length,1);
+ assert.equal([...f.tables.get('plan_items').values()].filter(row=>row.cycle_id===cycles[0].id).length,2);
+ assert.ok(f.writes.some(write=>write.operations.some(op=>op.table==='plan_cycles'&&op.action==='insert')&&write.operations.some(op=>op.table==='plan_items'&&op.action==='insert')));
+ await assert.rejects(f.service['item-create']({id:randomUUID(),requestId:randomUUID(),organizationId:f.otherDepartment,year:2026,month:11,draft:f.draft},fillOnly),/ACCESS_DENIED/);
+ await assert.rejects(f.service['item-create']({id:randomUUID(),requestId:randomUUID(),organizationId:f.department,year:2026,month:13,draft:f.draft},fillOnly),/INVALID_INPUT/);
+});
+
+test('responsible employee updates progress with version and note, other employees cannot',async()=>{
+ const f=await prepared(),fillOnly={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>['app.huicetong.read','app.huicetong.fill'].includes(grant.permission))}};
+ const change=(expectedVersion,status,employee=fillOnly)=>f.service['item-progress']({id:f.itemId,requestId:randomUUID(),expectedVersion,status,remark:'完成现场核验'},employee);
+ assert.equal((await change(1,'in_progress')).version,2);
+ await assert.rejects(change(1,'completed'),/CONFLICT/);
+ const teammate={...fillOnly,personId:f.colleague,organizationUnitId:f.otherTeam};
+ assert.equal((await change(2,'in_progress',teammate)).version,3);
+ const stranger={...fillOnly,personId:randomUUID()};
+ await assert.rejects(change(3,'completed',stranger),/ACCESS_DENIED/);
+ assert.equal((await change(3,'completed')).status,'completed');
+ assert.equal(f.tables.get('plan_items').get(f.itemId).remark,'完成现场核验');
+ assert.ok([...f.tables.get('audit_events').values()].some(row=>row.action==='progress'));
+ await assert.rejects(change(4,'cancelled'),/CONFLICT/);
+});
+
+test('progress respects locked-cycle versioning and rejects status during review',async()=>{
+ const f=await prepared();await locked(f);
+ const version=f.tables.get('plan_items').get(f.itemId).version;
+ await assert.rejects(f.service['item-progress']({id:f.itemId,expectedVersion:version-1,requestId:randomUUID(),status:'completed',remark:'核验'},f.employee),/CONFLICT/);
+ await f.service['item-progress']({id:f.itemId,expectedVersion:version,requestId:randomUUID(),status:'completed',remark:'核验'},f.employee);
+ assert.equal(f.tables.get('plan_items').get(f.itemId).status,'completed');
+});
 
 test('submission requires a level-2 binding and only the author or manager can submit',async()=>{
  const f=await prepared(),limited={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>['app.huicetong.read','app.huicetong.fill'].includes(grant.permission))}};

@@ -35,12 +35,10 @@ export function DropdownSelect({ id, value, onChange, options, placeholder = 'è¯
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={`flex h-10 w-full items-center justify-between gap-2 rounded-xl border bg-white px-3 text-left text-sm transition-colors ${
-          disabled ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400' : open ? 'border-neutral-900 ring-2 ring-neutral-900/10 text-neutral-900' : 'cursor-pointer border-neutral-300 text-neutral-900 hover:border-neutral-900'
-        }`}
+        className={`afc-control afc-dropdown-trigger ${open ? 'is-open' : ''}`}
       >
-        <span className={`truncate ${selected ? '' : 'text-neutral-400'}`}>{selected?.label ?? placeholder}</span>
-        <CaretDown size={15} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        <span className={`truncate ${selected ? '' : 'afc-dropdown-placeholder'}`}>{selected?.label ?? placeholder}</span>
+        <CaretDown size={15} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       <FloatingPortal
         open={open}
@@ -49,7 +47,7 @@ export function DropdownSelect({ id, value, onChange, options, placeholder = 'è¯
         width={Math.max(180, Math.ceil(anchorRef.current?.getBoundingClientRect().width ?? 240))}
         gap={4}
         ariaLabel={label}
-        className="overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-black/10"
+        className="afc-dropdown-popover"
       >
         <div role="listbox" aria-label={label} className="max-h-60 space-y-0.5 overflow-y-auto">
           {options.map(option => {
@@ -62,9 +60,7 @@ export function DropdownSelect({ id, value, onChange, options, placeholder = 'è¯
                 aria-selected={active}
                 disabled={option.disabled}
                 onClick={() => { onChange(option.value); setOpen(false); }}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  option.disabled ? 'cursor-not-allowed text-neutral-400' : active ? 'bg-neutral-900 font-semibold text-white' : 'cursor-pointer text-neutral-800 hover:bg-neutral-100'
-                }`}
+                className="afc-dropdown-option"
               >
                 <span className="truncate">{option.label}</span>
                 {active && <Check size={15} weight="bold" aria-hidden="true" />}

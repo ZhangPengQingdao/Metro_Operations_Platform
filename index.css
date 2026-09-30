@@ -1078,7 +1078,7 @@
     }
 
     .afc-filter-popover {
-        position: absolute;
+        position: fixed;
         top: calc(100% + 8px);
         right: 0;
         left: auto;
@@ -1090,8 +1090,13 @@
         border-radius: 20px;
         box-shadow: 0 24px 64px rgb(0 0 0 / .22);
         padding: 20px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         animation: afcFadeIn .18s ease;
     }
+    .afc-filter-popover__body { min-height:0; overflow-y:auto; max-height:60vh; }
+    .afc-filter-popover > :first-child, .afc-filter-popover > :last-child { flex-shrink:0; }
 
     .afc-filter-date-input {
         width: 100%;
@@ -1114,7 +1119,7 @@
     }
 
     .afc-filter-menu-popover {
-        position: absolute;
+        position: fixed;
         top: calc(100% + 8px);
         right: 0;
         left: auto;
@@ -1128,6 +1133,7 @@
         display: flex;
         flex-direction: column;
         gap: 2px;
+        overflow-y: auto;
         animation: afcFadeIn .16s ease;
     }
     .afc-filter-menu-item {
@@ -1167,6 +1173,17 @@
 
     @keyframes afc-spin { to { transform: rotate(360deg); } }
 }
+
+.afc-dropdown-trigger { display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer; }
+.afc-dropdown-trigger.is-open { border-color:var(--afc-color-primary); }
+.afc-dropdown-trigger:disabled { cursor:not-allowed; }
+.afc-dropdown-trigger > span { min-width:0; }
+.afc-dropdown-trigger > svg,.afc-dropdown-placeholder { color:var(--afc-color-muted); }
+.afc-dropdown-popover { padding:6px;overflow-y:auto;border:1px solid var(--afc-color-line);border-radius:var(--afc-radius-control);background:var(--afc-color-paper);color:var(--afc-color-ink);box-shadow:var(--afc-shadow-lg); }
+.afc-dropdown-option { display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:var(--afc-color-ink);font-size:14px;text-align:left;cursor:pointer; }
+.afc-dropdown-option:hover:not(:disabled) { background:var(--afc-color-neutral-soft); }
+.afc-dropdown-option[aria-selected='true'] { background:var(--afc-color-primary);color:var(--afc-on-primary);font-weight:600; }
+.afc-dropdown-option:disabled { color:var(--afc-color-muted);opacity:.5;cursor:not-allowed; }
 
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {

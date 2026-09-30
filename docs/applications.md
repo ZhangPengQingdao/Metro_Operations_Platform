@@ -178,4 +178,4 @@ FilterBar 的 `layout="spread"` 提供左侧常驻搜索、右侧操作按钮及
 
 ## 慧策通·计划督办（M2）
 
-独立应用源码位于 `applications/huicetong`，版本 0.2.0。提供周期与分类编制、归口绑定与审核、负责人确认签发、锁定后变更和 xlsx 导出；宿主侧边栏“计划条目”和“分类字典”仍分别打开 `/` 与 `/categories`，其余视图在应用内切换。业务权限为 `read`、`fill`、`review`、`manage`、独立的 `sign`；管理岗代管提交或复审还需分别授予 `fill`、`review`。写入沿用托管事务与审计，服务端签发暂采用应用内确认+审计（待平台 L2 签字板就绪）。导出服务端生成经员工授权后由沙箱下载、尚未登记为业务原件附件；清单声明 `ui.downloads`。构建及完整的降级说明见 [慧策通应用说明](../applications/huicetong/README.md)，后续流程见 [应用规划](huicetong-app-plan.md)。
+独立应用源码位于 `applications/huicetong`，0.3.1 修复版基于同仓库 `origin/huicetong-simplify` 的 0.3.0 源码。宿主仅有“计划提报”(`/`，`read`) 和“基础配置”(`/bindings`，`manage`) 两条入口；首次填报按授权组织和年月在事务中创建周期，责任人或管理岗可更新进度。提报、归口配置、分类字典和汇总弹窗统一 L2 QueryList，搜索默认收起，默认授权组织和月份并入筛选，功能菜单与新增操作同排，适配暗色与窄屏。组织继续采用首个授权组织，不增加手动切换。前端不展示旧审核、签发与变更流程，后端及其 `review`、`sign` 权限仍保留；填报使用 `fill`，基础配置使用 `manage`。写入沿用托管事务、审计和乐观锁，未知结果不重放。xlsx 由服务端生成经授权后沙箱下载，尚未登记为业务原件附件；清单声明 `ui.downloads`。部署结果见 [生产发布记录](production-deployment-runbook.md)。构建及限制见 [慧策通应用说明](../applications/huicetong/README.md)，后续流程见 [应用规划](huicetong-app-plan.md)。

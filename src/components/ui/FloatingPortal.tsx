@@ -61,7 +61,7 @@ export function calculateFloatingPosition(
 
 export function resolveFloatingPortalHost(anchor: HTMLElement | null): HTMLElement | null {
   if (typeof document === 'undefined') return null;
-  return anchor?.closest<HTMLDialogElement>('dialog[open]') ?? document.body;
+  return anchor?.closest<HTMLElement>('dialog[open], [popover]') ?? document.body;
 }
 
 export interface FloatingPortalProps {
