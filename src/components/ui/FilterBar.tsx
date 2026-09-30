@@ -40,6 +40,8 @@ export interface ActionMenuItem {
   onClick?: () => void;
   danger?: boolean;
   highlight?: boolean;
+  disabled?: boolean;
+  title?: string;
 }
 
 export interface FilterBarProps {
@@ -464,7 +466,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     type="button"
                     className={`afc-filter-menu-item ${action.danger ? "is-danger" : ""} ${action.highlight ? "is-highlight" : ""}`}
                     role="menuitem"
+                    disabled={action.disabled}
+                    title={action.title}
                     onClick={() => {
+                      if (action.disabled) return;
                       setIsMenuOpen(false);
                       action.onClick?.();
                     }}

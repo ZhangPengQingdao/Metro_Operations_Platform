@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {PlatformMaintenance} from '../updates/maintenance.js';
 import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from './platform-grants.js';
 import {previewVerifiedPackage} from './preview.js';
@@ -29,6 +29,7 @@ import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {EmployeeAppAccess} from '../employee/access.js';
 import {AppCapabilityPublication} from '../capabilities/publication.js';
 import {EmployeeAppSessions} from '../employee/app-session.js';
+import {readEmployeeNavigation} from '../employee/navigation.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
 import {buildSandboxDocument} from '../sandbox/document.js';
@@ -127,6 +128,14 @@ export async function createAppManagement(configFile:string,origin:string){
   });
  }
 
+ async function employeeNavigation(admission:Awaited<ReturnType<typeof admitEmployee>>){
+  const manifest=admission.installation.manifest;
+  if(!manifest.routes.some(route=>route.permission))return readEmployeeNavigation(manifest,async()=>false);
+  const requestId=randomUUID();
+  const context=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId:manifest.id},requestId,traceId:requestId});
+  return readEmployeeNavigation(manifest,permission=>apiAuthorization.authorize(context,permission));
+ }
+
  if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN,3103,'0.0.0.0',async(appId,hash)=>{
   const current=await registry.runtimeSnapshot(appId);
   if(!current.enabled||frontendRunMode(current)!=='trusted')return null;
@@ -184,8 +193,10 @@ export async function createAppManagement(configFile:string,origin:string){
    for(let index=0;index<candidates.length;index+=4){
     const group=await Promise.all(candidates.slice(index,index+4).map(async({appId})=>{
      try{const admitted=await admitEmployee(appId,async()=>identity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;
+      const navigation=await employeeNavigation(admitted);
+      if(!navigation.routes.length)return null;
       const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);
-      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,navigation:m.navigation,routes:m.routes,runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
+      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,...navigation,runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
      }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
     }));
     for(const app of group)if(app)applications.push(app);
@@ -195,7 +206,7 @@ export async function createAppManagement(configFile:string,origin:string){
   },
   async employeeUi(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const first=await admitEmployee(appId,resolveIdentity),m=first.installation.manifest;
-   if(m.ui.mode!=='sandbox'||!m.routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
+   if(m.ui.mode!=='sandbox'||!(await employeeNavigation(first)).routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
    const canonical=new URL(origin);if(!resources&&(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname)))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
    const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);if(!artifact)throw new AppManagementError('APP_UI_ARTIFACT_MISSING');
    const bytes=await readArtifact(m,artifact.id,artifact.bytes);
@@ -208,7 +219,7 @@ export async function createAppManagement(configFile:string,origin:string){
   },
   async employeeUiAdmission(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
-   if(admission.installation.manifest.ui.mode!=='sandbox'||!admission.installation.manifest.routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
+   if(admission.installation.manifest.ui.mode!=='sandbox'||!(await employeeNavigation(admission)).routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
    return {admissionKey:employeeAdmissionKey(admission)};
   },
   async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown,admissionKey:string){

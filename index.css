@@ -1152,7 +1152,11 @@
         text-align: left;
         transition: background-color .14s ease, color .14s ease;
     }
-    .afc-filter-menu-item:hover {
+    .afc-filter-menu-item:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+    }
+    .afc-filter-menu-item:hover:not(:disabled) {
         background: var(--afc-color-neutral-soft);
         color: var(--afc-color-primary-hover);
     }
@@ -1161,13 +1165,13 @@
         background: var(--afc-color-primary-soft);
         font-weight: 650;
     }
-    .afc-filter-menu-item.is-highlight:hover {
+    .afc-filter-menu-item.is-highlight:hover:not(:disabled) {
         background: var(--afc-control-hover, #e9ecf0);
     }
     .afc-filter-menu-item.is-danger {
         color: var(--afc-color-danger);
     }
-    .afc-filter-menu-item.is-danger:hover {
+    .afc-filter-menu-item.is-danger:hover:not(:disabled) {
         background: var(--afc-color-danger-soft);
     }
 
