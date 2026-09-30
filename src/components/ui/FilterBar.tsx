@@ -11,6 +11,7 @@ import {
 import { Button, IconButton } from "./Button";
 import { Tag } from "./Tag";
 import { DatePicker } from "./DatePicker";
+import { FloatingPortal } from "./FloatingPortal";
 
 export interface FilterOption {
   id: string;
@@ -23,6 +24,7 @@ export interface FilterGroup {
   options: FilterOption[];
   isMulti?: boolean;
   allowAll?: boolean;
+  renderOptions?: (selected: string[], onChange: (selected: string[]) => void) => React.ReactNode;
 }
 
 export interface FilterState {
@@ -94,8 +96,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   const [tempFilters, setTempFilters] = useState<FilterState>(activeFilters);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
-  const menuPopoverRef = useRef<HTMLDivElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -114,32 +114,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       searchInputRef.current.focus();
     }
   }, [isSearchOpen]);
-
-  // Click outside listener for filter and menu popovers
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        isFilterOpen &&
-        filterPopoverRef.current &&
-        !filterPopoverRef.current.contains(event.target as Node) &&
-        filterButtonRef.current &&
-        !filterButtonRef.current.contains(event.target as Node)
-      ) {
-        setIsFilterOpen(false);
-      }
-      if (
-        isMenuOpen &&
-        menuPopoverRef.current &&
-        !menuPopoverRef.current.contains(event.target as Node) &&
-        menuButtonRef.current &&
-        !menuButtonRef.current.contains(event.target as Node)
-      ) {
-        setIsMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isFilterOpen, isMenuOpen]);
 
   // Count active filter conditions
   const activeCount = React.useMemo(() => {
@@ -312,7 +286,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             className={`afc-filter-icon-btn ${isFilterOpen || activeCount > 0 ? "is-active" : ""}`}
             title="筛选条件"
             aria-label="筛选条件"
-            onClick={() => setIsFilterOpen((v) => !v)}
+            aria-haspopup="dialog"
+            aria-expanded={isFilterOpen}
+            onClick={() => {
+              if (!isFilterOpen) setTempFilters(activeFilters);
+              setIsMenuOpen(false);
+              setIsFilterOpen((v) => !v);
+            }}
           >
             <Funnel size={18} weight={activeCount > 0 ? "fill" : "regular"} />
             {activeCount > 0 && (
@@ -321,12 +301,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </button>
 
           {/* Filter Floating Card */}
-          {isFilterOpen && (
-            <div
-              ref={filterPopoverRef}
+          <FloatingPortal
+              open={isFilterOpen}
+              anchorRef={filterButtonRef}
+              onDismiss={() => setIsFilterOpen(false)}
+              width={420}
+              align="end"
               className="afc-filter-popover"
-              role="dialog"
-              aria-label="添加筛选条件"
+              ariaLabel="添加筛选条件"
             >
               <div className="flex items-center justify-between pb-3 mb-3">
                 <h3 className="font-bold text-[var(--afc-color-ink)] text-sm md:text-base">添加筛选条件</h3>
@@ -341,7 +323,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 </IconButton>
               </div>
 
-              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="afc-filter-popover__body space-y-4 pr-1">
                 {/* Time Range Section */}
                 {showDateRange && <div>
                   <div className="text-xs font-bold text-[var(--afc-color-muted)] mb-2">按时间范围</div>
@@ -380,7 +362,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   return (
                     <div key={group.id} className="pt-2">
                       <div className="text-xs font-bold text-[var(--afc-color-muted)] mb-2">{group.title}</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {group.renderOptions ? group.renderOptions(selected, (value) => {
+                        setTempFilters((prev) => ({ ...prev, selectedOptions: { ...prev.selectedOptions, [group.id]: value } }));
+                      }) : <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                         {/* "全部" Option */}
                         {group.allowAll !== false && <label className="flex items-center gap-2 text-xs text-[var(--afc-color-ink)] cursor-pointer select-none">
                           <input
@@ -410,7 +394,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                             </label>
                           );
                         })}
-                      </div>
+                      </div>}
                     </div>
                   );
                 })}
@@ -444,8 +428,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   </Button>
                 </div>
               </div>
-            </div>
-          )}
+            </FloatingPortal>
         </div>}
 
         {/* MORE ACTIONS DROPDOWN */}
@@ -457,18 +440,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className={`afc-filter-pill-btn ${isMenuOpen ? "is-active" : ""}`}
               title="更多功能"
               aria-label="更多功能"
-              onClick={() => setIsMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={isMenuOpen}
+              onClick={() => { setIsFilterOpen(false); setIsMenuOpen((v) => !v); }}
             >
               <List size={18} />
               <CaretDown size={12} weight="bold" />
             </button>
 
-            {isMenuOpen && (
-              <div
-                ref={menuPopoverRef}
+            <FloatingPortal
+                open={isMenuOpen}
+                anchorRef={menuButtonRef}
+                onDismiss={() => setIsMenuOpen(false)}
+                width={220}
+                align="end"
                 className="afc-filter-menu-popover"
-                role="menu"
+                ariaLabel="更多功能"
               >
+                <div role="menu">
                 {moreActions.map((action) => (
                   <button
                     key={action.id}
@@ -484,8 +473,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     <span className={action.highlight ? "font-bold text-[var(--afc-color-primary-hover)]" : ""}>{action.label}</span>
                   </button>
                 ))}
-              </div>
-            )}
+                </div>
+              </FloatingPortal>
           </div>
         )}
 

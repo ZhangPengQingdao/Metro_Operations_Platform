@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { calculateFloatingPosition } from '../../src/components/ui/FloatingPortal.tsx';
+import { calculateFloatingPosition, resolveFloatingPortalHost } from '../../src/components/ui/FloatingPortal.tsx';
 
 const anchor = {
   top: 100,
@@ -58,21 +58,38 @@ test('FloatingPortal flips above and clamps horizontally inside the viewport', (
   });
 });
 
-test('pickers use one native top-layer portal without timer or in-container popover positioning', async () => {
-  const [portal, datePicker, timePicker, tagPicker] = await Promise.all([
+test('nested pickers stay inside their containing popover or modal', () => {
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
+  const body={} as HTMLElement,container={} as HTMLElement;
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{body}});
+  try {
+    const nested={closest(selector:string){assert.equal(selector,'dialog[open], [popover]');return container;}} as HTMLElement;
+    const outside={closest(){return null;}} as unknown as HTMLElement;
+    assert.equal(resolveFloatingPortalHost(nested),container);
+    assert.equal(resolveFloatingPortalHost(outside),body);
+    assert.equal(resolveFloatingPortalHost(null),body);
+  } finally {
+    if(previous)Object.defineProperty(globalThis,'document',previous);
+    else Reflect.deleteProperty(globalThis,'document');
+  }
+});
+
+test('pickers and query menus use one native top-layer portal without timer or in-container popover positioning', async () => {
+  const [portal, datePicker, timePicker, tagPicker, filterBar] = await Promise.all([
     readFile(new URL('../../src/components/ui/FloatingPortal.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../../src/components/ui/DatePicker.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../../src/components/ui/TimePicker.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../../src/components/ui/TagDropdownPicker.tsx', import.meta.url), 'utf8')
+    readFile(new URL('../../src/components/ui/TagDropdownPicker.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../src/components/ui/FilterBar.tsx', import.meta.url), 'utf8')
   ]);
 
   assert.match(portal, /createPortal/);
   assert.match(portal, /showPopover\(\)/);
-  assert.match(portal, /closest<HTMLDialogElement>\('dialog\[open\]'\)/);
+  assert.match(portal, /closest<HTMLElement>\('dialog\[open\], \[popover\]'\)/);
   assert.match(portal, /ResizeObserver/);
   assert.match(portal, /addEventListener\('scroll', updatePosition, true\)/);
 
-  for (const source of [datePicker, timePicker, tagPicker]) {
+  for (const source of [datePicker, timePicker, tagPicker, filterBar]) {
     assert.match(source, /<FloatingPortal/);
     assert.doesNotMatch(source, /className=["`][^"`]*\babsolute\b[^"`]*z-\[99999\]/);
   }

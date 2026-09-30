@@ -19,6 +19,10 @@
 ```
 
 - `QueryList` 的 `query` 接受 `FilterBar` 参数；`actions` 放新增等操作。纯表格仍用 `DataList` 的可选 `toolbar`。
+- 默认 `compact` 布局的搜索收起，搜索、筛选、功能菜单与新增操作同排；`spread` 显式启用常驻搜索。月份等条件放入 `filterGroups`，必选上下文使用 `isMulti: false` 和 `allowAll: false`，重置时由页面保留必选上下文。
+- 非选项式条件可用 `FilterGroup.renderOptions(selected, onChange)` 渲染共享控件（如月份输入）；`onChange` 仅更新筛选草稿，仍由统一确定/取消控制生效，页面在 `onApplyFilters` 校验实际值。
+- 筛选与功能菜单复用 `FloatingPortal`，限制在当前文档视口内；筛选正文独立滚动，底部确认和重置始终可见。取消后再次打开恢复已生效条件。日期等嵌套浮层挂在最近的弹窗或浮层下，选择日期不会被外层误判为点击外部。
+- 表单 `DropdownSelect` 的触发器、选项与弹层使用共享主题变量，支持宿主的即时浅色/暗色切换。
 - `notice` 为可选状态内容；`pagination` 支持分页组件或特定已有翻页操作。
 - 操作列始终是最后一列，默认固定右侧；没有操作列时传 `pinActions={false}`（如审计列表）。
 - `TableActions` 统一行内间距；`TableActionButton` 使用 SVG 图标和底部文字，继承禁用、点击及可访问属性。

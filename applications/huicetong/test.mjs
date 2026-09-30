@@ -131,6 +131,30 @@ async function prepared(){
 }
 const revision=f=>f.tables.get('plan_cycles').get(f.cycleId).revision;
 async function bind(f){return f.service['binding-upsert']({id:randomUUID(),requestId:randomUUID(),organizationId:f.department,categoryId:f.parent,personId:f.person,personOrganizationId:f.team},f.employee);}
+
+test('binding handler accepts its target person but keeps trusted actor and permission checks',async()=>{
+ const f=await prepared(),handlers=createHuicetongHandlers(f.gateway);
+ const payload={id:randomUUID(),requestId:randomUUID(),organizationId:f.department,categoryId:f.parent,personId:f.colleague,personOrganizationId:f.otherTeam};
+ const handler=handlers.get('binding-upsert');
+ assert.equal((await handler.execute(payload,undefined,f.employee)).ok,true);
+ assert.equal(f.tables.get('review_bindings').get(payload.id).person_id,f.colleague);
+ assert.equal([...f.tables.get('audit_events').values()].find(row=>row.entity_id===payload.id).actor_id,f.person);
+ const writes=f.writes.length;
+ const readOnly={...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>grant.permission==='app.huicetong.read')}};
+ for(const [input,actor,code] of [
+  [{...payload,id:randomUUID()},readOnly,'ACCESS_DENIED'],
+  [{...payload,id:randomUUID(),organizationId:f.otherDepartment},f.employee,'ACCESS_DENIED'],
+  [{...payload,id:randomUUID(),personId:f.outside,personOrganizationId:f.otherDepartment},f.employee,'PERSON_INVALID'],
+  [{...payload,employee:{personId:f.colleague}},f.employee,'INVALID_INPUT'],
+  [{...payload,businessAuthorization:{}},f.employee,'INVALID_INPUT']
+ ]){
+  const response=await handler.execute(input,undefined,actor);
+  assert.equal(response.error.code,code);assert.equal(response.error.writeOutcome,'not_started');
+ }
+ assert.equal((await handlers.get('category-upsert').execute({personId:f.colleague},undefined,f.employee)).error.code,'INVALID_INPUT');
+ assert.equal(f.writes.length,writes);
+});
+
 async function locked(f){
  await bind(f);await f.service['item-submit']({id:f.itemId,requestId:randomUUID(),expectedVersion:1},f.employee);
  await f.service['cycle-submit-review']({cycleId:f.cycleId,requestId:randomUUID(),expectedRevision:revision(f)},f.employee);

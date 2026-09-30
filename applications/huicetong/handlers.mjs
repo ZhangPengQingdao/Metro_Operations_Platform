@@ -5,7 +5,8 @@ export function createHuicetongHandlers(gateway){
  const service=createHuicetongService(gateway);
  return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,async execute(payload,signal,employee){
   try{
-   if(!payload||typeof payload!=='object'||Array.isArray(payload)||['employee','personId','permissions','businessAuthorization'].some(key=>key in payload))throw Error('INVALID_INPUT');
+   // A binding's personId is the target person, never the authenticated actor.
+   if(!payload||typeof payload!=='object'||Array.isArray(payload)||['employee','permissions','businessAuthorization'].some(key=>key in payload)||name!=='binding-upsert'&&'personId' in payload)throw Error('INVALID_INPUT');
    return {ok:true,result:await execute(payload,employee,signal)};
   }catch(error){const code=definitive.has(error.message)?error.message:reads.has(name)?'READ_FAILED':'OPERATION_UNCONFIRMED';return {ok:false,error:{code,writeOutcome:definitive.has(code)||reads.has(name)?'not_started':'unknown',...(code==='BINDING_MISSING'?{details:error.details}: {})}};}
  }}]));
