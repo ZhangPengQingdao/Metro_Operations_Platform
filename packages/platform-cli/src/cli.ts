@@ -20,7 +20,7 @@ try{
   const json=JSON.stringify(value);if(Buffer.byteLength(json)>92*1024*1024)throw new AppPackageError('INSTALL_PACKAGE_TOO_LARGE');
   await writeFile(resolve(args[2]),args[2].endsWith('.gz')?gzipSync(json):json,{flag:'wx',mode:0o600});result={appId:value.manifest.id,version:value.manifest.version,requestId,output:resolve(args[2])};
  }else{
-  console.error('Usage: mop-app create <new-dir> <app-id> <trusted|sandbox|backend> <publisher-id> | validate <built-dir> | pack <built-dir> <new-dir> | sign <built-dir> <key-id> <private-key-file> <new-signature-file> | verify <built-dir> <signature-file> <key-id> <publisher-id> <public-key-file> | export-upload <built-dir> <signature-file> <new-output.json|new-output.mop.gz>');process.exitCode=2;
+  console.error('Usage: mop-app create <new-dir> <app-id> <standard|sandbox|backend|trusted> <publisher-id> | validate <built-dir> | pack <built-dir> <new-dir> | sign <built-dir> <key-id> <private-key-file> <new-signature-file> | verify <built-dir> <signature-file> <key-id> <publisher-id> <public-key-file> | export-upload <built-dir> <signature-file> <new-output.json|new-output.mop.gz>');process.exitCode=2;
  }
  if(result)console.log(JSON.stringify({ok:true,result}));
 }catch(error){console.error(JSON.stringify({ok:false,code:error instanceof AppPackageError?error.code:'PACKAGE_IO_FAILED'}));process.exitCode=1;}

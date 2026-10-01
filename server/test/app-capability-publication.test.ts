@@ -50,6 +50,9 @@ test('owner publication survives metadata upgrades but closes when the API contr
   assert.equal(await publication.isPublished(updated,'create'),true);
   assert.deepEqual((await publication.catalog()).publications,[{appId:'provider',apiId:'create'}]);
   assert.equal((await publication.state(manifest.id,owner)).capabilities[0].enabled,true);
+  const documented=structuredClone(updated);
+  documented.manifest.api[0].expose!.documentation={description:'Lookup',input:{type:'object'},output:{type:'object'},examples:[{title:'Lookup',params:{},result:{}}],errors:[]};
+  assert.equal(await publication.isPublished(documented,'create'),false,'new schemas require owner reconfirmation');
   await pg.query("UPDATE platform_app_installations SET record=jsonb_set(record,'{manifest,api,0,path}',to_jsonb('/create-v2'::text)) WHERE app_id='provider'");
   const changed={...updated,manifest:{...updated.manifest,api:updated.manifest.api.map(api=>api.id==='create'?{...api,path:'/create-v2'}:api)}};
   assert.equal(await publication.isPublished(changed,'create'),false);
@@ -68,5 +71,17 @@ test('owner publication survives metadata upgrades but closes when the API contr
   await pg.query("UPDATE platform_people SET employment_status='inactive' WHERE id=$1",[other]);
   assert.equal(await publication.isPublished(changed,'create'),false);
   assert.deepEqual((await publication.catalog()).publications,[]);
+  await pg.query("UPDATE platform_people SET employment_status='active' WHERE id=$1",[other]);
+  const withSchema=structuredClone(changed);
+  withSchema.manifest.api[0].expose!.documentation={description:'Lookup',input:{type:'object',properties:{description:{type:'string',description:'Business description'}}},output:{type:'object'},examples:[{title:'Lookup',params:{},result:{}}],errors:[]};
+  await pg.query("UPDATE platform_app_installations SET record=jsonb_set(record,'{manifest}',$1::jsonb) WHERE app_id='provider'",[JSON.stringify(withSchema.manifest)]);
+  await publication.set(manifest.id,other,{apiId:'create',enabled:true,revision:null});
+  assert.equal(await publication.isPublished(withSchema,'create'),true);
+  const proseOnly=structuredClone(withSchema);
+  proseOnly.manifest.api[0].expose!.documentation!.input.description='More guidance';
+  proseOnly.manifest.api[0].expose!.documentation!.input.properties!.description.description='Revised guidance';
+  assert.equal(await publication.isPublished(proseOnly,'create'),true,'schema prose does not revoke publication');
+  proseOnly.manifest.api[0].expose!.documentation!.input.properties!.description.type='number';
+  assert.equal(await publication.isPublished(proseOnly,'create'),false,'a property named description still contributes its constraints');
  }finally{await pg.close();}
 });

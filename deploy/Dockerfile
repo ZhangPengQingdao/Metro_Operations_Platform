@@ -24,6 +24,7 @@ WORKDIR /opt/mop/server
 COPY --from=build /build/server/package*.json ./
 COPY --from=production-dependencies /deps/node_modules ./node_modules
 COPY --from=build /build/server/dist ./dist
+COPY --from=build /build/server/developer-assets ./developer-assets
 COPY --from=build /build/packages/platform-sdk/package.json /opt/mop/packages/platform-sdk/package.json
 COPY --from=build /build/packages/platform-sdk/dist /opt/mop/packages/platform-sdk/dist
 RUN mkdir -p /opt/mop/node_modules/@metro && ln -s /opt/mop/packages/platform-sdk /opt/mop/node_modules/@metro/platform-sdk

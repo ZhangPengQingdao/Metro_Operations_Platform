@@ -55,3 +55,7 @@ await capabilities.call('faults', 'create', confirmedPayload);
 平台在执行前后核对调用方与提供方仍启用、版本依赖仍满足、目标 API 仍由负责人发布、平台服务授权仍有效，以及员工在目标应用的业务授权。目标 API 沿用原有业务数据范围校验。关闭接口会返回 `APP_CAPABILITY_NOT_PUBLISHED`；员工角色或数据范围不足时返回 `TARGET_APP_ACCESS_DENIED`，调用方应把原因显示给员工，在弹窗中提示其联系目标应用负责人核对角色与范围。审计记录来源应用、目标应用和 API ID，不记录业务参数。Gateway 和目标后端均有超时、并发与负载上限；失败的写入结果可能是 `writeOutcome: 'unknown'`，调用方不得自动重试，应由业务记录查询或人工核对。
 
 部署前运行数据库迁移 `app-gateway-capability-invoke-permission` 和 `app-capability-publication-expand`，分别注册 `platform.apps.invoke` 权限及负责人开放状态表。后续 `app-capability-publication-contract-digest` 仅迁移当前安装清单仍有效的开放记录，避免纯展示变更误关闭接口；不会开放原来已关闭或已失效的接口。提供方及调用方都须分别完成签名、版本审批、安装、启用和业务授权配置；提供方负责人决定新接口是否开放。
+
+## 开发者中心与契约（0.24.0）
+
+目录默认展示当前已开放接口，可勾选未开放候选。`expose.documentation` 可提供输入输出结构、示例和错误说明；签名校验保留该字段。缺少说明的旧包明确标注，不推测参数。结构变化要求负责人重新开放，旧包原指纹保持兼容。详见 [开放接口规范](developer/open-interfaces.md)。下载目录是时间点快照，运行时重新校验授权。

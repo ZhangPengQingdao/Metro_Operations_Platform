@@ -101,7 +101,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
               <button onClick={() => openPanel('profile')}><PlatformIcon name="userCircle" size={18}/>个人资料</button>{mode==='admin'&&<button onClick={() => openPanel('settings')}><PlatformIcon name="cog" size={18}/>系统设置</button>}<button onClick={() => openPanel('preferences')}><PlatformIcon name="sun" size={18}/>外观偏好</button><hr/><button disabled={loggingOut} onClick={()=>{setAccountOpen(false);setError('');setConfirmLogout(true);}}><PlatformIcon name="login" size={18}/>{loggingOut ? '正在退出…' : '退出登录'}</button>{error && <p role="alert" className="afc-error">{error}</p>}
             </div>}
           </div>
-          <span className="afc-notification-trigger"><IconButton size="sm" type="button" label={notificationCount>0?`通知，${notificationCount} 项待签字`:'通知'} onClick={() => openPanel('notifications')}><PlatformIcon name="bell" size={20}/></IconButton>{notificationCount>0&&<span className="afc-notification-badge" aria-hidden="true">{notificationCount>99?'99+':notificationCount}</span>}</span>
+          <span className="afc-notification-trigger"><IconButton size="sm" type="button" label={notificationCount>0?`通知，${notificationCount} 项未读或待处理通知`:'通知'} onClick={() => openPanel('notifications')}><PlatformIcon name="bell" size={20}/></IconButton>{notificationCount>0&&<span className="afc-notification-badge" aria-hidden="true">{notificationCount>99?'99+':notificationCount}</span>}</span>
         </div>
       </div>
 

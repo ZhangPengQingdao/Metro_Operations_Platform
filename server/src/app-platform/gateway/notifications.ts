@@ -3,12 +3,19 @@ import {runDatabaseTransaction,type ConnectablePool,type QueryableClient} from '
 import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
 import {createNotificationService,createPostgresNotificationRepository} from '../../platform/notifications/index.js';
 import {GatewayError,type AppGatewayOperation,type GatewayActorContext} from './model.js';
+import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 
 const uuid=z.string().uuid();
 const create=z.object({
  id:uuid,entityId:uuid,personId:uuid,title:z.string().trim().min(1).max(160),body:z.string().trim().min(1).max(1000)
 }).strict();
 const cancel=z.object({id:uuid}).strict();
+const publish=z.object({
+ id:uuid,entityType:z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),entityId:uuid,
+ personIds:z.array(uuid).min(1).max(50).refine(ids=>new Set(ids).size===ids.length),
+ title:z.string().trim().min(1).max(160),body:z.string().trim().min(1).max(1000),
+ routeId:z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(64).optional(),
+}).strict();
 
 /** Applications can create and retire only their own, person-targeted in-app reminders. */
 export function createNotificationGatewayOperations(pool:ConnectablePool&QueryableClient):AppGatewayOperation[]{
@@ -48,10 +55,32 @@ export function createNotificationGatewayOperations(pool:ConnectablePool&Queryab
     const client=await pool.connect();
     try{return await runDatabaseTransaction(client,async()=>{
      const repo=createPostgresNotificationRepository(client),existing=await repo.findNotificationById(p.id);
-     if(!existing||existing.sourceAppId!==appId||existing.category!=='signature')throw new GatewayError('ACCESS_DENIED',403);
+     if(!existing||existing.sourceAppId!==appId||!['signature','application'].includes(existing.category??''))throw new GatewayError('ACCESS_DENIED',403);
      await service(client).cancelNotification(context,{notificationId:p.id});
      if(signal.aborted)throw new GatewayError('ABORTED');return {cancelled:true};
     });}finally{client.release();}
-   },validateResult:value=>!!value&&typeof value==='object'&&(value as {cancelled?:unknown}).cancelled===true}
+   },validateResult:value=>!!value&&typeof value==='object'&&(value as {cancelled?:unknown}).cancelled===true},
+  {name:'platform.notifications.publish',permissionCode:'platform.notifications.create',mode:'write',
+   validateParams:value=>publish.safeParse(value).success,resolveResources:async context=>{bound(context);return [{}];},
+   async execute(context,value,signal){
+    const appId=bound(context),p=publish.parse(value);
+    if(signal.aborted)throw new GatewayError('ABORTED');
+    const client=await pool.connect();
+    try{return await runDatabaseTransaction(client,async()=>{
+     const found=await client.query('SELECT record FROM platform_app_installations WHERE app_id=$1',[appId]) as {rows:{record:{enabled:boolean;manifest:AppManifest}}[]};
+     const installation=found.rows[0]?.record;
+     if(!installation?.enabled)throw new GatewayError('ACCESS_DENIED',403);
+     const route=p.routeId?installation.manifest.routes.find(route=>route.id===p.routeId):undefined;
+     if(p.routeId&&(!route||installation.manifest.ui.mode==='none'))throw new GatewayError('INVALID_PARAMS');
+     const created=await service(client).createNotification(context,{
+      id:p.id,source:{appId,entityType:p.entityType,entityId:p.entityId},
+      notificationKey:`application:${p.id}`,idempotencyKey:p.id,category:'application',readBehavior:'mark_read',
+      display:{title:p.title,body:p.body,severity:'normal',sourceLabel:installation.manifest.name},
+      navigation:route?{href:`/employee/app/${appId}${route.path==='/'?'':route.path}`,routeName:route.id,params:{}}:null,
+      recipients:p.personIds.map(personId=>({recipientType:'person' as const,recipientId:personId})),channels:['in_app'],
+     });
+     if(signal.aborted)throw new GatewayError('ABORTED');return {id:created.id};
+    });}finally{client.release();}
+   },validateResult:value=>!!value&&typeof value==='object'&&uuid.safeParse((value as {id?:unknown}).id).success}
  ];
 }

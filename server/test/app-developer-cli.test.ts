@@ -230,3 +230,17 @@ test('install preparation stages signed bytes only after admin checks and cleans
  const service={...context,actorType:'service'} as typeof context;
  await assert.rejects(prepareAppInstallation({...options,context:service}),/INSTALL_ACCESS_DENIED/);
 }));
+
+test('standard app scaffold builds with real public directory capability and no platform internals',async()=>{
+ const {createAppProject}=await import('../src/app-platform/developer/scaffold.ts');
+ const root=await mkdtemp(join(tmpdir(),'mop-standard-app-'));
+ try{
+  const project=join(root,'application');await createAppProject(project,'team-directory','standard','my-publisher');
+  await symlink(fileURLToPath(new URL('../../node_modules',import.meta.url)),join(project,'node_modules'),'dir');
+  const tests=spawnSync(process.execPath,['--test','test.mjs'],{cwd:project,encoding:'utf8'});assert.equal(tests.status,0,tests.stdout+tests.stderr);
+  const build=spawnSync(process.execPath,['build.mjs'],{cwd:project,encoding:'utf8'});assert.equal(build.status,0,build.stderr);
+  const result=await validateAppDirectory(join(project,'dist'));assert.equal(result.manifest.id,'team-directory');assert.equal(result.manifest.publisherId,'my-publisher');
+  assert.deepEqual(result.manifest.permissions.requested,['platform.people.read']);assert.equal(result.manifest.api[0].businessPermission,'app.team-directory.read');
+  await assert.rejects(createAppProject(project,'other','standard','my-publisher'));
+ }finally{await rm(root,{recursive:true,force:true});}
+});

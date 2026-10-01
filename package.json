@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "0.23.6",
+  "version": "0.24.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build:sdk": "npm --workspace @metro/platform-sdk run build",
-    "predev": "npm run build:sdk",
-    "prebuild": "npm run build:sdk",
+    "predev": "npm run build:sdk && npm run build:cli && npm run build:developer",
+    "prebuild": "npm run build:sdk && npm run build:cli && npm run build:developer",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1",
@@ -19,12 +19,13 @@
     "version:bump": "node scripts/version.mjs",
     "build:samples": "node examples/app-sdk/build.mjs && node examples/backend-sdk/build.mjs",
     "pretest": "npm run build:sdk && npm run build:samples && npm run build:cli",
-    "build:cli": "npm --workspace @metro/platform-cli run build"
+    "build:cli": "npm --workspace @metro/platform-cli run build",
+    "build:developer": "node scripts/build-developer-assets.mjs"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.2.9",
-    "@metro/platform-sdk": "0.23.6",
+    "@metro/platform-sdk": "0.24.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/ext-apps": "2.0.0",

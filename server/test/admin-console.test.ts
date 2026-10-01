@@ -24,6 +24,8 @@ test('real console authenticates independent accounts, rejects CSRF and writes m
  const app=Fastify();await app.register(cookie);registerAdminIdentityRoutes(app,{origin:'https://platform.example',service:identity});await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool});
  try{
   assert.equal((await app.inject({url:'/api/admin/apps'})).statusCode,401);
+  assert.equal((await app.inject({url:'/api/admin/developer/downloads'})).statusCode,401);
+  assert.equal((await app.inject({url:'/api/admin/developer/downloads/sdk'})).statusCode,401);
   const login=await app.inject({method:'POST',url:'/api/admin/auth/login',headers:{origin:'https://platform.example'},payload:{username:'console.admin',password:'Administrator-test-123'}});assert.equal(login.statusCode,200);
   const cookies=String(login.headers['set-cookie']).split(';')[0];const headers={cookie:cookies,origin:'https://platform.example'};
   for(const path of ['/apps/sample/install-recover','/apps/sample/recover','/apps/sample/version-recover','/apps/sample/upgrade','/install-preview','/install-approve','/version-approval/revoke','/install']){

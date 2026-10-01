@@ -15,3 +15,5 @@ dist/
 __pycache__/
 *.pyc
 /release-assets/
+
+/server/developer-assets/

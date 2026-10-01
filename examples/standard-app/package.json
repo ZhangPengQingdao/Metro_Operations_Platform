@@ -1,0 +1,18 @@
+{
+  "name": "metro-standard-app-example",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test.mjs"
+  },
+  "dependencies": {
+    "@metro/platform-sdk": "0.24.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

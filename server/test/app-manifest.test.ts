@@ -200,3 +200,12 @@ test('signed application icons accept bounded SVG paths but no markup or externa
   assert.equal(validateAppManifest({...manifest,icon}).ok,false);
  }
 });
+
+
+test('optional public API documentation stays signed and validates bounded examples',()=>{
+ const m=fixture(),api=m.api[0];api.businessPermission=api.permission;
+ api.expose={contractVersion:'1.0',mode:'write',documentation:{description:'Borrow a tool',input:{type:'object',properties:{id:{type:'string'}},required:['id'],additionalProperties:false},output:{type:'boolean'},examples:[{title:'Borrow',params:{id:'tool'},result:true}],errors:[]}};
+ const parsed=validateAppManifest(m);assert.equal(parsed.ok,true);if(parsed.ok)assert.deepEqual(parsed.manifest.api[0].expose,api.expose);
+ api.expose.documentation!.examples[0].params={};assert.equal(validateAppManifest(m).ok,false);
+ delete api.expose.documentation;assert.equal(validateAppManifest(m).ok,true);
+});

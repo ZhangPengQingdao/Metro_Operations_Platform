@@ -20,6 +20,7 @@ export function appCapabilityCatalog(installations:readonly CatalogInstallation[
       permission:api.businessPermission!,
       contractVersion:api.expose!.contractVersion,
       mode:api.expose!.mode,
+      documentation:api.expose!.documentation,
       published:installation.enabled&&active.has(`${installation.appId}:${api.id}`),
     }));
     return {appId:installation.appId,name:manifest.name,version:manifest.version,enabled:installation.enabled,

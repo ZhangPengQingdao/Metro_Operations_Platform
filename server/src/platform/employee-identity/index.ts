@@ -1,3 +1,7 @@
+import {createPlatformActorContextResolver} from '../context/index.js';
+import {createAuthorizationService,createPostgresAuthorizationRepository} from '../authorization/index.js';
+import {createPostgresPeopleDirectoryRepository} from '../people/index.js';
+import {createNotificationService,createPostgresNotificationRepository} from '../notifications/index.js';
 import { passwordSchema, isPasswordCompliant } from '../../core/security/index.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';
@@ -141,9 +145,26 @@ export class EmployeeIdentityService{
  }
  async notifications(token?:string){
   const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
-  const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.navigation_ref AS navigation,n.created_at AS "createdAt",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));
+  const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.navigation_ref AS navigation,n.created_at AS "createdAt",n.read_behavior AS "readBehavior",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));
   if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   return {notifications};
+ }
+ async markNotificationRead(token:string,notificationId:string){
+  z.string().uuid().parse(notificationId);
+  return this.transaction(async db=>{
+   const account=await this.requireSelf(db,token);
+   const repo=createPostgresNotificationRepository(db),notification=await repo.findNotificationById(notificationId,'update');
+   if(!notification||notification.status!=='active'||!await repo.findRecipient(notificationId,account.person_id))throw new EmployeeIdentityError(403,'NOTIFICATION_ACCESS_DENIED');
+   if(notification.readBehavior!=='mark_read')throw new EmployeeIdentityError(409,'NOTIFICATION_STATE_BOUND');
+   const people=createPostgresPeopleDirectoryRepository(db);
+   const authorization=createAuthorizationService(createPostgresAuthorizationRepository(db),{findPerson:id=>people.findPersonById(id)});
+   const resolver=createPlatformActorContextResolver({people,authorization});
+   const context=await resolver.resolve({actorType:'person',trustedIdentity:{source:'session',userId:account.person_id},execution:{type:'platform'},requestId:randomUUID(),traceId:randomUUID()});
+   const service=createNotificationService(repo,{findPerson:id=>people.findPersonById(id),findOrganizationUnit:id=>people.findOrganizationUnitById(id),listActiveOrganizationMembers:async()=>[]});
+   const read=await service.markRead(context,{notificationId});
+   await this.requireSelf(db,token);
+   return {readAt:read.readAt};
+  });
  }
  async logout(token:string){await this.transaction(async db=>{await db.query('DELETE FROM platform_employee_sessions WHERE token_hash=$1',[digest(token)]);});}
  async resolveIdentity(token?:string){const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');return {source:'session' as const,userId:account.personId};}

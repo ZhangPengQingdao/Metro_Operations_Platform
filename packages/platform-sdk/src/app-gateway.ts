@@ -127,6 +127,9 @@ export function createPlatformSignaturesClient(gateway:Pick<ReturnType<typeof cr
 }
 export function createPlatformNotificationsClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
  return Object.freeze({
+  /** General in-app notification. Source app and navigation URL are bound by the platform. */
+  publish(params:{id:string;entityType:string;entityId:string;personIds:readonly string[];title:string;body:string;routeId?:string},signal?:AbortSignal){return gateway.invoke('platform.notifications.publish',params,signal) as Promise<{id:string}>;},
+  /** Existing signature reminder contract, retained for installed applications. */
   create(params:{id:string;entityId:string;personId:string;title:string;body:string},signal?:AbortSignal){return gateway.invoke('platform.notifications.create',params,signal);},
   cancel(id:string,signal?:AbortSignal){return gateway.invoke('platform.notifications.cancel',{id},signal);}
  });

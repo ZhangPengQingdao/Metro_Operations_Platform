@@ -5,7 +5,19 @@ import { AppPackageError } from './package.js';
 /** Reuse the independently accepted example as the sole scaffold source. */
 export async function createAppProject(destination: string, appId: string, mode: string, publisherId: string, bundled?: { templates: URL; sdkVersion: string }) {
   const identifier = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-  if (![appId, publisherId].every(value => value.length <= 64 && identifier.test(value)) || !['trusted', 'sandbox', 'backend'].includes(mode)) throw new AppPackageError('INVALID_CREATE_OPTIONS');
+  if (![appId, publisherId].every(value => value.length <= 64 && identifier.test(value)) || !['trusted', 'sandbox', 'backend', 'standard'].includes(mode)) throw new AppPackageError('INVALID_CREATE_OPTIONS');
+  if(mode==='standard') {
+    const template=new URL('standard-app/',bundled?.templates??new URL('../../../../examples/',import.meta.url));
+    const sdkVersion=bundled?.sdkVersion??JSON.parse(await readFile(new URL('../../../../packages/platform-sdk/package.json',import.meta.url),'utf8')).version;
+    const files=new Map<string,string>();
+    for(const name of ['app.json','package.json','build.mjs','handlers.mjs','entry.mjs','ui.jsx','test.mjs','.gitignore'])
+      files.set(name,await readFile(new URL(bundled&&name==='.gitignore'?'gitignore.template':name,template),'utf8'));
+    const config=JSON.parse(files.get('app.json')!);Object.assign(config,{id:appId,publisherId});files.set('app.json',JSON.stringify(config,null,2)+'\n');
+    const pkg=JSON.parse(files.get('package.json')!);pkg.name=appId;pkg.dependencies['@metro/platform-sdk']=sdkVersion;files.set('package.json',JSON.stringify(pkg,null,2)+'\n');
+    const output=resolve(destination);await mkdir(output);
+    try{for(const [name,content] of files)await writeFile(join(output,name),content,{flag:'wx'});}catch(error){await rm(output,{recursive:true,force:true});throw error;}
+    return {appId,mode,publisherId};
+  }
   const template = new URL(mode==='backend'?'backend-sdk/':'app-sdk/', bundled?.templates ?? new URL('../../../../examples/', import.meta.url));
   const files = new Map<string, string>();
   for (const path of ['app.mjs', 'test.mjs', 'build.mjs', 'package.json', '.gitignore', ...(mode==='backend'?['entry.mjs','config.mjs']:[`${mode}/entry.mjs`])]) {
