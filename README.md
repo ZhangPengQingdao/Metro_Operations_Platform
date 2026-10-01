@@ -1,6 +1,6 @@
 # 运管开放平台
 
-Metro Operations Platform · 0.23.6
+Metro Operations Platform · 0.24.0
 
 独立的运维应用平台，提供管理员控制台、组织/人员/车站/设备目录、授权审计、模型配置、应用签名安装更新和隔离运行基础。业务功能以独立应用接入。
 
@@ -55,3 +55,5 @@ npm run version:check
 SDK 位于 `packages/platform-sdk`，独立打包工具位于 `packages/platform-cli`，共享组件位于 `src/components/ui`。源码、数据及启动流程不依赖旧仓库。
 
 员工自助注册、组织选择与管理员审核见 [员工注册](docs/employee-registration.md)。
+
+开发应用请从 [开发者指南](docs/developer/start.md) 开始；管理端开发者中心提供公开 SDK 参考、实时应用开放接口和版本化 SDK/CLI、标准示例、文档与 Agent Skill 下载。

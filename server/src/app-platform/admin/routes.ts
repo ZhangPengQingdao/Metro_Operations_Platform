@@ -1,3 +1,4 @@
+import {registerDeveloperDownloads} from './developer-downloads.js';
 import {AppBusinessAuthorization} from '../business-authorization/service.js';
 import {AppCapabilityPublication} from '../capabilities/publication.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
@@ -97,6 +98,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.set(c,req.params.appId,req.body)));
   scoped.get<{Params:{personId:string}}>('/employee-roles/:personId',async req=>withRoles(req,(s,c)=>s.assignment(c,req.params.personId)));
   scoped.put('/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.assign(c,req.body)));
+  registerDeveloperDownloads(scoped);
   await registerAdminAiRoutes(scoped,options.identity);
   scoped.get('/data/resources',async()=>({resources:adminDataResources()}));
   scoped.get('/data/line-stations',async req=>withData(req,(service,context)=>service.stationDirectory(context.administrator,req.query)));

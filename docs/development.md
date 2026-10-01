@@ -16,3 +16,11 @@
 运行 `npm test` 会先构建 SDK 和测试示例，然后运行平台测试。依赖显式 Docker/PostgreSQL 测试环境的项目默认跳过；这不等于生产验收。为 Docker 测试显式设置 `AFC_DOCKER_TEST_SOCKET`、`AFC_DOCKER_TEST_IMAGE`（digest）及 `AFC_DOCKER_TEST_ROOT`（Engine 可见目录），不得连接生产 Docker。
 
 配置、私钥、应用包、数据库和日志保存在忽略的本地目录。禁止提交 `.env`、`runtime/`、`dist/` 和上传数据。
+
+## 开发者资料维护
+
+开发者中心入口 `/admin/developer` 仅管理员可访问。正文源在 `docs/developer/`，公开操作参考在 SDK `app-contracts`，构建时生成离线文档与 Skill references。`developer/metro-app-development/SKILL.md` 为技能入口。SDK 新增目录客户端从 `@metro/platform-sdk/app-directory` 导入。旧内部能力目录保留供兼容和宿主使用，不作为开发者调用契约。
+
+`npm run build` / `npm run dev` 前置构建 SDK、CLI 与五项下载产物；单独执行可用 `npm run build:developer`（须先构建 SDK/CLI）。产物保存在忽略的 `server/developer-assets`，API 容器复制到同名目录；管理员 API `/api/admin/developer/downloads` 列举元数据，`/:id` 下载允许列表中的文件。不会从用户输入解析文件系统路径。
+
+新增应用公开契约元数据是可选字段，最低平台0.24.0；旧安装包和原 SDK 路径保持兼容。公开元数据不是运行时授权，也不替代 handler 输入和资源校验。修改公开操作时同时更新契约参考、客户端、示例和对应适配器测试。

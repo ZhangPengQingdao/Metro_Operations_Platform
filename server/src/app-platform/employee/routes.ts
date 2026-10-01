@@ -67,6 +67,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
   scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.post<{Params:{id:string}}>('/notifications/:id/read',{bodyLimit:1024},async req=>options.service.markNotificationRead(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.params.id));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
   scoped.get<{Params:{appId:string}}>('/apps/:appId/capabilities',async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.state(req.params.appId,(await resolveRequestIdentity(req)).userId);});
   scoped.put<{Params:{appId:string}}>('/apps/:appId/capabilities',{bodyLimit:4096},async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.set(req.params.appId,(await resolveRequestIdentity(req)).userId,req.body);});

@@ -6,6 +6,7 @@ import type {MigrationDefinition} from '../../core/migrations/index.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import type {AppInstallation} from '../registry/model.js';
 import {manifestApprovalDigest} from '../management/config.js';
+import type {AppContractSchema} from '@metro/platform-sdk/app-api-documentation';
 
 export const appCapabilityPublicationMigration:MigrationDefinition={
  id:'app-capability-publication-expand',title:'Application owner capability publication',ownerTaskId:'PLATFORM-L4-023',phase:'expand',layer:'L4',dataRows:[],migrationRows:['MIG-077'],
@@ -18,6 +19,16 @@ export const appCapabilityPublicationMigration:MigrationDefinition={
   updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(installation_id,api_id));`);}
 };
 
+// Only schema constraints affect publication; descriptive text remains signed metadata.
+function schemaContract(schema:AppContractSchema):unknown{
+ return {type:schema.type,
+  ...(schema.properties?{properties:Object.fromEntries(Object.keys(schema.properties).sort().map(key=>[key,schemaContract(schema.properties![key])]))}:{}),
+  ...(schema.required?{required:[...schema.required].sort()}:{}),
+  ...(schema.additionalProperties!==undefined?{additionalProperties:schema.additionalProperties}:{}),
+  ...(schema.items?{items:schemaContract(schema.items)}:{}),
+  ...(schema.enum?{enum:schema.enum}:{})};
+}
+
 function publicationContractDigest(manifest:AppInstallation['manifest'],api:AppInstallation['manifest']['api'][number]){
  const permission=manifest.permissions.defined.find(item=>item.code===api.businessPermission);
  const backendDeclaration=manifest.backend;
@@ -25,7 +36,8 @@ function publicationContractDigest(manifest:AppInstallation['manifest'],api:AppI
   ?manifest.artifacts.find(item=>item.id===backendDeclaration.entryArtifactId)?.sha256:null;
  return createHash('sha256').update(JSON.stringify({appId:manifest.id,apiId:api.id,method:api.method,path:api.path,handler:api.handler,
   permission:api.permission,businessPermission:api.businessPermission,scopeKinds:permission?.scopeKinds??null,
-  contractVersion:api.expose?.contractVersion,mode:api.expose?.mode,backend})).digest('hex');
+  contractVersion:api.expose?.contractVersion,mode:api.expose?.mode,backend,
+  ...(api.expose?.documentation?{schema:{input:schemaContract(api.expose.documentation.input),output:schemaContract(api.expose.documentation.output)}}:{})})).digest('hex');
 }
 
 export const appCapabilityPublicationContractMigration:MigrationDefinition={

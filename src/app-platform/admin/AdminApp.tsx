@@ -1,7 +1,7 @@
 import {readThemePreference} from '../identity/theme';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
-import {appCapabilityCatalog} from './app-capability-catalog';
+import DeveloperPage from './DeveloperPage';
 import {RegistrationReview} from './RegistrationReview';
 import {Pulse,ShieldCheck,UploadSimple,Pause,Play,Plus,GearSix} from '@phosphor-icons/react';
 import {ProfileSections} from '../identity/ProfileSections';
@@ -57,23 +57,6 @@ function AppsPage({onChange}:{onChange:()=>void}){
  {grantApp&&<AppGrantsDialog appId={grantApp} onClose={()=>setGrantApp(null)} onChange={()=>{reload();onChange();}}/>}
  {(install||selected?.action==='upgrade')?<InstallPackageReview target={selected?{appId:selected.app.appId,revision:selected.app.revision}:undefined} onClose={()=>{setSelected(null);setInstall(false);}} onBusy={setBusy} onDone={message=>{setResult(message);setSelected(null);setInstall(false);reload();onChange();}}/>:selected&&<AdminDialog title={`${selected.app.manifest.name} · ${selected.action==='enable'?'启用':'停用'}`} onClose={()=>{if(!busy)setSelected(null);}}><div className="admin-form"><p>确认执行此应用操作？</p>{failure&&<ErrorNotice error={failure}/>}<Button disabled={busy} onClick={()=>void run()}>{busy?'正在处理…':'确认'}</Button></div></AdminDialog>}
 
- </>;
-}
-function DeveloperPage(){
- const apps=useRead<{applications:Installation[]}>('/apps');
- const publication=useRead<{publications:{appId:string;apiId:string}[]}>('/app-capabilities');
- const platform=useRead<{capabilities:{id:string;contractVersion:string;permissions:string[]}[]}>('/capabilities');
- const catalog=appCapabilityCatalog(apps.data?.applications??[],publication.data?.publications??[]);
- const exposedCount=catalog.reduce((count,app)=>count+app.capabilities.filter(cap=>cap.published).length,0);
- const refresh=()=>{apps.reload();publication.reload();platform.reload();};
- useEffect(()=>{const onFocus=()=>refresh();window.addEventListener('focus',onFocus);const interval=window.setInterval(refresh,30000);return()=>{window.removeEventListener('focus',onFocus);window.clearInterval(interval);};},[apps.reload,publication.reload,platform.reload]);
- return <>
-  <div className="admin-heading developer-heading"><div><h1>开发者中心</h1><p className="afc-muted">应用能力目录从当前安装清单生成。只有明确开放的接口才能供其他应用调用。</p></div><div className="developer-actions"><Button size="sm" variant="secondary" onClick={refresh}>刷新目录</Button><a className="afc-button afc-button--secondary afc-button--sm afc-button--pill" href="https://github.com/ZhangPengQingdao/Metro_Operations_Platform/blob/main/docs/app-capabilities.md" target="_blank" rel="noreferrer">接入文档</a></div></div>
-  {apps.error&&<ErrorNotice error={apps.error} reload={apps.reload}/>}
-  {publication.error&&<ErrorNotice error={publication.error} reload={publication.reload}/>}
-  {!apps.data&&!apps.error&&<p role="status">正在读取已安装应用…</p>}
-  {apps.data&&publication.data&&<><p className="developer-summary">已安装 {catalog.length} 个应用，开放 {exposedCount} 项业务接口。应用负责人可在应用管理中更改开放状态；员工可操作的数据仍受目标应用角色和范围限制。</p>{catalog.length===0?<section className="admin-card"><p>尚未安装应用。</p></section>:<div className="developer-app-list">{catalog.map(app=><section className="admin-card developer-app-card" key={app.appId}><header><div><h2>{app.name}</h2><p className="afc-muted">{app.appId} · v{app.version}</p></div><span className="admin-status">{app.enabled?'已启用':'已停用'}</span></header>{app.capabilities.length===0?<p className="afc-muted">当前版本没有可开放的业务接口。已有 {app.apiCount} 个本应用 API。</p>:<ul className="developer-capability-list">{app.capabilities.map(cap=><li key={cap.id}><div className="developer-capability-title"><div><strong>{cap.title}</strong><code>{cap.id}</code><span className="afc-muted">所需权限：{cap.permissionDescription||cap.permission}</span></div><span>{cap.published?'已开放':'未开放'} · {cap.mode==='write'?'写入':'读取'}</span></div>{cap.published&&<><dl className="afc-details"><dt>接口</dt><dd>{cap.method} {cap.path}（经 SDK 调用）</dd><dt>契约版本</dt><dd>{cap.contractVersion}</dd></dl><pre><code>{`const client = createAppCapabilityClient(gateway);\nawait client.call('${app.appId}', '${cap.apiId}', params);`}</code></pre></>}</li>)}</ul>}</section>)}</div>}</>}
-  <section className="developer-platform"><h2>平台能力</h2><p className="afc-muted">平台提供的基础能力，按应用清单和平台授权使用。</p>{platform.error&&<ErrorNotice error={platform.error} reload={platform.reload}/>}<div className="admin-app-grid">{platform.data?.capabilities.map(cap=><section className="admin-card" key={cap.id}><h3>{cap.id}</h3><p>契约版本 {cap.contractVersion}</p><p className="afc-muted">{cap.permissions.join(' · ')||'由接入入口控制访问'}</p></section>)}</div></section>
  </>;
 }
 function NotificationsPanel(){const {data,error}=useRead<{notifications:{id:string;title:string;description:string;path:string}[]}>('/notifications');return <><FailureNotifications error={error}/>{data?.notifications.map(item=><section className="admin-card" key={item.id}><h3>{item.title}</h3><p>{item.description}</p><Link to="/admin/apps">查看应用</Link></section>)}{data?.notifications.length===0&&<p className="afc-muted">暂无需要处理的应用通知。</p>}</>;}

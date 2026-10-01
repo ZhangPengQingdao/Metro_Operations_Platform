@@ -73,6 +73,8 @@ jobs:
           npm run version:check
           npm run build:sdk
           npm run build:cli
+          npm run build:developer
+          cp server/developer-assets/metro-{docs,skill,example}-*.tar.gz release-assets/
           npm pack --workspace @metro/platform-sdk --ignore-scripts --pack-destination release-assets
           npm pack --workspace @metro/platform-cli --ignore-scripts --pack-destination release-assets
       - name: Publish draft release for review

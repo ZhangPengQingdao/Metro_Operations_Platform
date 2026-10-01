@@ -1,19 +1,24 @@
 # @metro/platform-cli
 
-Node.js 22+。独立安装后使用 `mop-app`，不需要平台仓库、数据库、管理员凭据或旧 AFC 源码。
+Node.js 22+。独立开发不需要平台仓库、数据库或管理员凭据。使用开发者中心下载的同版本 SDK/CLI .tgz；不要假定包已发布到公共 npm。
 
 ```sh
-npm install --save-dev @metro/platform-cli
-npx mop-app create my-app my-app sandbox my-publisher
-# 在生成项目中安装同版本 SDK、执行 npm test 和 npm run build 后：
-npx mop-app validate dist/sandbox
-npx mop-app sign dist/sandbox publisher-key /secure/private.pem signature.json
-npx mop-app verify dist/sandbox signature.json publisher-key publisher /secure/public.pem
-npx mop-app export-upload dist/sandbox signature.json inventory-install.json
+npm install --save-dev /downloads/metro-platform-cli-<版本>.tgz
+npx mop-app create my-app my-app standard my-publisher
+cd my-app
+npm install /downloads/metro-platform-sdk-<版本>.tgz
+npm test
+npm run build
+../node_modules/.bin/mop-app validate dist
+../node_modules/.bin/mop-app sign dist publisher-key /secure/private.pem signature.json
+../node_modules/.bin/mop-app verify dist signature.json publisher-key my-publisher /secure/public.pem
+../node_modules/.bin/mop-app export-upload dist signature.json my-app.mop.gz
 ```
 
-SDK 提供应用开发契约和运行时客户端；CLI 校验、签名并导出管理员上传的安装包。开发者私钥留在开发环境，管理员只接收上传包并独立核实发布者公钥。当前上传包为有界签名 JSON，并非 ZIP；不要靠修改扩展名转换格式。
+standard 模板使用真实目录能力、React 共享组件、标准沙箱与隔离 Node 后端。旧 sandbox/trusted/backend 模板保留作协议演示，其中 sample.* 不是平台默认开放操作。
 
-导出不自动执行构建、不安装应用、不调用平台、不覆盖已有文件；平台安装时重新校验签名和摘要。`pack <built-dir> <new-dir>` 可复制已声明产物到干净目录。CLI 与 SDK 可以通过平台提供的 npm `.tgz` 安装，尚未发布到公共 npm 时不要假定上述包名可以在线下载。
+应用 .mop.gz 为 gzip 压缩签名 JSON，包含清单、签名、产物；仍兼容 .install.json，不是 ZIP。SDK/CLI .tgz 是工具包，不能上传为应用。开发者私钥留在安全环境，管理员核实发布者公钥并独立审核能力、启用与业务授权。
 
-`create <new-dir> <app-id> <trusted|sandbox|backend> <publisher-id>` 内置模板，生成项目后需安装 SDK 和构建依赖。模板演示 SDK 调用，不表示平台默认支持示例声明的自定义操作或 trusted UI；安装时仍按平台能力和授权拒绝未接通声明。
+export-upload 不执行构建、不安装应用、不覆盖输出；平台重新验证签名与摘要。pack <built-dir> <new-dir> 仅复制已声明产物。
+
+完整流程见 docs/developer/start.md、packaging.md 及开发者中心。编程 Agent 可使用随版本下载的 metro-app-development 技能；已有项目必须先评估接入方案。

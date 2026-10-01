@@ -11,6 +11,7 @@ await chmod(output,0o755);
 
 // Ship only the template sources, never local builds or dependencies.
 for (const [name, paths] of Object.entries({
+ 'standard-app':['app.json','package.json','build.mjs','handlers.mjs','entry.mjs','ui.jsx','test.mjs','.gitignore'],
  'app-sdk':['app.mjs','test.mjs','build.mjs','package.json','.gitignore','sandbox/entry.mjs','trusted/entry.mjs'],
  'backend-sdk':['app.mjs','test.mjs','build.mjs','package.json','.gitignore','entry.mjs','config.mjs'],
 })) {
