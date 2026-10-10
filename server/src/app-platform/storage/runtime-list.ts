@@ -5,6 +5,7 @@ const scalar=z.union([z.string().max(1024),z.number().int().min(-2147483648).max
 const filter=z.union([z.object({column:identifier,value:scalar}).strict(),z.object({column:identifier,contains:z.array(z.record(scalar)).min(1).max(10)}).strict()]);
 type RuntimeFilter=z.infer<typeof filter>;
 export const runtimeListInput=z.object({
+ columns:z.array(identifier).min(1).max(32).refine(values=>new Set(values).size===values.length).optional(),
  table:identifier,afterId:z.string().uuid().optional(),pageSize:z.number().int().min(1).max(50).default(20),
  filters:z.array(filter).max(8).default([]),
  anyOf:z.array(z.array(filter).min(1).max(8)).min(1).max(128).optional(),
@@ -13,8 +14,9 @@ export const runtimeListInput=z.object({
  range:z.object({column:identifier,from:z.string().max(100).optional(),to:z.string().max(100).optional()}).strict().optional(),
  search:z.object({column:identifier,text:z.string().min(1).max(100)}).strict().optional(),
 }).strict();
+export const runtimeCountInput=runtimeListInput.pick({table:true,filters:true,anyOf:true,range:true,search:true}).extend({kind:z.literal('count')}).strict();
 /** Identifiers are verified against the inspected ordinary table, and all query values are parameters. */
-export function runtimeListQuery(input:z.infer<typeof runtimeListInput>,columns:ReadonlyMap<string,string>){
+function conditionsQuery(input:z.infer<typeof runtimeListInput>,columns:ReadonlyMap<string,string>){
  const values:unknown[]=[],conditions:string[]=[];
  const param=(value:unknown)=>{values.push(value);return `$${values.length}`;};
  if(input.afterId&&input.order||input.after&&!input.order)throw new GatewayError('INVALID_PARAMS');
@@ -34,9 +36,25 @@ export function runtimeListQuery(input:z.infer<typeof runtimeListInput>,columns:
  }
  const sortable=(column:string)=>{const type=columns.get(column);if(!type||!['text','date','timestamptz'].includes(type))throw new GatewayError('INVALID_PARAMS');return type;};
  if(input.range){const r=input.range,type=sortable(r.column);if(r.from)conditions.push(`"${r.column}">=${param(r.from)}::${type}`);if(r.to)conditions.push(`"${r.column}"<=${param(r.to)}::${type}`);}
+ return {values,conditions,param,sortable};
+}
+export function runtimeCountQuery(input:z.infer<typeof runtimeCountInput>,columns:ReadonlyMap<string,string>){
+ const {values,conditions}=conditionsQuery({...input,pageSize:1},columns);
+ return {suffix:conditions.length?` WHERE ${conditions.join(' AND ')}`:'',values};
+}
+export function runtimeListQuery(input:z.infer<typeof runtimeListInput>,columns:ReadonlyMap<string,string>){
+ const {values,conditions,param,sortable}=conditionsQuery(input,columns);
  let order='id';
  if(input.order){const o=input.order,type=sortable(o.column),direction=o.direction==='desc'?'DESC':'ASC';order=`"${o.column}" ${direction},id ${direction}`;
   if(input.after)conditions.push(`("${o.column}",id)${o.direction==='desc'?'<':'>'}(${param(input.after.value)}::${type},${param(input.after.id)}::uuid)`);
  }
  return {suffix:`${conditions.length?` WHERE ${conditions.join(' AND ')}`:''} ORDER BY ${order} LIMIT ${param(input.pageSize+1)}`,values};
+}
+
+/** Projection keeps large JSON fields out of dashboard/list payloads; cursor columns are always retained. */
+export function runtimeListSelection(input:z.infer<typeof runtimeListInput>,columns:ReadonlyMap<string,string>){
+ if(!input.columns)return 't.*';
+ const selected=[...new Set(['id',...(input.order?[input.order.column]:[]),...input.columns])];
+ if(selected.some(name=>!columns.has(name)))throw new GatewayError('INVALID_PARAMS');
+ return selected.map(name=>`t."${name}"`).join(',');
 }

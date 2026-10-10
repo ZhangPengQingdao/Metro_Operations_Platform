@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {createHuicetongService} from './service.mjs';
 import {createHuicetongHandlers} from './handlers.mjs';
-import {migration} from './schema.mjs';
+import {migration,workflowMigration} from './schema.mjs';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import * as XLSX from 'xlsx';
 import {planRows,planWorkbook,planColumns} from './plan-export.mjs';
@@ -53,7 +53,7 @@ test('failed or unknown frame calls are never replayed and later distinct reads 
 
 function fixture(){
  const department=randomUUID(),otherDepartment=randomUUID(),team=randomUUID(),otherTeam=randomUUID(),person=randomUUID(),colleague=randomUUID(),outside=randomUUID();
- const tables=new Map(migration.operations.filter(operation=>operation.kind==='createTable').map(operation=>[operation.table,new Map()]));
+ const tables=new Map([...migration.operations,...workflowMigration.operations].filter(operation=>operation.kind==='createTable').map(operation=>[operation.table,new Map()]));
  const people=new Map([[person,{id:person,name:'张三',organizationUnitId:team}],[colleague,{id:colleague,name:'李四',organizationUnitId:otherTeam}],[outside,{id:outside,name:'外部门员工',organizationUnitId:otherDepartment}]]);
  const writes=[];
  const gateway={async invoke(operation,payload){
@@ -241,8 +241,9 @@ test('responsible employee updates progress with version and note, other employe
  assert.equal((await change(2,'in_progress',teammate)).version,3);
  const stranger={...fillOnly,personId:randomUUID()};
  await assert.rejects(change(3,'completed',stranger),/ACCESS_DENIED/);
- assert.equal((await change(3,'completed')).status,'completed');
- assert.equal(f.tables.get('plan_items').get(f.itemId).remark,'完成现场核验');
+ assert.equal((await change(3,'completed')).status,'pending_confirm');
+ assert.equal(f.tables.get('plan_items').get(f.itemId).latest_progress,'完成现场核验');
+ assert.equal(f.tables.get('plan_items').get(f.itemId).remark,'重点');
  assert.ok([...f.tables.get('audit_events').values()].some(row=>row.action==='progress'));
  await assert.rejects(change(4,'cancelled'),/CONFLICT/);
 });
@@ -252,7 +253,7 @@ test('progress respects locked-cycle versioning and rejects status during review
  const version=f.tables.get('plan_items').get(f.itemId).version;
  await assert.rejects(f.service['item-progress']({id:f.itemId,expectedVersion:version-1,requestId:randomUUID(),status:'completed',remark:'核验'},f.employee),/CONFLICT/);
  await f.service['item-progress']({id:f.itemId,expectedVersion:version,requestId:randomUUID(),status:'completed',remark:'核验'},f.employee);
- assert.equal(f.tables.get('plan_items').get(f.itemId).status,'completed');
+ assert.equal(f.tables.get('plan_items').get(f.itemId).status,'pending_confirm');
 });
 
 test('submission requires a level-2 binding and only the author or manager can submit',async()=>{
@@ -333,4 +334,98 @@ test('33 plan rows export as a single worksheet with two vertical category merge
  const book=XLSX.read(Buffer.from(result.base64,'base64'),{type:'buffer'}),sheet=book.Sheets['月度工作计划'];
  assert.equal(XLSX.utils.sheet_to_json(sheet,{header:1}).length,35);
  assert.deepEqual(sheet['!merges'].map(merge=>[merge.s.r,merge.e.r]),[[0,0],[2,34],[2,34]]);
+});
+
+const withRoles=(f,names,personId=f.person,organizationUnitId=f.team)=>({...f.employee,personId,organizationUnitId,businessAuthorization:{...f.employee.businessAuthorization,grants:f.employee.businessAuthorization.grants.filter(grant=>names.includes(grant.permission.split('.').at(-1)))}});
+const progress=(f,version,status='in_progress',employee=f.employee,extra={})=>f.service['item-progress']({id:f.itemId,requestId:randomUUID(),expectedVersion:version,status,remark:'已完成现场核验，提交核验记录',...extra},employee);
+const reviewCompletion=(f,version,action='confirm',employee=f.employee,comment='')=>f.service['completion-review']({id:f.itemId,requestId:randomUUID(),expectedVersion:version,action,comment},employee);
+
+test('completion requires a bound reviewer or manager; return, resubmit and close preserve history and original remark',async()=>{
+ const f=await prepared(),filler=withRoles(f,['read','fill']),reviewer=withRoles(f,['read','review']);
+ await progress(f,1,'pending_confirm',filler);
+ assert.equal((await f.service['item-workflow']({id:f.itemId},filler)).canClose,false);
+ await assert.rejects(reviewCompletion(f,2,'confirm',filler),/ACCESS_DENIED/);
+ await assert.rejects(reviewCompletion(f,2,'confirm',reviewer),/ACCESS_DENIED/);
+ await bind(f);
+ assert.equal((await f.service['item-workflow']({id:f.itemId},reviewer)).canClose,true);
+ await assert.rejects(reviewCompletion(f,2,'return',reviewer),/INVALID_INPUT/);
+ await reviewCompletion(f,2,'return',reviewer,'请补充核验照片');
+ assert.equal(f.tables.get('plan_items').get(f.itemId).status,'in_progress');
+ await progress(f,3,'pending_confirm',filler);
+ await reviewCompletion(f,4,'confirm',reviewer);
+ const detail=await f.service['item-workflow']({id:f.itemId},filler);
+ assert.equal(detail.item.status,'completed');assert.equal(detail.item.remark,'重点');assert.equal(detail.canUpdate,false);
+ assert.equal(detail.rows.length,4);assert.deepEqual(new Set(detail.rows.map(row=>row.kind)),new Set(['submitted','returned','completed']));
+ await assert.rejects(reviewCompletion(f,4,'confirm',reviewer),/CONFLICT/);
+ await assert.rejects(progress(f,5,'in_progress',filler),/CONFLICT/);
+});
+
+test('manager can close without fill/review or category bindings; other category reviewer and other organization cannot',async()=>{
+ const f=await prepared();await progress(f,1,'completed');
+ const manager=withRoles(f,['read','manage']);
+ const unrelatedReviewer=withRoles(f,['read','review'],f.colleague,f.otherTeam);
+ await bind(f);await assert.rejects(reviewCompletion(f,2,'confirm',unrelatedReviewer),/ACCESS_DENIED/);
+ const outsider={...manager,businessAuthorization:{...manager.businessAuthorization,grants:manager.businessAuthorization.grants.map(grant=>({...grant,organizationIds:[f.otherDepartment]}))}};
+ await assert.rejects(reviewCompletion(f,2,'confirm',outsider),/ACCESS_DENIED/);
+ f.tables.get('review_bindings').clear();f.tables.get('category_nodes').get(f.leaf).enabled=false;
+ assert.equal((await reviewCompletion(f,2,'confirm',manager)).status,'completed');
+});
+
+test('progress and closure atomically reject a concurrent cycle transition without history or item changes',async()=>{
+ for(const closing of [false,true]){
+  const f=await prepared();if(closing)await progress(f,1,'pending_confirm');
+  const before=structuredClone(f.tables.get('plan_items').get(f.itemId)),historyCount=f.tables.get('progress_records').size;
+  const gateway={invoke:(operation,payload)=>{if(operation==='platform.app_data.transaction')f.tables.get('plan_cycles').get(f.cycleId).status='archived';return f.gateway.invoke(operation,payload);}};
+  const service=createHuicetongService(gateway),method=closing?'completion-review':'item-progress';
+  await assert.rejects(service[method]({id:f.itemId,requestId:randomUUID(),expectedVersion:before.version,...(closing?{action:'confirm'}:{status:'in_progress',remark:'并发提交'})},f.employee),/CONFLICT/);
+  assert.deepEqual(f.tables.get('plan_items').get(f.itemId),before);assert.equal(f.tables.get('progress_records').size,historyCount);
+ }
+});
+
+test('attachment authorization checks record read scope, assignee write access and pending/completed state',async()=>{
+ const f=await prepared(),filler=withRoles(f,['read','fill']),reader=withRoles(f,['read']),authorize=(action,employee=filler,extra={})=>f.service['authorize-attachment']({action,entityType:'plan_item',entityId:f.itemId,requestId:randomUUID(),...extra},employee);
+ assert.equal((await authorize('upload')).organizationId,f.department);
+ await assert.rejects(authorize('upload',reader),/ACCESS_DENIED/);
+ await assert.rejects(authorize('upload',{...filler,personId:randomUUID()}),/ACCESS_DENIED/);
+ await assert.rejects(authorize('read',reader,{entityType:'unknown'}),/INVALID_INPUT/);
+ await progress(f,1,'pending_confirm',filler);
+ await assert.rejects(authorize('upload'),/CONFLICT/);
+ assert.equal((await authorize('read',reader)).organizationId,f.department);
+ await reviewCompletion(f,2);await assert.rejects(authorize('upload'),/CONFLICT/);
+});
+
+test('progress photo linking checks owner and organization and rolls back on stale item version',async()=>{
+ const f=await prepared(),photoId=randomUUID();
+ f.tables.get('photos').set(photoId,{id:photoId,organization_id:f.department,created_by:f.person,created_at:'2026-09-28T02:00:00Z',kind:'progress',ready:true,record_id:null});
+ const before=f.tables.get('progress_records').size;
+ await assert.rejects(progress(f,2,'in_progress',f.employee,{photoIds:[photoId]}),/CONFLICT/);
+ assert.equal(f.tables.get('photos').get(photoId).record_id,null);assert.equal(f.tables.get('progress_records').size,before);
+ f.tables.get('photos').get(photoId).created_by=f.colleague;
+ await assert.rejects(progress(f,1,'in_progress',f.employee,{photoIds:[photoId]}),/INVALID_PHOTO/);
+ f.tables.get('photos').get(photoId).created_by=f.person;
+ await progress(f,1,'in_progress',f.employee,{photoIds:[photoId]});
+ assert.equal(f.tables.get('photos').get(photoId).record_id,f.itemId);
+ assert.deepEqual([...f.tables.get('progress_records').values()][0].photo_ids,[photoId]);
+ await assert.rejects(progress(f,2,'in_progress',f.employee,{photoIds:[photoId]}),/INVALID_PHOTO/);
+});
+
+test('AI suggestions validate category and dates and never write or invent assignees',async()=>{
+ const f=await prepared(),input={organizationId:f.department,rawText:'本月底完成设备核验，提交核验记录',month:'2026-09'};
+ let result={content:'开展设备核验并整理记录',qualityStandard:'形成核验记录和问题清单，待确认',categoryId:f.leaf,startDate:null,endDate:'2026-09-30',missingInfo:['请选择责任人','请确认开始日期']},calls=0;
+ const gateway={invoke:(name,payload)=>{if(name==='platform.ai.complete'){calls++;assert.match(payload.system,/不得编造/);return Promise.resolve({content:JSON.stringify(result)});}return f.gateway.invoke(name,payload);}};
+ const service=createHuicetongService(gateway),writes=f.writes.length;
+ assert.deepEqual(await service['plan-suggest'](input,f.employee),result);assert.equal(f.writes.length,writes);
+ result={...result,categoryId:randomUUID()};await assert.rejects(service['plan-suggest'](input,f.employee),/AI_INVALID_RESULT/);
+ result={...result,categoryId:f.leaf,startDate:'2026-02-30'};await assert.rejects(service['plan-suggest'](input,f.employee),/AI_INVALID_RESULT/);
+ await assert.rejects(service['plan-suggest'](input,withRoles(f,['read'])),/ACCESS_DENIED/);assert.equal(calls,3);
+ const handlers=createHuicetongHandlers({invoke:(name,payload)=>name==='platform.ai.complete'?Promise.reject(Error('offline')):f.gateway.invoke(name,payload)});
+ const failure=await handlers.get('plan-suggest').execute(input,undefined,f.employee);
+ assert.equal(failure.error.code,'AI_UNAVAILABLE');assert.equal(failure.error.writeOutcome,'not_started');assert.equal(f.writes.length,writes);
+});
+
+test('new workflow unknown writes are reported as unknown and not replayed',async()=>{
+ const f=await prepared();let writes=0;
+ const handlers=createHuicetongHandlers({invoke:(name,payload)=>{if(name==='platform.app_data.transaction'){writes++;throw Object.assign(Error('lost'),{code:'STORAGE_UNCERTAIN',writeOutcome:'unknown'});}return f.gateway.invoke(name,payload);}});
+ const result=await handlers.get('item-progress').execute({id:f.itemId,requestId:randomUUID(),expectedVersion:1,status:'pending_confirm',remark:'完成提报'},undefined,f.employee);
+ assert.equal(result.error.writeOutcome,'unknown');assert.equal(writes,1);
 });

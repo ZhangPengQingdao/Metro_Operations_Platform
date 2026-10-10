@@ -1,3 +1,4 @@
+import {readEmployeeDashboard} from '../employee/dashboard.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {PlatformMaintenance} from '../updates/maintenance.js';
 import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from './platform-grants.js';
@@ -196,13 +197,19 @@ export async function createAppManagement(configFile:string,origin:string){
       const navigation=await employeeNavigation(admitted);
       if(!navigation.routes.length)return null;
       const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);
-      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,...navigation,runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
+      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,...navigation,...(m.dashboard&&navigation.routes.some(route=>route.id===m.dashboard!.routeId)?{dashboard:{routeId:m.dashboard.routeId}}:{}),runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
      }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
     }));
     for(const app of group)if(app)applications.push(app);
    }
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
+  },
+  async employeeDashboard(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+   assertOpen();
+   const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
+    invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{}})});
   },
   async employeeUi(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const first=await admitEmployee(appId,resolveIdentity),m=first.installation.manifest;

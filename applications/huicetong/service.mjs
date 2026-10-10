@@ -1,3 +1,5 @@
+import {createPlanWorkflow} from './workflow.mjs';
+import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {randomUUID} from 'node:crypto';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
@@ -84,12 +86,12 @@ export function createHuicetongService(gateway,{clock=()=>new Date(),newId=rando
   return Array.isArray(context?.organizations)&&context.organizations.some(unit=>unit.id===organizationId);
  }
  function validateDraft(value){
-  if(!ownKeys(value,['categoryId','content','qualityStandard','startDate','endDate','assignees','escalated','remark'])||!uuid(value.categoryId)||!validText(value.content,500)||!validText(value.qualityStandard,500)||!day(value.startDate)||!day(value.endDate)||value.startDate>value.endDate||typeof value.escalated!=='boolean'||value.remark!==undefined&&!validText(value.remark,500,false))fail('INVALID_INPUT');
+  if(!ownKeys(value,['categoryId','content','qualityStandard','startDate','endDate','assignees','escalated','remark','originalText'])||!uuid(value.categoryId)||!validText(value.content,500)||!validText(value.qualityStandard,500)||!day(value.startDate)||!day(value.endDate)||value.startDate>value.endDate||typeof value.escalated!=='boolean'||value.remark!==undefined&&!validText(value.remark,500,false)||value.originalText!==undefined&&!validText(value.originalText,1500,false))fail('INVALID_INPUT');
  }
  async function buildDraft(value,organizationId,signal){
   validateDraft(value);
   const [path,assignees]=await Promise.all([categoryPath(value.categoryId,organizationId,signal),resolveAssignees(value.assignees,organizationId,signal)]);
-  return {category_id:value.categoryId,root_name:path.root.name,parent_name:path.parent.name,category_name:path.leaf.name,content:value.content.trim(),quality_standard:value.qualityStandard.trim(),start_date:value.startDate,end_date:value.endDate,escalated:value.escalated,remark:value.remark?.trim()||null,lead_person_id:assignees.find(person=>person.isLead).personId,assignees};
+  return {original_text:value.originalText?.trim()||null,category_id:value.categoryId,root_name:path.root.name,parent_name:path.parent.name,category_name:path.leaf.name,content:value.content.trim(),quality_standard:value.qualityStandard.trim(),start_date:value.startDate,end_date:value.endDate,escalated:value.escalated,remark:value.remark?.trim()||null,lead_person_id:assignees.find(person=>person.isLead).personId,assignees};
  }
  async function listAll(table,filters,signal){
   const rows=[];let after;
@@ -146,6 +148,12 @@ export function createHuicetongService(gateway,{clock=()=>new Date(),newId=rando
   return {status:to,revision:parent.revision+1};
  }
  return Object.freeze({
+  ...createPlanWorkflow(gateway,{data,identity,uuid,ownKeys,validText,day,fail,can,requireAccess,item,cycle,isCurrentOrganization,listAll,write,audit,now,newId}),
+  async 'dashboard-summary'(input,employee,signal){
+   identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
+   return readAppDashboard({readBatch:data.readBatch,table:'plan_items',scope:readableScope(employee),filters:[],done:[{column:'status',value:'completed'}],excluded:[{column:'status',value:'cancelled'}],
+    previewColumns:['content', 'category_name'],labels:['待完成计划','已完成','计划总数'],unit:'项',clock,preview:row=>({id:row.id,title:String(row.content).slice(0,160),...(row.category_name?{description:String(row.category_name).slice(0,160)}:{}),occurredAt:row.created_at})},signal);
+  },
   async session(input,employee){identity(employee);if(!ownKeys(input,[])||Object.keys(input).length)fail('INVALID_INPUT');const read=employee.businessAuthorization.grants.find(grant=>grant.permission===permission('read'));return {personId:employee.personId,organizationId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations.filter(row=>read?.all||read?.organizationIds.includes(row.id)),permissions:employee.businessAuthorization.grants.map(grant=>grant.permission)};},
   async members(input,employee,signal){identity(employee);if(!ownKeys(input,['organizationId','workgroupId','search'])||!uuid(input.organizationId)||!uuid(input.workgroupId)||input.search!==undefined&&!validText(input.search,100,false))fail('INVALID_INPUT');requireAccess(employee,'read',input.organizationId);
    const context=await gateway.invoke('platform.people.organization_context',{organizationUnitId:input.workgroupId},signal);
@@ -212,13 +220,6 @@ export function createHuicetongService(gateway,{clock=()=>new Date(),newId=rando
    const operations=current=>[current.revision===0?{action:'insert',table:'plan_cycles',id:current.id,values:{organization_id:current.organization_id,year:current.year,month:current.month,status:'drafting',fill_deadline:null,created_by:employee.personId,created_at:timestamp,updated_at:timestamp,revision:1,intent_id:input.requestId}}:{action:'update',table:'plan_cycles',id:current.id,expected:{organization_id:current.organization_id,status:'drafting',revision:current.revision},values:{revision:current.revision+1,updated_at:timestamp}},{action:'insert',table:'plan_items',id:input.id,values:{...row,cycle_id:current.id}},...assigneeRows,audit(current.organization_id,'item',input.id,'created',employee,input.requestId,null,{cycleId:current.id,version:1})];
    try{await write(input.requestId,operations(parent),signal);}catch(error){if(!monthly||parent.revision!==0||error.message!=='CONFLICT')throw error;const existing=await findMonth();if(!existing||existing.status!=='drafting')throw error;requireAccess(employee,'read',existing.organization_id,existing.created_by);await write(input.requestId,operations(existing),signal);}
    return {id:input.id,version:1,status:'draft'};},
-  async 'item-progress'(input,employee,signal){identity(employee);if(!ownKeys(input,['id','requestId','expectedVersion','status','remark'])||!uuid(input.id)||!uuid(input.requestId)||!Number.isInteger(input.expectedVersion)||input.expectedVersion<1||!['in_progress','completed','cancelled'].includes(input.status)||!validText(input.remark,500))fail('INVALID_INPUT');
-   const old=await item(input.id,employee,signal),parent=await cycle(old.cycle_id,employee,'read',signal);
-   if(!['drafting','locked','closing'].includes(parent.status))fail('CYCLE_LOCKED');
-   if(!can(employee,'manage',old.organization_id)&&(!can(employee,'fill',old.organization_id,employee.personId)||!old.assignees?.some(person=>person.personId===employee.personId)||!await isCurrentOrganization(employee,old.organization_id,signal)))fail('ACCESS_DENIED');
-   if(old.version!==input.expectedVersion||!['draft','in_progress'].includes(old.status)||old.status==='draft'&&parent.status!=='drafting')fail('CONFLICT');
-   await write(input.requestId,[{action:'update',table:'plan_items',id:old.id,expected:{organization_id:old.organization_id,cycle_id:old.cycle_id,status:old.status,version:old.version},values:{status:input.status,remark:input.remark.trim(),version:old.version+1,updated_at:now(),intent_id:input.requestId}},audit(old.organization_id,'item',old.id,'progress',employee,input.requestId,{status:old.status,version:old.version,remark:old.remark},{status:input.status,version:old.version+1,remark:input.remark.trim()})],signal);
-   return {id:old.id,status:input.status,version:old.version+1};},
   async 'item-update'(input,employee,signal){identity(employee);if(!ownKeys(input,['id','requestId','expectedVersion','draft'])||!uuid(input.id)||!uuid(input.requestId)||!Number.isInteger(input.expectedVersion)||input.expectedVersion<1)fail('INVALID_INPUT');
    const old=await item(input.id,employee,signal),parent=await cycle(old.cycle_id,employee,'read',signal);
    if(parent.status!=='drafting'||old.status!=='draft')fail('CYCLE_LOCKED');if(!can(employee,'manage',old.organization_id)&&(!can(employee,'fill',old.organization_id,old.created_by)||!await isCurrentOrganization(employee,old.organization_id,signal)))fail('ACCESS_DENIED');if(old.version!==input.expectedVersion)fail('CONFLICT');

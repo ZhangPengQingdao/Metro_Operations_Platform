@@ -1,3 +1,4 @@
+import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {createHash,randomUUID} from 'node:crypto';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
 import {permit,scope} from './policy.mjs';
@@ -178,6 +179,11 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
   return results;
  }
  return Object.freeze({
+  async 'dashboard-summary'(input,employee,signal){
+   guard(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
+   return readAppDashboard({readBatch:data.readBatch,table:'tasks',scope:scope(employee,'read'),filters:[],done:[{column:'status',value:'completed'}],excluded:[{column:'status',value:'deleted'}],
+    previewFilters:[{column:'status',value:'active'}],previewColumns:['title', 'description'],labels:['待办任务','已完成','任务总数'],unit:'项',clock,preview:row=>({id:row.id,title:String(row.title).slice(0,160),...(row.description?{description:String(row.description).slice(0,160)}:{}),occurredAt:row.created_at})},signal);
+  },
   async session(input,employee){guard(employee);shape(input,[]);return {personId:employee.personId,organizationUnitId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations,grants:employee.businessAuthorization.grants};},
   async directory(input,employee,signal){guard(employee);shape(input,['kind'],['organizationId','search','afterId']);
    if(!['person','station'].includes(input.kind)||input.search!==undefined&&!label(input.search,100)||input.afterId!==undefined&&!uuid(input.afterId))fail('INVALID_INPUT');

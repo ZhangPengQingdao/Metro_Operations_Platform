@@ -273,3 +273,9 @@
 @media(max-width:700px){.developer-guide-layout{grid-template-columns:1fr;gap:20px}.developer-guide-links{position:static;display:flex;flex-wrap:wrap}.developer-guide-links button{font-size:12px}.developer-center dl{grid-template-columns:1fr;gap:5px}.developer-center dd{margin-bottom:10px}.developer-reference summary{align-items:flex-start;flex-wrap:wrap}.developer-tabs{gap:4px}.developer-tabs button{font-size:12px}.developer-toolbar>input{min-width:0;width:100%;flex-basis:100%}.developer-code{padding:12px}}
 
 .developer-toolbar{justify-content:flex-end}.developer-toolbar .afc-filter-bar-wrapper{max-width:100%}
+
+/* The application owns its heading; only the mobile navigation control needs a host row. */
+@media(min-width:901px){
+ .afc-admin-workspace--application { --afc-app-height:100dvh; }
+ .afc-admin-workspace--application>.afc-page-header { display:none; }
+}

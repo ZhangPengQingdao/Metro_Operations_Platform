@@ -1,3 +1,4 @@
+import {createAppImageMigrationOperations} from '@metro/platform-sdk/app-files-backend';
 const column=(name,type,nullable=false)=>({name,type,nullable});
 const table=(name,columns)=>({kind:'createTable',table:name,columns:[column('id','uuid'),...columns],primaryKey:['id']});
 const index=(table,name,columns,unique=false)=>({kind:'createIndex',table,name,columns,...(unique?{unique:true}:{})});
@@ -30,4 +31,12 @@ export const confirmationMigration={migrationVersion:'1.0',operations:[
  {kind:'addColumn',table:'plan_cycles',column:column('confirmed_by','uuid',true)},
  {kind:'addColumn',table:'plan_cycles',column:column('confirmed_at','timestamptz',true)},
  {kind:'addColumn',table:'plan_items',column:column('via_change','boolean',true)}
+]};
+
+export const workflowMigration={migrationVersion:'1.0',operations:[
+ {kind:'addColumn',table:'plan_items',column:column('original_text','text',true)},
+ {kind:'addColumn',table:'plan_items',column:column('latest_progress','text',true)},
+ table('progress_records',[...common,column('item_id','uuid'),column('kind','text'),column('summary','text'),column('photo_ids','jsonb'),column('created_by','uuid')]),
+ index('progress_records','progress_item_created_idx',['organization_id','item_id','created_at']),
+ ...createAppImageMigrationOperations()
 ]};

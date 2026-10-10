@@ -80,6 +80,10 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>resolveRequestIdentity(req));
   });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/dashboard',async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   return options.management.employeeDashboard(req.params.appId,()=>resolveRequestIdentity(req));
+  });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/ui',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);

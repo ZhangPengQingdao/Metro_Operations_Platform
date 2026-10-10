@@ -1,3 +1,4 @@
+import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {randomUUID} from 'node:crypto';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
 import {allowed,scope} from './access.mjs';
@@ -68,6 +69,11 @@ export function createMaintenanceService(gateway,{clock=()=>new Date(),newId=ran
   return {id:input.id,revision:values.revision};
  }
  return Object.freeze({
+  async 'dashboard-summary'(input,employee,signal){
+   identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
+   return readAppDashboard({readBatch:data.readBatch,table:'plans',scope:scope(employee,'read'),filters:[{column:'deleted_at',value:null}],done:[{column:'status',value:'completed'}],
+    previewColumns:['station_name', 'device_type_name', 'content'],labels:['待完成检修','已完成','检修计划'],unit:'项',clock,preview:row=>({id:row.id,title:String(row.station_name+' · '+row.device_type_name).slice(0,160),...(row.content?{description:String(row.content).slice(0,160)}:{}),occurredAt:row.created_at})},signal);
+  },
   async session(_input,employee){identity(employee);return {personId:employee.personId,organizationId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations,permissions:employee.businessAuthorization.grants.map(item=>item.permission)};},
   async catalog(input,employee,signal){identity(employee);if(!object(input)||input.organizationId!=null&&!uuid(input.organizationId)||input.stationSearch!=null&&!text(input.stationSearch,100)||input.personSearch!=null&&!text(input.personSearch,100)||input.assetSearch!=null&&!text(input.assetSearch,100)||input.stationId!=null&&!uuid(input.stationId)||input.assetTypeName!=null&&!text(input.assetTypeName,100))fail('INVALID_INPUT');const org=input.organizationId??employee.organizationUnitId;
    if(!['read','create','update'].some(name=>canTarget(employee,name,org)))fail('ACCESS_DENIED');

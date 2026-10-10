@@ -115,6 +115,10 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   assert.deepEqual(grouped.results[1].rows.map((row:{id:string})=>row.id),[id]);
   assert.deepEqual(grouped.results[2].rows.map((row:{id:string})=>row.id),[id]);
   assert.equal(batchStatements,1);
+  const summary=await call({operations:[{kind:'count',table:'entries',filters:[{column:'id',value:id}]},{table:'entries',pageSize:1,columns:['id']}]},'read_batch');
+  assert.equal(summary.results[0].count,1);
+  assert.equal(JSON.stringify(summary.results[1].rows),JSON.stringify([{id}]));
+  assert.equal(batchStatements,2);
   denyAfterStatement=true;
   await assert.rejects(call({operations:[{table:'entries',id},{table:'entries',pageSize:1}]},'read_batch'),/ACCESS_DENIED/);
   denyAfterStatement=false;allowed=true;

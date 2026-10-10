@@ -1,5 +1,5 @@
 import {recordRuntimeTransaction} from './runtime-reconciliation.js';
-import {runtimeListInput,runtimeListQuery} from './runtime-list.js';
+import {runtimeListInput,runtimeListQuery,runtimeCountInput,runtimeCountQuery,runtimeListSelection} from './runtime-list.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {Client} from 'pg';
@@ -23,7 +23,7 @@ const transactionItem=z.object({...base,action:z.enum(['insert','update','delete
  (v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id' in v.values))&&
  (v.action==='insert'?v.expected===undefined:!!v.expected&&Object.keys(v.expected).length>0&&Object.keys(v.expected).length<=63&&!('id' in v.expected)));
 const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
-const readBatchInput=z.object({operations:z.array(z.union([readInput,readManyInput,runtimeListInput])).min(1).max(4)}).strict();
+const readBatchInput=z.object({operations:z.array(z.union([readInput,readManyInput,runtimeListInput,runtimeCountInput])).min(1).max(4)}).strict();
 const rows=async<T>(db:QueryableClient,sql:string,args?:readonly unknown[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
 const q=(v:string)=>`"${v}"`; // Only validated binding and identifier values.
 export interface RuntimeStorageOptions{
@@ -146,7 +146,7 @@ export class AppRuntimeDataService{
     check();const table=`${q(plan!.schema)}.${q(item.table)}`,itemColumns=columnSets.get(item.table)!;
     const itemList='pageSize' in item?runtimeListQuery(item,itemColumns):undefined;
     let sql=`SELECT t.* FROM ${table} t WHERE id=$1`,values:unknown[]=['id' in item?item.id:undefined];
-    if(itemList){sql=`SELECT t.* FROM ${table} t${itemList.suffix}`;values=itemList.values;}
+    if(itemList){sql=`SELECT ${runtimeListSelection(item as z.infer<typeof runtimeListInput>,itemColumns)} FROM ${table} t${itemList.suffix}`;values=itemList.values;}
     if(isMutation&&'action' in item){
      const entries=Object.entries(item.values??{}),names=entries.map(([key])=>key);
      const encode=(key:string,value:unknown)=>itemColumns.get(key)==='jsonb'&&value!==null?JSON.stringify(value):value;
@@ -171,15 +171,17 @@ export class AppRuntimeDataService{
     const values:unknown[]=[];
     const expressions=readBatch.operations.map(item=>{
      const table=`${q(plan!.schema)}.${q(item.table)}`,columns=columnSets.get(item.table)!;
+     const counting='kind' in item&&item.kind==='count';
+     const count=counting?runtimeCountQuery(item,columns):undefined;
      const listing='pageSize' in item;
      const list=listing?runtimeListQuery(item,columns):undefined;
-     const query=list?`SELECT t.* FROM ${table} t${list.suffix}`:'ids' in item?`SELECT t.* FROM ${table} t WHERE id=ANY($1::uuid[]) ORDER BY id`:`SELECT t.* FROM ${table} t WHERE id=$1`;
-     const args=listing?list!.values:'ids' in item?[item.ids]:[(item as z.infer<typeof readInput>).id],offset=values.length;
+     const query=count?`SELECT count(*)::text AS count FROM ${table}${count.suffix}`:list?`SELECT ${runtimeListSelection(item as z.infer<typeof runtimeListInput>,columns)} FROM ${table} t${list.suffix}`:'ids' in item?`SELECT t.* FROM ${table} t WHERE id=ANY($1::uuid[]) ORDER BY id`:`SELECT t.* FROM ${table} t WHERE id=$1`;
+     const args=count?count.values:listing?list!.values:'ids' in item?[item.ids]:[(item as z.infer<typeof readInput>).id],offset=values.length;
      values.push(...args);
      const shifted=query.replace(/\$(\d+)/g,(_,number:string)=>`$${Number(number)+offset}`);
      const orderBy=listing?(item as z.infer<typeof runtimeListInput>).order:undefined;
      const direction=orderBy?.direction==='desc'?'DESC':'ASC';
-     const order=orderBy?`r.${q(orderBy.column)} ${direction},r.id ${direction}`:'r.id';
+     const order=count?'r.count':orderBy?`r.${q(orderBy.column)} ${direction},r.id ${direction}`:'r.id';
      return `(SELECT coalesce(jsonb_agg(jsonb_build_object('text',left(row_to_json(r)::text,32769),'bytes',octet_length(row_to_json(r)::text)) ORDER BY ${order}),'[]'::jsonb) FROM (${shifted}) r)`;
     });
     check();
@@ -189,6 +191,11 @@ export class AppRuntimeDataService{
      resultBytes+=received.reduce((sum,row)=>sum+row.bytes,0);
      if(received.length>('pageSize' in item?item.pageSize+1:'ids' in item?item.ids.length:1)||received.some(row=>row.bytes>32768)||resultBytes>60000)throw new AppStorageError('STORAGE_RESULT_LIMIT');
      const result=received.map(row=>JSON.parse(row.text));
+     if('kind' in item&&item.kind==='count'){
+      const count=Number(result[0]?.count);
+      if(!Number.isSafeInteger(count)||count<0)throw new AppStorageError('STORAGE_RESULT_LIMIT');
+      return {count};
+     }
      if('ids' in item)return {rows:result};
      if('pageSize' in item){
       const page=result.slice(0,item.pageSize);

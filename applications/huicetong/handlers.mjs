@@ -1,6 +1,6 @@
 import {createHuicetongService} from './service.mjs';
-const definitive=new Set(['INVALID_INPUT','EMPLOYEE_REQUIRED','ACCESS_DENIED','CONFLICT','NOT_FOUND','CYCLE_EXISTS','CYCLE_LOCKED','CATEGORY_INVALID','PERSON_INVALID','ITEM_TOO_LARGE','BINDING_MISSING','REVIEW_NOT_OPEN','REVIEW_PENDING','SIGNATURE_PENDING']);
-const reads=new Set(['session','members','cycle-list','cycle-get','category-list','item-list','item-get','binding-list','cycle.signature-status','change.list']);
+const definitive=new Set(['INVALID_INPUT','EMPLOYEE_REQUIRED','ACCESS_DENIED','CONFLICT','NOT_FOUND','CYCLE_EXISTS','CYCLE_LOCKED','CATEGORY_INVALID','PERSON_INVALID','ITEM_TOO_LARGE','BINDING_MISSING','REVIEW_NOT_OPEN','REVIEW_PENDING','SIGNATURE_PENDING','AI_INVALID_RESULT','AI_UNAVAILABLE','INVALID_PHOTO','PHOTO_NOT_FOUND','PHOTO_INCOMPLETE','PHOTO_CORRUPT']);
+const reads=new Set(['plan-suggest','item-workflow','photo-read','authorize-attachment','dashboard-summary','session','members','cycle-list','cycle-get','category-list','item-list','item-get','binding-list','cycle.signature-status','change.list']);
 export function createHuicetongHandlers(gateway){
  const service=createHuicetongService(gateway);
  return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,async execute(payload,signal,employee){

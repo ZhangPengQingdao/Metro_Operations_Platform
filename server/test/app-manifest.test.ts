@@ -209,3 +209,12 @@ test('optional public API documentation stays signed and validates bounded examp
  api.expose.documentation!.examples[0].params={};assert.equal(validateAppManifest(m).ok,false);
  delete api.expose.documentation;assert.equal(validateAppManifest(m).ok,true);
 });
+
+test('dashboard can reference only an exposed read API and a declared sandbox route',()=>{
+ const m=fixture();m.dashboard={apiId:'borrow',routeId:'home'};
+ assert.equal(validateAppManifest(m).ok,false);
+ Object.assign(m.api[0],{businessPermission:'app.tool-lending.borrow',expose:{mode:'read',contractVersion:'1.0'}});
+ assert.equal(validateAppManifest(m).ok,true);
+ m.api[0].expose!.mode='write';assert.equal(validateAppManifest(m).ok,false);
+ m.api[0].expose!.mode='read';m.dashboard.routeId='missing';assert.equal(validateAppManifest(m).ok,false);
+});
