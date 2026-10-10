@@ -10,6 +10,7 @@ export interface AdminUser {id: string; username: string; displayName: string; p
 export interface AdminApplication {id: string; name: string; icon?: AppManifest['icon']; navigation: {id: string; label: string; path: string}[]}
 export interface AdminShellProps {
   mode?:'admin'|'employee';
+  headerActions?: ReactNode;
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
   profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode; notificationCount?:number;
 }
@@ -36,9 +37,10 @@ export function AdminDialog({title, children, onClose, className}: {title: strin
   return <Dialog open title={title} onClose={onClose} size="lg" className={className}>{children}</Dialog>;
 }
 
-export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent, notificationCount=0}: AdminShellProps) {
+export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent, notificationCount=0, headerActions}: AdminShellProps) {
   const {pathname} = useLocation();
   const base=mode==='admin'?'/admin':'/employee';
+  const dashboardCanvas=mode==='employee'&&(pathname==='/employee'||pathname==='/employee/');
   const applicationCanvas=pathname.startsWith(`${base}/app/`);
   const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
@@ -106,7 +108,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
       </div>
 
     </aside>
-    <div className={`afc-admin-workspace${applicationCanvas?' afc-admin-workspace--application':''}`}><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton><span>{title}</span></header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
+    <div className={`afc-admin-workspace${applicationCanvas?' afc-admin-workspace--application':''}${dashboardCanvas?' afc-admin-workspace--dashboard':''}`}><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton>{!applicationCanvas&&<span>{title}</span>}{headerActions&&<div className="afc-page-header-actions">{headerActions}</div>}</header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
     <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
     {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => {if(!panelBusy)setPanel(null);}}>
       {panel === 'profile' && ((typeof profileContent==='function'?profileContent(savedPanel,setPanelBusy):profileContent) ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}

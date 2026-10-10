@@ -60,3 +60,9 @@ await attachments.download(uploaded.attachmentId);
 ## 留证照片
 
 createSandboxImageClient 与 createManagedAppImageStore 提供压缩、分块、关联、校验和读取；应用声明自己的 begin/part/finish/read API，后端提供 authorizeWrite、resolveRead 回调。通过 createAppImageMigrationOperations 声明私有表，将 requireReady/link 与业务写入放入同一事务。原图最多8MiB，输出JPEG最多220KB，每块11000字节，最多20块。它不是跨应用公共图片仓库。
+
+## 批量计数与列表字段选择（0.25.0）
+
+`createAppDataClient().readBatch()` 的最多四项读取中可以包含 `{kind:'count',table,filters?,anyOf?,range?,search?}`，对应结果为 `{count:number}`。它不读取整页再在前端计数。`list()` 和 batch 中的列表可传 `columns`（1–32 个不重复字段），宿主会额外保留 `id` 和排序列以维持游标分页。两者仍执行服务授权、安装绑定和结果前复核。示例与范围要求见 [员工工作台](../employee-dashboard.md)。
+
+图表可使用同一批次的 `{kind:'daily_count',table,column,from,days,filters?,anyOf?}`；column 仅支持 timestamptz，from 为有效 YYYY-MM-DD，days 限 1–31，固定上海时区自然日。返回 `{days:[{day:'YYYY-MM-DD',count:number}]}`，只含非空日期；同样保留员工范围条件、受限数据库身份和返回前权限复核。

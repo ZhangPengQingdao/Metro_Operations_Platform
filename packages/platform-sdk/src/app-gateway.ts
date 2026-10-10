@@ -90,6 +90,8 @@ export type AppDataMutation =
   | {action:'delete';table:string;id:string;expected:Readonly<Record<string,AppGatewayJson>>};
 export type AppDataFilter = {column:string;value:string|number|boolean|null} | {column:string;contains:readonly Readonly<Record<string,string|number|boolean|null>>[]};
 export interface AppDataListOptions {
+  /** Optional bounded projection. The host also includes id and the cursor ordering column. */
+  columns?:readonly string[];
   order?:{column:string;direction:'asc'|'desc'};
   after?:{value:string;id:string};
   range?:{column:string;from?:string;to?:string};
@@ -99,7 +101,9 @@ export interface AppDataListOptions {
   anyOf?:readonly (readonly AppDataFilter[])[];
   search?:{column:string;text:string};
 }
-export type AppDataRead = {table:string;id:string} | {table:string;ids:readonly string[]} | ({table:string}&AppDataListOptions&{pageSize:number});
+export type AppDataCount = Pick<AppDataListOptions,'filters'|'anyOf'|'range'|'search'>&{kind:'count';table:string};
+export type AppDataDailyCount = Pick<AppDataListOptions,'filters'|'anyOf'>&{kind:'daily_count';table:string;column:string;from:string;days:number};
+export type AppDataRead = AppDataDailyCount | AppDataCount | {table:string;id:string} | {table:string;ids:readonly string[]} | ({table:string}&AppDataListOptions&{pageSize:number});
 /** Service backend only. Persist one requestId per write intent; this helper never retries. */
 export function createAppDataClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
   return Object.freeze({

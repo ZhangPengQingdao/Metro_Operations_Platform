@@ -1,3 +1,4 @@
+import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {randomUUID} from 'node:crypto';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
 import {allowed,requireAllowed,scope} from './business-policy.mjs';
@@ -41,6 +42,11 @@ export function createFaultService(gateway,{clock=()=>new Date(),newId=randomUUI
   return data.list('records',{...scope(employee,name),filters,order:{column:'occurred_order',direction:input.sort??'desc'},...(input.search?{search:{column:'search_text',text:input.search.toLowerCase()}}:{}),...(input.dateFrom||input.dateTo?{range:dateRange(input.dateFrom,input.dateTo)}:{}),...(input.after?{after:input.after}:{}),pageSize:input.pageSize??20},signal);
  }
  return Object.freeze({
+  async 'dashboard-summary'(input,employee,signal){
+   identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
+   return readAppDashboard({readBatch:data.readBatch,table:'records',scope:scope(employee,'read'),filters:[{column:'voided',value:false}],done:[{column:'status',value:'fixed'}],
+    trend:{kind:'line',column:'occurred_at',label:'设备故障趋势',days:14},previewColumns:['station_name', 'device_number', 'description'],labels:['待处理故障','已修复','故障总数'],unit:'起',clock,preview:row=>({id:row.id,title:String(row.station_name+' · '+row.device_number).slice(0,160),...(row.description?{description:String(row.description).slice(0,160)}:{}),occurredAt:row.created_at})},signal);
+  },
   async session(_input,employee){identity(employee);return {personId:employee.personId,organizationId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations,permissions:employee.businessAuthorization.grants.map(item=>item.permission)};},
   async catalog(input,employee,signal){identity(employee);if(!plain(input)||Object.keys(input).some(key=>!['organizationId','stationSearch','personSearch','assetSearch','assetTypeName','stationId'].includes(key)))fail('INVALID_INPUT');const org=input.organizationId??employee.organizationUnitId;if(!uuid(org)||!short(input.stationSearch??'',100)||!short(input.personSearch??'',100)||!short(input.assetSearch??'',100)||!short(input.assetTypeName??'',100)||input.stationId!==undefined&&!uuid(input.stationId)||!['read','create','update'].some(name=>{try{targetOrganization(employee,name,org);return true;}catch{return false;}}))fail('ACCESS_DENIED');
    const people=await gateway.invoke('platform.people.members',{organizationUnitId:org,...(input.personSearch?{search:input.personSearch}:{})},signal);

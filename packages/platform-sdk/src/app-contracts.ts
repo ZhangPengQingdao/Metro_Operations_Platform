@@ -82,5 +82,6 @@ export const PLATFORM_SDK_MODULES = [
  {path:'./ui-styles',description:'platformUiCss，共享样式，使用宿主 nonce 注入并遵循主题。'},
  {path:'./app-test-kit',description:'createAppTestHost 本地模拟操作、请求记录与 drain，不替代真实授权验收。'},
  {path:'./app-contracts',description:'版本能力参考数据，不是实例配置或运行授权状态。'},
+ {path:'./app-dashboard',description:'员工工作台摘要类型、数据校验与单次批量计数/预览辅助函数。'},
  {path:'./app-api-documentation',description:'有界输入输出结构、示例校验；不替代 handler 输入及权限检查。'},
 ] as const;

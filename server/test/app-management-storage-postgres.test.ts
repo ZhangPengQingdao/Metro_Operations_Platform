@@ -115,12 +115,18 @@ test('PostgreSQL: distinct API/storage identities, signed lifecycle and durable 
   assert.deepEqual(grouped.results[1].rows.map((row:{id:string})=>row.id),[id]);
   assert.deepEqual(grouped.results[2].rows.map((row:{id:string})=>row.id),[id]);
   assert.equal(batchStatements,1);
+  const summary=await call({operations:[{kind:'count',table:'entries',filters:[{column:'id',value:id}]},{table:'entries',pageSize:1,columns:['id']}]},'read_batch');
+  assert.equal(summary.results[0].count,1);
+  assert.equal(JSON.stringify(summary.results[1].rows),JSON.stringify([{id}]));
+  assert.equal(batchStatements,2);
   denyAfterStatement=true;
   await assert.rejects(call({operations:[{table:'entries',id},{table:'entries',pageSize:1}]},'read_batch'),/ACCESS_DENIED/);
   denyAfterStatement=false;allowed=true;
   await assert.rejects(call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'not-a-date'}},true),/INVALID_PARAMS/);
   await call({table:'entries',id,requestId:randomUUID(),action:'update',values:{occurred_at:'2026-09-16T00:00:00Z'}},true);
   assert.equal(Date.parse((await call({table:'entries',id})).row.occurred_at),Date.parse('2026-09-16T00:00:00Z'));
+  const daily=await call({operations:[{kind:'daily_count',table:'entries',column:'occurred_at',from:'2026-09-16',days:14,filters:[{column:'id',value:id}]}]},'read_batch');
+  assert.equal(JSON.stringify(daily.results[0]),JSON.stringify({days:[{day:'2026-09-16',count:1}]}));
   const page=await call({table:'entries',pageSize:1,filters:[{column:'id',value:id}]},'list');
   assert.equal(page.rows[0].id,id);assert.equal(page.nextCursor,null);
   assert.deepEqual((await call({table:'entries',afterId:id},'list')).rows,[]);

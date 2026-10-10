@@ -1,3 +1,4 @@
+import {isDashboardLayout,type DashboardLayout} from '@metro/platform-sdk/app-dashboard';
 import {createPlatformActorContextResolver} from '../context/index.js';
 import {createAuthorizationService,createPostgresAuthorizationRepository} from '../authorization/index.js';
 import {createPostgresPeopleDirectoryRepository} from '../people/index.js';
@@ -116,6 +117,22 @@ export class EmployeeIdentityService{
   if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   if(account.password_change_required&&!allowPasswordChange)throw new EmployeeIdentityError(403,'EMPLOYEE_PASSWORD_CHANGE_REQUIRED');
   await this.validPerson(db,account.person_id);return account;
+ }
+ async dashboardLayout(token?:string){
+  const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  const [saved]=await this.read(db=>rows<{layout:DashboardLayout;revision:number}>(db,'SELECT layout,revision FROM platform_employee_dashboard_layouts WHERE account_id=$1',[account.id]));
+  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  return saved??{layout:null,revision:0};
+ }
+ async saveDashboardLayout(token:string,input:unknown){
+  const parsed=z.object({layout:z.custom<DashboardLayout>(isDashboardLayout),revision:z.number().int().min(0).max(2147483646)}).strict().parse(input);
+  return this.transaction(async db=>{
+   const account=await this.requireSelf(db,token);
+   const [current]=await rows<{revision:number}>(db,'SELECT revision FROM platform_employee_dashboard_layouts WHERE account_id=$1',[account.id]);
+   if((current?.revision??0)!==parsed.revision)throw new EmployeeIdentityError(409,'DASHBOARD_LAYOUT_CONFLICT');
+   const [saved]=await rows<{layout:DashboardLayout;revision:number}>(db,`INSERT INTO platform_employee_dashboard_layouts(account_id,layout,revision) VALUES($1,$2,1) ON CONFLICT(account_id) DO UPDATE SET layout=EXCLUDED.layout,revision=platform_employee_dashboard_layouts.revision+1,updated_at=now() RETURNING layout,revision`,[account.id,JSON.stringify(parsed.layout)]);
+   return saved;
+  });
  }
  async updateProfile(token:string,input:unknown){
   const parsed=z.object({phone:z.string().trim().max(50).regex(/^[+0-9 ()-]*$/),wecomUserId:z.string().trim().max(255).regex(/^[a-zA-Z0-9_.@-]*$/)}).strict().parse(input);

@@ -63,6 +63,8 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.post('/auth/login',{bodyLimit:4096},async(req,reply)=>{const result=await options.service.login(req.body);reply.setCookie(EMPLOYEE_SESSION_COOKIE,result.token,{...cookie,maxAge:8*60*60});return result.account;});
   scoped.get('/auth/me',async req=>options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE],true));
   scoped.post('/auth/logout',async(req,reply)=>{await options.service.logout(req.cookies[EMPLOYEE_SESSION_COOKIE]!);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
+  scoped.get('/dashboard-layout',async req=>options.service.dashboardLayout(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.put('/dashboard-layout',{bodyLimit:8192},async req=>options.service.saveDashboardLayout(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
   scoped.get('/profile',async req=>options.service.profile(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
   scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
@@ -79,6 +81,10 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.get('/apps',async req=>{
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>resolveRequestIdentity(req));
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/dashboard',async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   return options.management.employeeDashboard(req.params.appId,()=>resolveRequestIdentity(req));
   });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/ui',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');

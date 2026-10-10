@@ -1,3 +1,4 @@
+import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {randomUUID} from 'node:crypto';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
@@ -146,6 +147,11 @@ export function createHuicetongService(gateway,{clock=()=>new Date(),newId=rando
   return {status:to,revision:parent.revision+1};
  }
  return Object.freeze({
+  async 'dashboard-summary'(input,employee,signal){
+   identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
+   return readAppDashboard({readBatch:data.readBatch,table:'plan_items',scope:readableScope(employee),filters:[],done:[{column:'status',value:'completed'}],excluded:[{column:'status',value:'cancelled'}],
+    trend:{kind:'line',column:'created_at',label:'新增计划趋势',days:14},previewColumns:['content', 'category_name'],labels:['待完成计划','已完成','计划总数'],unit:'项',clock,preview:row=>({id:row.id,title:String(row.content).slice(0,160),...(row.category_name?{description:String(row.category_name).slice(0,160)}:{}),occurredAt:row.created_at})},signal);
+  },
   async session(input,employee){identity(employee);if(!ownKeys(input,[])||Object.keys(input).length)fail('INVALID_INPUT');const read=employee.businessAuthorization.grants.find(grant=>grant.permission===permission('read'));return {personId:employee.personId,organizationId:employee.organizationUnitId,organizations:employee.businessAuthorization.organizations.filter(row=>read?.all||read?.organizationIds.includes(row.id)),permissions:employee.businessAuthorization.grants.map(grant=>grant.permission)};},
   async members(input,employee,signal){identity(employee);if(!ownKeys(input,['organizationId','workgroupId','search'])||!uuid(input.organizationId)||!uuid(input.workgroupId)||input.search!==undefined&&!validText(input.search,100,false))fail('INVALID_INPUT');requireAccess(employee,'read',input.organizationId);
    const context=await gateway.invoke('platform.people.organization_context',{organizationUnitId:input.workgroupId},signal);

@@ -51,3 +51,7 @@ const result = await client.call('inventory', 'get-record', {id:recordId});
 gateway 来自当前员工触发的隔离后端 handler。不能传员工ID模拟他人，不能从浏览器直接访问另一个应用的后端地址，也不适用于外部系统或无人登录任务。
 
 平台检查调用方服务授权、双方启用与版本、提供方开放状态、当前员工在目标应用的准入、业务角色和范围。已开放不等于当前调用者已获授权。写入必须先确认输入；writeOutcome=unknown 时禁止自动重放。
+
+## 工作台摘要（0.25.0）
+
+应用可用 manifest `dashboard` 声明只读摘要，平台按当前员工身份展示；协议、权限边界和完整接入步骤见 [员工工作台](../employee-dashboard.md)。SDK 提供 `@metro/platform-sdk/app-dashboard` 类型、校验与批量摘要辅助函数。

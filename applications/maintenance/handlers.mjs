@@ -1,6 +1,6 @@
 import {createMaintenanceService} from './service.mjs';
 const definitive=new Set(['INVALID_INPUT','PLAN_TOO_LARGE','ACCESS_DENIED','INVALID_PERSON','INVALID_STATION','CONFLICT','COMPLETED_PROTECTED','EMPLOYEE_REQUIRED']);
-const reads=new Set(['session','catalog','list','detail','export']);
+const reads=new Set(['dashboard-summary','session','catalog','list','detail','export']);
 export function createMaintenanceHandlers(gateway){
  const service=createMaintenanceService(gateway);
  return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,async execute(payload,signal,employee){

@@ -49,6 +49,7 @@ const schema = z.object({
   routes: list(z.object({ id, path: routePath, permission: code.optional() }).strict()),
   api: list(z.object({ id, method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']), path: routePath, handler: id, permission: code.optional(), businessPermission:code.optional(), businessEntry:z.literal(true).optional(),
     expose:z.object({contractVersion:z.literal('1.0'),mode:z.enum(['read','write']),title:z.string().min(1).max(80).optional(),documentation:z.custom<AppApiDocumentation>(isAppApiDocumentation).optional()}).strict().optional() }).strict()),
+  dashboard:z.object({apiId:id,routeId:id}).strict().optional(),
   navigation: list(z.object({ id, label, routeId: id, order: z.number().int().min(0).max(10000) }).strict()),
   events: z.object({ publish: list(event), subscribe: list(z.object({ event, handler: id }).strict()) }).strict(),
   tools: list(z.object({ name: id, contributionArtifactId: id, uiResourceId: id.optional() }).strict()),
@@ -113,6 +114,11 @@ function crossChecks(m: AppManifest): AppManifestIssue[] {
     && !m.compatibility.applications.some(app=>permission.startsWith(`app.${app.id}.`)))) fail('permissions.requested','Cross-application permission requires a declared application dependency');
   if (m.backend.mode === 'none' && m.api.length) fail('api', 'API declarations require a backend runtime');
   if (m.navigation.some((x) => !m.routes.some((r) => r.id === x.routeId))) fail('navigation', 'Navigation must reference a declared route');
+  if(m.dashboard){
+   const api=m.api.find(api=>api.id===m.dashboard!.apiId);
+   if(!api||api.expose?.mode!=='read'||!['GET','POST'].includes(api.method))fail('dashboard.apiId','Dashboard requires an exposed read API');
+   if(!m.routes.some(route=>route.id===m.dashboard!.routeId)||m.ui.mode!=='sandbox')fail('dashboard.routeId','Dashboard requires a sandbox route');
+  }
   const usedArtifacts = new Set<string>();
   const artifact = (artifactId: string, kind: AppManifest['artifacts'][number]['kind'], path: string) => {
     usedArtifacts.add(artifactId);
