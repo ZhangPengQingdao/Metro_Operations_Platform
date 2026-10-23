@@ -47,12 +47,39 @@ export interface AppBackendHandler {
   requireEmployeeContext?: boolean;
   execute(payload: AppGatewayJson, signal: AbortSignal, employee?: Readonly<AppBackendEmployeeContext>): Promise<AppGatewayJson>;
 }
+/**
+ * Set by the application model v2 child process before it loads the app bundle. A v1 backend
+ * (`createAppBackend`) running there registers its handlers here and reaches the platform over IPC.
+ */
+export interface AppHostedRuntimeHook {
+  register(handlers: ReadonlyMap<string, AppBackendHandler>): void;
+  /** Platform operation bound to the employee call in progress, if any. Resolves to the result or throws `{code, writeOutcome}`. */
+  platform(operation: string, params: AppGatewayJson): Promise<AppGatewayJson>;
+  readonly signal: AbortSignal;
+}
+const HOSTED_HOOK = '__MOP_V2_CHILD__';
+function hostedBackend(hook: AppHostedRuntimeHook, handlers: ReadonlyMap<string, AppBackendHandler>) {
+  hook.register(new Map([...handlers].map(([key, value]) => [key, {...value}])));
+  const gateway = createAppGatewayClient(async request => {
+    try { return {version: '1.0', requestId: 'hosted', traceId: 'hosted', result: await hook.platform(request.operation, request.params)}; }
+    catch (error) {
+      const failure = error as {code?: unknown; writeOutcome?: unknown};
+      return {version: '1.0', error: {code: typeof failure?.code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(failure.code) ? failure.code : 'GATEWAY_FAILED', writeOutcome: failure?.writeOutcome === 'not_started' ? 'not_started' : 'unknown'}};
+    }
+  });
+  const whenClosed = new Promise<void>(resolve => { if (hook.signal.aborted) resolve(); else hook.signal.addEventListener('abort', () => resolve(), {once: true}); });
+  return {gateway, signal: hook.signal, whenClosed, close() {}, async drain() {}};
+}
+
 export function createAppBackend(options: {
   input: Readable;
   output: Writable;
   handlers: ReadonlyMap<string, AppBackendHandler>;
   timeoutMs?: number;
 }) {
+  const hook = (globalThis as {[HOSTED_HOOK]?: AppHostedRuntimeHook})[HOSTED_HOOK];
+  // Platform-hosted (v2) process: stdio is not the channel; the same handlers are served over IPC.
+  if (hook) { if (options.handlers.size > 128) throw Error('INVALID_BACKEND_OPTIONS'); return hostedBackend(hook, options.handlers); }
   const {input, output} = options, timeout = options.timeoutMs ?? 10_000;
   if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000 || input.destroyed || output.destroyed || options.handlers.size > 128) throw Error('INVALID_BACKEND_OPTIONS');
   const handlers = new Map([...options.handlers].map(([key,value]) => [key,{...value}]));

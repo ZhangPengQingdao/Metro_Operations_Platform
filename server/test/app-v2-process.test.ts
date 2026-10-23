@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import { AppProcessV2 } from '../src/app-platform/v2/process.ts';
 
 // A built server.js is self-contained; this fixture mirrors defineServer()'s output without imports.
@@ -81,4 +82,42 @@ test('an invalid server export fails to start', async () => {
     const app = new AppProcessV2({ appId: 'demo', serverPath: join(dir, 'server.js'), cwd: dir, onPlatform: async () => null, log: () => {} });
     await assert.rejects(app.start(), { code: 'INVALID_SERVER_EXPORT' });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('a v1 createAppBackend entry runs in the v2 child over IPC, two at once', async () => {
+  const { build } = await import('esbuild');
+  const dir = await mkdtemp(join(tmpdir(), 'mop-v2-legacy-'));
+  const entry = join(dir, 'entry.mjs');
+  // Shape of the existing applications' entry.mjs: stdio backend, health port 8080, gateway-based data client.
+  await writeFile(entry, `
+import {createServer} from 'node:http';
+import {createAppBackend} from '@metro/platform-sdk/app-backend';
+import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
+const handlers = new Map([['detail', {method: 'POST', path: '/detail', requireEmployeeContext: true, async execute(payload, signal, employee) {
+  const data = createAppDataClient({invoke: (...args) => backend.gateway.invoke(...args)});
+  try { return {ok: true, result: {row: await data.get('records', payload.id), person: employee.personId}}; }
+  catch (error) { return {ok: false, error: {code: error.code, writeOutcome: error.writeOutcome}}; }
+}}]]);
+const backend = createAppBackend({input: process.stdin, output: process.stdout, handlers});
+const health = createServer((req, res) => { res.writeHead(200); res.end(); });
+health.listen(8080, '127.0.0.1');
+void backend.whenClosed.then(() => health.close());
+`);
+  await build({ entryPoints: [entry], outfile: join(dir, 'server.js'), bundle: true, format: 'esm', platform: 'node', target: 'node22', logLevel: 'silent',
+    absWorkingDir: fileURLToPath(new URL('../..', import.meta.url)), nodePaths: [fileURLToPath(new URL('../../node_modules', import.meta.url))] });
+  const platform: { operation: string; callId?: string }[] = [];
+  const make = () => new AppProcessV2({ appId: 'legacy', serverPath: join(dir, 'server.js'), cwd: dir, log: () => {},
+    onPlatform: async (operation, params, callId) => {
+      platform.push({ operation, ...(callId ? { callId } : {}) });
+      if ((params as { id: string }).id === 'missing') throw Object.assign(new Error('x'), { code: 'STORAGE_CONFLICT', writeOutcome: 'not_started' });
+      return { row: { id: (params as { id: string }).id } };
+    } });
+  const a = make(), b = make();
+  try {
+    await Promise.all([a.start(), b.start()]);
+    assert.deepEqual([...a.handlerNames], ['detail']);
+    assert.deepEqual(await a.call('detail', { id: 'r1' }, employee), { ok: true, result: { row: { row: { id: 'r1' } }, person: employee.personId } });
+    assert.deepEqual(await b.call('detail', { id: 'missing' }, employee), { ok: false, error: { code: 'STORAGE_CONFLICT', writeOutcome: 'not_started' } });
+    assert.ok(platform.every(call => call.operation === 'platform.app_data.get' && call.callId), 'platform calls stay bound to the employee call');
+  } finally { await a.stop(); await b.stop(); await rm(dir, { recursive: true, force: true }); }
 });

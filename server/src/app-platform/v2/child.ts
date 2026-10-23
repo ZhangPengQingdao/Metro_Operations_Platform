@@ -1,12 +1,17 @@
 /**
  * Application model v2 child process entry: `node child.js <server.js> <appId>`.
- * Loads the app's defineServer() bundle and serves calls from the platform over the IPC channel.
+ * Serves calls from the platform over the IPC channel. Two bundle styles are supported:
+ * - v2: `export default defineServer({...})`;
+ * - v1: an entry script that calls `createAppBackend({handlers})` (registered through the hosted-runtime hook).
  * The child holds no credentials; every platform capability is executed by the parent.
  */
-import { pathToFileURL } from 'node:url';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { createAppDataClient } from '@metro/platform-sdk/app-gateway';
-import { AppServerError, createAppServerContext, isAppServerDefinition, type AppServerBaseContext } from '@metro/platform-sdk/server';
+import net from 'node:net';
+import { pathToFileURL } from 'node:url';
+import type { AppBackendHandler, AppHostedRuntimeHook } from '@metro/platform-sdk/app-backend';
+import { createAppDataClient, type AppGatewayJson } from '@metro/platform-sdk/app-gateway';
+import { AppServerError, createAppServerContext, isAppServerDefinition, type AppServerBaseContext, type AppServerDefinition } from '@metro/platform-sdk/server';
 import type { ChildMessage, ParentMessage } from './protocol.js';
 
 const [serverPath, appId] = process.argv.slice(2);
@@ -14,20 +19,19 @@ const CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
 const send = (message: ChildMessage) => { process.send?.(message); };
 const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
 const calls = new Map<string, AbortController>();
+/** The employee call a platform request belongs to (absent in start() hooks and timers). */
+const currentCall = new AsyncLocalStorage<string>();
 const lifetime = new AbortController();
 let sequence = 0;
 
-function gateway(callId?: string) {
-  return {
-    invoke(operation: string, params: unknown) {
-      return new Promise((resolve, reject) => {
-        const id = ++sequence;
-        pending.set(id, { resolve, reject });
-        send({ t: 'platform', id, ...(callId ? { callId } : {}), operation, params: params ?? null });
-      });
-    },
-  } as Parameters<typeof createAppServerContext>[0]['gateway'];
+function platform(operation: string, params: unknown, callId = currentCall.getStore()): Promise<AppGatewayJson> {
+  return new Promise((resolve, reject) => {
+    const id = ++sequence;
+    pending.set(id, { resolve: value => resolve(value as AppGatewayJson), reject });
+    send({ t: 'platform', id, ...(callId ? { callId } : {}), operation, params: params ?? null });
+  });
 }
+const gateway = { invoke: (operation: string, params: unknown) => platform(operation, params) } as Parameters<typeof createAppServerContext>[0]['gateway'];
 const log = (message: string) => { console.log(message); };
 function errorCode(error: unknown) {
   const code = (error as { code?: unknown })?.code;
@@ -37,9 +41,44 @@ function errorCode(error: unknown) {
 }
 
 if (!serverPath || !appId || !process.send) { console.error('child: missing server path, app id or IPC channel'); process.exit(2); }
+
+// v1 entries started a health HTTP server on port 8080 for Docker. Health is the IPC channel here, and
+// several apps share one host, so that listener is accepted without binding the port.
+const listen = net.Server.prototype.listen;
+net.Server.prototype.listen = function (this: net.Server, ...args: unknown[]) {
+  const port = typeof args[0] === 'number' ? args[0] : (args[0] as { port?: unknown } | null)?.port;
+  if (port === 8080) {
+    const callback = args.find(arg => typeof arg === 'function') as (() => void) | undefined;
+    queueMicrotask(() => { callback?.(); this.emit('listening'); });
+    return this;
+  }
+  return (listen as (...rest: unknown[]) => net.Server).apply(this, args);
+} as typeof net.Server.prototype.listen;
+
+let legacyHandlers: ReadonlyMap<string, AppBackendHandler> | null = null;
+const hook: AppHostedRuntimeHook = {
+  register(handlers) { if (legacyHandlers) throw new Error('BACKEND_ALREADY_REGISTERED'); legacyHandlers = handlers; },
+  platform: (operation, params) => platform(operation, params),
+  signal: lifetime.signal,
+};
+(globalThis as { __MOP_V2_CHILD__?: AppHostedRuntimeHook }).__MOP_V2_CHILD__ = hook;
+
 const loaded: unknown = (await import(pathToFileURL(serverPath).href)).default;
-if (!isAppServerDefinition(loaded)) { send({ t: 'fatal', code: 'INVALID_SERVER_EXPORT' }); process.exit(1); }
-const definition = loaded;
+const definition: AppServerDefinition | null = isAppServerDefinition(loaded) ? loaded : null;
+if (!definition && !legacyHandlers) { send({ t: 'fatal', code: 'INVALID_SERVER_EXPORT' }); process.exit(1); }
+const handlerNames = definition ? Object.keys(definition.handlers) : [...legacyHandlers!.keys()];
+
+async function dispatch(message: Extract<ParentMessage, { t: 'call' }>, signal: AbortSignal): Promise<unknown> {
+  if (definition) {
+    const handler = definition.handlers[message.api];
+    if (!handler) throw new AppServerError('UNKNOWN_API');
+    const context = createAppServerContext({ appId, gateway, employee: message.employee, signal, log });
+    return handler(message.input as Parameters<typeof handler>[0], context);
+  }
+  const handler = legacyHandlers!.get(message.api);
+  if (!handler) throw new AppServerError('UNKNOWN_API');
+  return handler.execute(message.input as AppGatewayJson, signal, message.employee);
+}
 
 process.on('message', (message: ParentMessage) => {
   if (message.t === 'platform-result') {
@@ -51,27 +90,26 @@ process.on('message', (message: ParentMessage) => {
   } else if (message.t === 'call') {
     const controller = new AbortController();
     calls.set(message.id, controller);
-    void (async () => {
+    void currentCall.run(message.id, async () => {
       try {
-        const handler = definition.handlers[message.api];
-        if (!handler) throw new AppServerError('UNKNOWN_API');
-        const context = createAppServerContext({ appId, gateway: gateway(message.id), employee: message.employee, signal: controller.signal, log });
-        const result = await handler(message.input as Parameters<typeof handler>[0], context);
+        const result = await dispatch(message, controller.signal);
         send({ t: 'result', id: message.id, ok: true, result: result === undefined ? null : result });
       } catch (error) {
         if (errorCode(error) === 'APP_HANDLER_FAILED') console.error(`handler ${message.api} failed:`, error);
         send({ t: 'result', id: message.id, ok: false, code: errorCode(error) });
       } finally { calls.delete(message.id); }
-    })();
+    });
   } else if (message.t === 'abort') calls.get(message.id)?.abort();
   else if (message.t === 'stop') {
     lifetime.abort();
-    void Promise.resolve(definition.hooks.stop?.()).catch(error => console.error('stop hook failed:', error)).finally(() => process.exit(0));
+    void Promise.resolve(definition?.hooks.stop?.()).catch(error => console.error('stop hook failed:', error)).finally(() => process.exit(0));
   }
 });
 process.on('disconnect', () => process.exit(0));
 
 // Ready first: start() typically schedules timers that call the platform, which only serves running apps.
-send({ t: 'ready', handlers: Object.keys(definition.handlers) });
-const base: AppServerBaseContext = { appId, data: createAppDataClient(gateway()), platform: gateway(), signal: lifetime.signal, log, uuid: () => randomUUID() };
-try { await definition.hooks.start?.(base); } catch (error) { console.error('start hook failed:', error); }
+send({ t: 'ready', handlers: handlerNames });
+if (definition?.hooks.start) {
+  const base: AppServerBaseContext = { appId, data: createAppDataClient(gateway), platform: gateway, signal: lifetime.signal, log, uuid: () => randomUUID() };
+  try { await definition.hooks.start(base); } catch (error) { console.error('start hook failed:', error); }
+}
