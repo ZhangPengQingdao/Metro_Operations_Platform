@@ -21,3 +21,14 @@ API 入口 `npm --prefix server start`；`HOST` 默认为 127.0.0.1，容器内�
 员工账号与目录 Gateway 新增两项结构迁移；升级到 0.1.0 时按上述数据库初始化流程显式执行后再启用接口。不会自动创建员工账号或授权。接口及验收边界见 [员工身份与目录接口](employee-gateway.md)。
 
 应用 runtime 存储另新增一项迁移（租约、写入记录及权限定义），当前总计 32 项。开启 managedStorage 前须完成迁移；当前未知日常写入会保留记录并阻断，已有原事务证据核对恢复入口，详见托管存储文档。
+
+## 应用模型 v2（0.27.0 起）
+
+单文件 `.mopkg` 应用由平台直接托管，不需要 Docker、资源域或发布者密钥：
+
+- 前提：已配置 `MOP_APP_MANAGEMENT_CONFIG`，并执行 `db:init`（新增 `platform_app_v2_migrations`、`platform_app_v2_requests` 两张表）。
+- 数据库：安装时平台用 API 连接为应用创建 schema（`app_<安装ID>`），因此 API 数据库角色需要该库的 `CREATE` 权限（`GRANT CREATE ON DATABASE <库名> TO <API 角色>`）。不需要 `MOP_APP_STORAGE_ADMIN_DATABASE_URL`。现有 v1 应用的 schema 不受影响。
+- 文件：安装包解压到 `<artifactRoot>/v2/<appId>/<sha256>/`，按版本不可变保存。
+- 进程：每个启用的应用由 API 进程以 Node 子进程运行（同一容器或主机、同一系统用户），环境变量只含 `NODE_ENV`、`TZ`、`PATH`、`MOP_APP_ID`，不含数据库地址或密钥。平台启动时自动拉起已启用的应用；异常退出按 1s→60s 退避重启，5 分钟内连续 5 次后停止重启，管理员可在应用状态中重新启动。
+- 内存：每个应用默认上限 256MB（`app.json` 的 `limits.memoryMiB` 可调），按已启用应用数量预留。
+

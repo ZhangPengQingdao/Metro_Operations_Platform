@@ -2,7 +2,7 @@
 
 状态：已确认（2026-10-23），按第 8 节分阶段实施。基于 0.25.0 代码审计（2026-10-23）。
 
-实施进度：P1 已在 0.26.0 完成（清单、SDK、`mop-app init/check/build`、`.mopkg` 安装预览），见第 8 节。
+实施进度：P1 已在 0.26.0 完成（清单、SDK、`mop-app init/check/build`、`.mopkg` 安装预览）；P2 运行时已在 0.27.0 完成（安装、子进程、同源页面、数据服务），见第 8 节。
 
 ## 1. 目标与定位
 
@@ -84,9 +84,9 @@ export default defineApp({
 
 ### 4.2 加载与共享依赖
 
-- 外壳在 `index.html` 写入 import map，把 `react`、`react-dom`、`react/jsx-runtime`、`@metro/platform-sdk/app`、`@metro/platform-sdk/ui` 指向平台构建的共享 ESM 文件（`/runtime/<平台版本>/*.js`），保证全局只有一份 React 和组件库。
-- CLI 构建应用时把上述模块标为 external，`ui.js` 只含业务代码（预计从现在每应用数百 KB 降到几十 KB）。
-- 前端地址带内容哈希（`/api/apps/:id/ui/:sha256.js`），长期缓存；升级即换地址。
+- 外壳在加载第一个应用页面前登记共享模块表 `globalThis.__MOP_SHARED__`：`react`、`react-dom`、`react-dom/client`、`react/jsx-runtime`、`@metro/platform-sdk/app`、`@metro/platform-sdk/ui`（外壳自己的组件库，导出清单见 `src/components/ui/app-exports.ts`，SDK 的 `ui.js` 由同一清单构建）。
+- `mop-app build` 把对这些模块的 import 编译成对共享表的读取（CommonJS 包装，任意具名导入都可用），`ui.js` 只含业务代码；示例应用页面约 2KB。实施中改用此方式代替 import map：无需生成垫片文件，外壳只需 `import(moduleUrl)`。
+- 页面文件地址带内容哈希（`/api/employee/apps/:id/v2/:sha256/ui.js`），按员工准入下发，私有长期缓存；升级即换地址。
 - 应用 CSS（可选 `ui.css`）由 CLI 自动加 `[data-app="<id>"]` 前缀，外壳在应用容器上设置该属性，避免样式互相污染。颜色、字号、圆角等一律引用平台 CSS 变量。
 
 ### 4.3 外壳行为
@@ -173,11 +173,11 @@ POST /api/apps/:appId/call/:apiId   （员工 cookie）
 ### 6.3 新的一致性规则
 
 - 一次 `transaction` 在一个数据库事务内执行，要么全部成功要么全部回滚，不存在“写了一半”的状态。
-- `requestId` 作幂等键：平台在同一事务内写入 `app_requests(app_id, request_id, result)`（唯一约束）。客户端或应用超时后**可以用同一 requestId 安全重试**，重复请求直接返回首次结果。
-- 迁移记录简化为一张表 `app_migrations(app_id, migration_id, checksum, applied_at)`；已执行的迁移校验和不可变，升级只能在末尾追加。
+- `requestId` 作幂等键：平台在同一事务内写入 `platform_app_v2_requests(installation_id, request_id, result)`（主键约束）。客户端或应用超时后**可以用同一 requestId 安全重试**：重复请求不再写入，直接返回首次提交的结果（即使重试时重新生成了行 ID）。键保留 7 天。
+- 迁移记录简化为一张表 `platform_app_v2_migrations(installation_id, migration_id, sha256, applied_at)`；已执行的迁移摘要不可变，升级只能在末尾追加。
 - 外部写（Webhook、企业微信等）仍然不自动重放，失败如实返回给应用。
 
-这与 `AGENTS.md` 中“无证据的外部写结果保持未知，不自动重放”的规则需要对齐：建议改为“平台内数据库写入以事务和幂等键保证一致；外部系统写入失败不自动重放”。修改 `AGENTS.md` 需经确认。
+`AGENTS.md` 的对应规则已在 0.27.0 改为：平台内数据库写入以事务和幂等键保证一致；外部系统写入失败不自动重放。
 
 ## 7. 单文件包 `.mopkg`
 
@@ -261,11 +261,12 @@ extinguisher-inspection-1.0.0.mopkg
 
 ### 7.4 安装与升级
 
-管理端“安装应用”：拖入 `.mopkg` → 平台解析并展示预览卡片（图标、名称、版本、说明；升级时显示版本变化、新增权限与平台能力、待执行迁移、CHANGELOG）→ 确认 → 写入 `runtime/apps/<id>/<version>/`、执行迁移、启动进程、启用。
+管理端“安装应用”：上传 `.mopkg` → 平台解析并展示预览（图标、名称、版本、说明、权限与平台能力增减、页面、接口、迁移、问题清单）→ 安装或更新。
 
-- 降级默认拒绝；回滚通过重新安装旧包实现，前提是新版本没有追加迁移（预览中明确提示）。
-- 新增的 `platformAccess` 需管理员在预览中勾选确认；本应用权限的分配沿用现有“员工角色与数据范围”页面。
-- 升级失败（迁移报错或进程起不来）时保留旧版本继续运行，迁移在事务内执行，失败即回滚。
+- 顺序：校验 → 文件写入 `<artifactRoot>/v2/<appId>/<sha256>/` → 迁移（单个事务，仅追加，对正在运行的旧版本无影响）→ 注册表切换版本 → 服务身份与平台能力授权 → 启动进程并启用。每一步可重复，失败后重新上传同一个包即可继续。
+- 降级拒绝；同版本只在应用已停用时作为“修复”接受。现有 v1 应用暂不能用 `.mopkg` 更新（P3 迁移提供）。
+- 平台能力按 `platformAccess` 在安装时授予；本应用权限沿用现有**应用负责人 + 业务角色与数据范围**：管理员在“设置”中指定负责人，负责人在员工端“应用管理”配置角色和使用人员。未配置前应用对员工不可见。
+- 进程启动失败时生命周期记为失败、应用保持停用，状态页可查看最近日志。
 
 ## 8. 实施阶段
 
@@ -274,13 +275,14 @@ extinguisher-inspection-1.0.0.mopkg
 | 阶段 | 内容 | 交付与验收 |
 |---|---|---|
 | P1 包与清单（0.26.0，已完成） | SDK 增加 `manifest`、`mopkg`、`app`（defineApp/useApp）、`server`（defineServer）；CLI 的 init/check/build；管理端 `.mopkg` 安装预览（`POST /api/admin/app-packages/preview`，只读） | 用模板做一个“灭火器巡检”示例，`mop-app build` 产出单文件，管理端能解析并展示安装预览；实际运行在 P2 接通，此阶段不改变现有应用 |
-| P2 运行时（0.27.0） | 进程管理器 + IPC 网关；同源前端加载、import map 共享依赖、ErrorBoundary；应用数据服务直连 schema；`app_requests`、`app_migrations` | 示例应用以 v2 方式完整运行；测量首次打开、二次进入、接口 p50/p95，与 0.25.0 基线对比 |
+| P2 运行时（0.27.0，已完成） | 进程管理器 + IPC；同源页面加载、共享模块表、错误边界；数据服务直连 schema；`platform_app_v2_requests`、`platform_app_v2_migrations`；`.mopkg` 安装/升级/修复 | 本地真实 PostgreSQL + 浏览器验收：安装、负责人配置角色、员工打开页面、写入、带参数页面跳转、升级（新迁移）、撤权后按钮隐藏且接口拒绝。接口往返 p50 7ms / p95 9ms，在线升级 122ms（本机测量，非生产数据） |
+| P2 后续 | 管理端独立域名；`mop-app dev`；`useApp().files/platform`；v1 `createAppBackend` 的 IPC 兼容（P3 前提） | 随 P3 开始前完成 |
 | P3 应用迁移（0.27.x–0.28.x） | 按下表逐个迁移现有应用 | 每个应用：本地测试通过 → 备份 → 生产升级 → 核对数据与权限 |
 | P4 清理（0.29.0 或 1.0.0） | 删除 Docker 运行时、iframe 沙箱、资源域、包签名、存储租约与证据、能力开放等 v1 代码与测试；更新 docs、Skill、`AGENTS.md` | 全量测试、类型检查、构建通过；部署文档去掉资源域与 Docker 要求 |
 
 ## 9. 现有应用迁移路径
 
-### 9.1 数据迁移（一次性，P2 发版时执行）
+### 9.1 数据迁移（一次性，P3 开始时执行）
 
 1. 平台迁移脚本把各应用 schema 的所有权/读写权限授予平台 API 角色（需用一次现有存储管理连接）。
 2. 从 v1 迁移账本读取每个应用已执行的迁移 ID 和摘要，写入 `app_migrations`；之后 v1 账本只读保留一个版本周期再删除。

@@ -7,7 +7,7 @@ import {NavLink, useLocation} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
 export interface AdminUser {id: string; username: string; displayName: string; passwordChangeRequired?: boolean}
-export interface AdminApplication {id: string; name: string; icon?: AppManifest['icon']; navigation: {id: string; label: string; path: string}[]}
+export interface AdminApplication {id: string; name: string; icon?: AppManifest['icon']; iconUrl?: string; color?: string | null; navigation: {id: string; label: string; path: string}[]}
 export interface AdminShellProps {
   mode?:'admin'|'employee';
   headerActions?: ReactNode;
@@ -94,7 +94,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
         </div>
         {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{app.navigation.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
           {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
-          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><ApplicationIcon appId={item.id} icon={item.icon}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
+          {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><ApplicationIcon appId={item.id} icon={item.icon} iconUrl={item.iconUrl} color={item.color}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
         </nav>}
         <div className="afc-sidebar-bottom">
           <div className="afc-account" ref={account} onKeyDown={event => {if (event.key === 'Escape') {setAccountOpen(false); accountTrigger.current?.focus();}}}>

@@ -214,8 +214,8 @@ test('mop-app init, check and build produce one installable-format file', async 
     assert.deepEqual(inspection.issues, []);
     assert.deepEqual(inspection.files.map(file => file.path), ['README.md', 'app.json', 'icon.svg', 'migrations/001-initial.json', 'server.js', 'ui.css', 'ui.js']);
     const ui = readMopkg(bytes).get('ui.js')!.toString('utf8');
-    assert.match(ui, /from"react"/);
-    assert.ok(!ui.includes('createElement("div"') && ui.length < 10_000, 'react and the UI kit stay shared, not bundled');
+    assert.match(ui, /__MOP_SHARED__(\.react\b|\["react"\])/);
+    assert.ok(!/from"react"/.test(ui) && ui.length < 10_000, 'react and the UI kit come from the shell, not bundled or imported');
     assert.match(readMopkg(bytes).get('ui.css')!.toString('utf8'), /^\[data-app=fire-check\] \.records-actions/);
 
     const appJson = JSON.parse(await readFile(join(project, 'app.json'), 'utf8'));

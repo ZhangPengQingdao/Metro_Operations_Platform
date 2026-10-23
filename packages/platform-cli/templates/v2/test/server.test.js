@@ -8,7 +8,10 @@ function context(grants) {
   const calls = [];
   const employee = {version: '1.0', personId: person, organizationUnitId: org, requestId: 'r1', traceId: 't1',
     businessAuthorization: {revision: '33333333-3333-4333-8333-333333333333', organizations: [], grants}};
-  const gateway = {invoke: async (operation, params) => { calls.push({operation, params}); return {rows: []}; }};
+  const gateway = {invoke: async (operation, params) => {
+    calls.push({operation, params});
+    return operation === 'platform.app_data.transaction' ? {results: params.operations.map(op => ({row: {id: op.id, ...op.values}}))} : {rows: []};
+  }};
   return {calls, ctx: createAppServerContext({appId: '__APP_ID__', gateway, employee, signal: new AbortController().signal})};
 }
 const grant = permission => ({permission: `app.__APP_ID__.${permission}`, all: false, self: true, organizationIds: []});

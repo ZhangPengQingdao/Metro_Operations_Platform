@@ -31,7 +31,7 @@ export interface AppDataV2Options {
 /**
  * Application model v2 data access: one pooled connection and one transaction per call.
  * The platform owns the schema; applications never receive SQL access or credentials.
- * Writes carry a requestId: a repeat with the same payload returns the first result, so retries are safe.
+ * Writes carry a requestId: a repeat returns the first committed result without writing again, so retries are safe.
  */
 export class AppDataServiceV2 {
   private readonly columnCache = new Map<string, { columns: Map<string, string>; expires: number }>();
@@ -87,7 +87,8 @@ export class AppDataServiceV2 {
         if (!inserted.length) {
           const [previous] = await rows<{ request_digest: string; result: GatewayJson | null }>(client, 'SELECT request_digest,result FROM platform_app_v2_requests WHERE installation_id=$1 AND request_id=$2', [installation.id, requestId]);
           await client.query('ROLLBACK'); open = false;
-          if (!previous || previous.request_digest !== digest || previous.result === null) throw new GatewayError('REQUEST_ID_REUSED', 409, 'not_started');
+          // The requestId names the write intent: a retry (even with regenerated row ids) gets the first result and writes nothing.
+          if (!previous || previous.result === null) throw new GatewayError('REQUEST_ID_REUSED', 409, 'not_started');
           return previous.result;
         }
       }

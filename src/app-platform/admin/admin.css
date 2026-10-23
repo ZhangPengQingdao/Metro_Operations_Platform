@@ -296,3 +296,12 @@
 .mopkg-preview-text summary{cursor:pointer;color:var(--afc-muted)}
 .mopkg-preview-text pre{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;padding:12px;border:1px solid var(--afc-border);border-radius:10px;background:var(--afc-page);font-size:12px}
 .mopkg-preview-blocked{margin:0;padding:10px 14px;border-radius:10px;background:color-mix(in srgb,var(--afc-color-info) 12%,transparent);color:var(--afc-ink)}
+/* Application model v2: package icon tile and in-place app pages */
+.app-icon-tile{display:inline-grid;place-items:center;flex:none;border-radius:28%;}
+.app-icon-tile img{display:block}
+.app-v2{min-width:0;max-width:1600px;margin:0 auto;padding:16px 32px 48px}
+@media(max-width:900px){.app-v2{padding:12px 20px 32px}}
+@media(max-width:540px){.app-v2{padding:12px 16px 24px}}
+.app-v2-heading h1{margin:0 0 20px;font-size:24px;font-weight:600;color:var(--afc-ink)}
+.app-v2-loading{color:var(--afc-muted);padding:24px 0}
+.app-v2-error{display:grid;justify-items:start;gap:12px;padding:24px 0;color:var(--afc-ink)}

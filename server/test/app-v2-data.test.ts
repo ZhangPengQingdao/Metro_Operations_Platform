@@ -54,7 +54,9 @@ test('data service writes atomically, replays requestIds and enforces optimistic
   const first = await service.execute(context, installation, 'transaction', write, signal) as any;
   assert.equal(first.results.length, 2);
   assert.deepEqual(JSON.parse(JSON.stringify(await service.execute(context, installation, 'transaction', write, signal))), JSON.parse(JSON.stringify(first)), 'same requestId returns the first result');
-  await assert.rejects(service.execute(context, installation, 'transaction', { ...write, operations: write.operations.slice(0, 1) }, signal), { code: 'REQUEST_ID_REUSED' });
+  const retried = { ...write, operations: write.operations.map(op => ({ ...op, id: randomUUID() })) };
+  assert.deepEqual(JSON.parse(JSON.stringify(await service.execute(context, installation, 'transaction', retried, signal))), JSON.parse(JSON.stringify(first)), 'a retry with regenerated ids writes nothing');
+  assert.equal((await service.execute(context, installation, 'read_batch', { operations: [{ kind: 'count', table: 'records' }] }, signal) as any).results[0].count, 2);
 
   const got = await service.execute(context, installation, 'get', { table: 'records', id: a }, signal) as any;
   assert.deepEqual(got.row.tags, ['x']);

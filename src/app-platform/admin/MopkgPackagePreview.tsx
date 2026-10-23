@@ -11,7 +11,7 @@ export interface MopkgPreview {
  issues:{path:string;message:string}[];platform:{version:string;compatible:boolean};
  installed:{version:string;model:'v1'|'v2'}|null;
  change:{kind:'install'|'upgrade'|'reinstall'|'downgrade';addedPermissions:string[];removedPermissions:string[];addedPlatformAccess:string[]}|null;
- installable:false;blockedReason:string;
+ installable:boolean;blockedReason:string|null;
 }
 
 /** A `.mopkg` is a zip: detect by extension or local-file header. */
@@ -65,6 +65,6 @@ export function MopkgPreviewDetails({preview}:{preview:MopkgPreview}){
   </dl>}
   {preview.changelog&&<details className="mopkg-preview-text"><summary>更新记录</summary><pre>{preview.changelog}</pre></details>}
   {preview.readme&&<details className="mopkg-preview-text"><summary>应用说明</summary><pre>{preview.readme}</pre></details>}
-  <p className="mopkg-preview-blocked" role="status">{preview.blockedReason}</p>
+  {preview.blockedReason&&<p className="mopkg-preview-blocked" role="status">{preview.blockedReason}</p>}
  </div>;
 }

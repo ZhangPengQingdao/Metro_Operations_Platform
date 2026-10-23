@@ -1,5 +1,5 @@
 /** Application model v2 commands: init, check and build a single `.mopkg` file. */
-import { build as esbuild, transform, type Metafile } from 'esbuild';
+import { build as esbuild, transform, type Metafile, type Plugin } from 'esbuild';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
@@ -8,8 +8,23 @@ import { validateAppManifestV2, type AppManifestIssueV2, type AppManifestV2 } fr
 import { createMopkg, inspectMopkg, MOPKG_MIGRATION_PATH } from '@metro/platform-sdk/mopkg';
 import { isAppServerDefinition } from '@metro/platform-sdk/server';
 
-/** Provided by the platform shell at runtime (import map); never bundled into ui.js. */
+/** Provided by the platform shell at runtime; never bundled into ui.js. */
 export const SHARED_UI_MODULES = ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', '@metro/platform-sdk/app', '@metro/platform-sdk/ui'];
+/**
+ * Shared imports become lookups in the shell's registry (`globalThis.__MOP_SHARED__`), wrapped as CommonJS so
+ * esbuild's interop serves any named import. The page then runs on the shell's single React and UI kit instance.
+ */
+const sharedModules: Plugin = {
+  name: 'mop-shared-modules',
+  setup(build) {
+    const filter = new RegExp(`^(${SHARED_UI_MODULES.map(name => name.replace(/[/.-]/g, '\\$&')).join('|')})$`);
+    build.onResolve({ filter }, args => ({ path: args.path, namespace: 'mop-shared' }));
+    build.onLoad({ filter: /.*/, namespace: 'mop-shared' }, args => ({
+      loader: 'js',
+      contents: `var m=globalThis.__MOP_SHARED__&&globalThis.__MOP_SHARED__[${JSON.stringify(args.path === 'react/jsx-dev-runtime' ? 'react/jsx-runtime' : args.path)}];if(!m)throw new Error('运行环境缺少共享模块 ${args.path}，请在运管平台中打开此应用');module.exports=m;`,
+    }));
+  },
+};
 const LEGACY_MODULES = /@metro\/platform-sdk\/(?:dist\/)?(?:app-sandbox|ui-styles)(?:\.js)?$/;
 const UI_SOURCES = ['src/ui.tsx', 'src/ui.jsx', 'src/ui.ts', 'src/ui.js'];
 const SERVER_SOURCES = ['src/server.ts', 'src/server.js', 'src/server.mjs'];
@@ -118,7 +133,7 @@ export async function buildProject(target: string): Promise<BuildResult> {
     if (checked.ui) {
       const result = await esbuild({
         absWorkingDir: root, entryPoints: { ui: join(root, checked.ui) }, outdir: work, bundle: true, format: 'esm', platform: 'browser',
-        target: 'es2022', jsx: 'automatic', minify: true, metafile: true, logLevel: 'silent', external: SHARED_UI_MODULES,
+        target: 'es2022', jsx: 'automatic', minify: true, metafile: true, logLevel: 'silent', plugins: [sharedModules],
         loader: { '.png': 'dataurl', '.jpg': 'dataurl', '.svg': 'dataurl' }, define: { 'process.env.NODE_ENV': '"production"' },
       }).catch((error: { errors?: { text: string; location?: { file: string; line: number } | null }[] }) => {
         throw new CliError('页面构建失败', (error.errors ?? []).map(item => ({ path: item.location ? `${item.location.file}:${item.location.line}` : checked.ui!, message: item.text })));

@@ -6,11 +6,11 @@ import {DashboardCustomization} from './DashboardCustomization';
 import {defaultDashboardLayout,visibleDashboardLayout,dashboardTone,type LayoutOptions} from './dashboard-layout';
 import {isDashboardLayout,type DashboardLayout} from '@metro/platform-sdk/app-dashboard';
 import {DailyChart,CompletionChart,Sparkline} from './DashboardCharts';
-import {ApplicationIcon} from '../host/ApplicationIcon';
+import {ApplicationIcon,v2IconProps} from '../host/ApplicationIcon';
 import {employeeRequest,EmployeeRequestError} from './client';
 import './dashboard.css';
 
-export type DashboardApplication={appId:string;name:string;description:string;icon?:AppManifest['icon'];version:string;runtimeRevision:number;routes:{id:string;path:string}[];dashboard?:{routeId:string}};
+export type DashboardApplication={appId:string;name:string;description:string;icon?:AppManifest['icon'];model?:'v2';v2?:{color:string|null};version:string;runtimeRevision:number;routes:{id:string;path:string}[];dashboard?:{routeId:string}};
 type CardState={data?:AppDashboardSnapshot;error?:string};
 const appHref=(app:DashboardApplication)=>`/employee/app/${app.appId}${(app.routes.find(route=>route.id===app.dashboard?.routeId)??app.routes[0])?.path??''}`;
 const formatTime=(value:string)=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
@@ -81,18 +81,18 @@ export function EmployeeDashboard({apps,loaded,onBusyChange,settingsOpen,onSetti
   {!loaded?<p role="status" className="afc-empty">正在读取可用应用…</p>:!sources.length?<div className="dashboard-empty"><h2>暂无业务概览</h2><p className="afc-muted">应用接入后将在这里显示统计。</p></div>:<div className="dashboard-cards">{selectedCards.map(app=>{
    const state=cards[app.appId],data=state?.data,primary=data?.metrics[0];
    return <article className="dashboard-card" data-tone={dashboardTone(app.appId)} key={app.appId} aria-busy={!state}>
-    <header title={data?`${data.scopeLabel} · 更新于 ${formatTime(data.generatedAt)}`:undefined}><span className="dashboard-app-name"><ApplicationIcon appId={app.appId} icon={app.icon} size={19}/><h2>{primary?.label??app.name}</h2></span><Link to={appHref(app)} aria-label={`打开${app.name}`}>↗</Link></header>
+    <header title={data?`${data.scopeLabel} · 更新于 ${formatTime(data.generatedAt)}`:undefined}><span className="dashboard-app-name"><ApplicationIcon appId={app.appId} icon={app.icon} {...v2IconProps(app)} size={19}/><h2>{primary?.label??app.name}</h2></span><Link to={appHref(app)} aria-label={`打开${app.name}`}>↗</Link></header>
     {data&&primary?<><div className="dashboard-kpi-body"><div className="dashboard-primary"><strong>{primary.value.toLocaleString('zh-CN')}</strong><span>{primary.unit}</span></div>{data.series&&<Sparkline series={data.series}/>}</div></>:<p className="dashboard-card-message" role="status">{state?.error??'正在读取…'}</p>}
    </article>;
   })}</div>}
   <div className="dashboard-workspace"><div className="dashboard-main-column">
    {layout.charts.length>0&&<div className="dashboard-chart-grid">{layout.charts.slice(0,2).map(renderChart)}</div>}
-   {shortcuts.length>0&&<nav className="dashboard-shortcuts" aria-label="应用快捷入口">{shortcuts.map(app=><Link key={app.appId} to={appHref(app)} data-tone={dashboardTone(app.appId)}><span className="dashboard-shortcut-icon"><ApplicationIcon appId={app.appId} icon={app.icon} size={24}/></span><span>{app.name}</span></Link>)}</nav>}
+   {shortcuts.length>0&&<nav className="dashboard-shortcuts" aria-label="应用快捷入口">{shortcuts.map(app=><Link key={app.appId} to={appHref(app)} data-tone={dashboardTone(app.appId)}><span className="dashboard-shortcut-icon"><ApplicationIcon appId={app.appId} icon={app.icon} {...v2IconProps(app)} size={24}/></span><span>{app.name}</span></Link>)}</nav>}
    {layout.charts.length>2&&<div className="dashboard-chart-grid">{layout.charts.slice(2).map(renderChart)}</div>}
    {!layout.cards.length&&!layout.charts.length&&!layout.shortcuts.length&&loaded&&<div className="dashboard-empty"><h2>按你的习惯布置首页</h2><p className="afc-muted">通过右上角“首页设置”添加卡片、图表和快捷入口。</p></div>}
    {loaded&&!apps.length&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}
   </div><aside className="dashboard-side-column">
-   <section className="dashboard-panel"><header><h2>重点关注</h2></header><div className="dashboard-focus">{sources.map(app=>{const data=cards[app.appId]?.data,metric=data?.metrics[0];return metric?<Link key={app.appId} to={appHref(app)}><ApplicationIcon appId={app.appId} icon={app.icon} size={18}/><span>{metric.label}</span><b>{metric.value}</b></Link>:null;})}{!sources.some(app=>cards[app.appId]?.data)&&<p className="afc-muted">{loading?'正在读取…':'暂无可用摘要'}</p>}</div></section>
+   <section className="dashboard-panel"><header><h2>重点关注</h2></header><div className="dashboard-focus">{sources.map(app=>{const data=cards[app.appId]?.data,metric=data?.metrics[0];return metric?<Link key={app.appId} to={appHref(app)}><ApplicationIcon appId={app.appId} icon={app.icon} {...v2IconProps(app)} size={18}/><span>{metric.label}</span><b>{metric.value}</b></Link>:null;})}{!sources.some(app=>cards[app.appId]?.data)&&<p className="afc-muted">{loading?'正在读取…':'暂无可用摘要'}</p>}</div></section>
    <section className="dashboard-panel"><header><h2>近期记录</h2></header><div className="dashboard-activity">{recent.map(({app,item})=><Link key={`${app.appId}:${item.id}`} to={appHref(app)}><i/><div><p>{item.title}</p>{item.description&&<small>{item.description}</small>}<span>{app.name}{item.occurredAt&&<> · <time dateTime={item.occurredAt}>{formatTime(item.occurredAt)}</time></>}</span></div></Link>)}{!recent.length&&<p className="afc-muted">{loading?'正在读取…':'暂无近期记录'}</p>}</div></section>
   </aside></div>
  </div>;

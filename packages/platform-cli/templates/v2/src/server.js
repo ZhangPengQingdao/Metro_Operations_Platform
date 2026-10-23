@@ -14,10 +14,10 @@ export default defineServer({
     if (!isUuid(input?.requestId) || !title || title.length > 100) throw new Error('INVALID_INPUT');
     const organizationUnitId = ctx.employee.organizationUnitId;
     ctx.require('create', {organizationUnitId, ownerPersonId: ctx.employee.personId});
-    const id = ctx.uuid();
-    await ctx.data.transaction(input.requestId, [{action: 'insert', table: 'records', id, values: {
+    // A retry with the same requestId writes nothing and returns the first result, so read the id from it.
+    const {results} = await ctx.data.transaction(input.requestId, [{action: 'insert', table: 'records', id: ctx.uuid(), values: {
       title, organization_id: organizationUnitId, created_by: ctx.employee.personId, created_at: new Date().toISOString(),
     }}]);
-    return {id};
+    return {id: results[0].row.id};
   },
 });
