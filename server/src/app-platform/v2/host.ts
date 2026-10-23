@@ -28,6 +28,8 @@ export interface AppHostV2Options {
   log?(line: string): void;
 }
 type ApiRequest = { apiId: string; method: string; path: string; payload: unknown };
+/** Read-only directory operations an app page may call directly; everything else goes through the app's own API. */
+export const PAGE_PLATFORM_OPERATIONS = new Set(['platform.people.members', 'platform.people.organization_context', 'platform.locations.get', 'platform.locations.list', 'platform.locations.responsible_stations', 'platform.assets.get', 'platform.assets.list']);
 const PLATFORM_FAILURE = new Set(['APP_NOT_RUNNING', 'APP_BUSY', 'APP_PROCESS_EXITED', 'TIMEOUT', 'ABORTED', 'APP_START_FAILED', 'APP_START_TIMEOUT']);
 
 /** One installed v2 application: its child process, lifecycle and employee API dispatch. */
@@ -159,15 +161,33 @@ export class AppHostV2 {
     } finally { this.employees.delete(requestId); }
   }
 
+  /**
+   * Directory read from an app page. Runs exactly like the app's own back-end call: the app's service identity
+   * and grants, with the employee bound so person and organization scopes still apply.
+   */
+  async invokeEmployeePlatform(identity: TrustedActorIdentity, request: { operation: string; params: unknown }, signal?: AbortSignal): Promise<GatewayJson> {
+    if (this.options.maintenanceBlocked?.()) throw new AppV2CallError('PLATFORM_MAINTENANCE', 503);
+    if (!PAGE_PLATFORM_OPERATIONS.has(request.operation)) throw new GatewayError('OPERATION_DENIED', 403);
+    if (identity.source === 'service') throw new GatewayError('ACCESS_DENIED', 403);
+    await this.admittedSnapshot();
+    const requestId = randomUUID();
+    const actor = await this.options.api.contextResolver.resolve({ actorType: 'person', trustedIdentity: structuredClone(identity), execution: { type: 'application', appId: this.options.appId }, requestId, traceId: requestId });
+    if (actor.actorType !== 'person') throw new GatewayError('ACCESS_DENIED', 403);
+    const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation: request.operation, params: (request.params ?? {}) as GatewayJson }, signal, async () => actor as PlatformPersonActorContext);
+    return response.result;
+  }
+
+  private async serviceIdentity() {
+    const record = await this.options.registry.runtimeSnapshot(this.options.appId);
+    if (!record.enabled || !record.serviceIdentityId || record.runtime?.model !== 'v2') throw new GatewayError('ACCESS_DENIED', 403);
+    return record.serviceIdentityId;
+  }
+
   /** Platform operation requested by the app process, executed as the app's service identity (and the bound employee). */
   private async platform(operation: string, params: unknown, callId: string | undefined): Promise<unknown> {
     const employee = callId ? this.employees.get(callId) : undefined;
     if (callId && !employee) throw new GatewayError('ACCESS_DENIED', 403);
-    const response = await this.options.gateway.invokeHosted(this.options.appId, async () => {
-      const record = await this.options.registry.runtimeSnapshot(this.options.appId);
-      if (!record.enabled || !record.serviceIdentityId || record.runtime?.model !== 'v2') throw new GatewayError('ACCESS_DENIED', 403);
-      return record.serviceIdentityId;
-    }, { version: '1.0', operation, params: params ?? null }, undefined, employee ? async () => employee : undefined);
+    const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, undefined, employee ? async () => employee : undefined);
     return response.result;
   }
 

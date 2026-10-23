@@ -99,6 +99,11 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
    return options.management.employeeV2Session(req.params.appId,query.path,()=>resolveRequestIdentity(req));
   });
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/v2-platform',{bodyLimit:16384},async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const input=z.object({operation:z.string().min(1).max(100),params:z.unknown().optional()}).strict().parse(req.body);
+   return {result:await options.management.invokeEmployeeV2Platform(req.params.appId,()=>resolveRequestIdentity(req),{operation:input.operation,params:input.params??{}},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
+  });
   scoped.get<{Params:{appId:string;sha256:string;file:string}}>('/apps/:appId/v2/:sha256/:file',async(req,reply)=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const params=z.object({appId:z.string().max(64),sha256:z.string().regex(/^[a-f0-9]{64}$/),file:z.enum(['ui.js','ui.css'])}).strict().parse(req.params);

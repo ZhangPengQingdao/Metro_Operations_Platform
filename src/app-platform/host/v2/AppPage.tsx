@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AppRuntimeProvider, isAppDefinition, type AppDefinition, type AppRuntime } from '@metro/platform-sdk/app';
+import { AppRuntimeProvider, isAppDefinition, type AppDefinition, type AppFiles, type AppRuntime } from '@metro/platform-sdk/app';
+import { createPlatformDirectoryClient } from '@metro/platform-sdk/app-directory';
+import type { AppGatewayJson } from '@metro/platform-sdk/app-gateway';
 import { Button, ConfirmDialog, useToast } from '../../../components/ui';
 import { employeeRequest, EmployeeRequestError } from '../../employee/client';
 import { installSharedModules } from './shared';
@@ -34,6 +36,43 @@ function ensureStylesheet(appId: string, url: string | undefined) {
   link.rel = 'stylesheet'; link.href = url; link.dataset.appCss = appId;
   document.head.appendChild(link);
 }
+/** Original-file access for one page session; the server re-authorizes every request through the app. */
+function createFiles(appId: string, admissionKey: string): AppFiles {
+  const headers = { 'X-Mop-Employee-Admission': admissionKey };
+  const fail = async (response: Response) => {
+    const body = await response.json().catch(() => null) as { error?: string | { code?: string } } | null;
+    const code = typeof body?.error === 'string' ? body.error : body?.error?.code ?? 'FILE_REQUEST_FAILED';
+    if (response.status === 401) window.dispatchEvent(new Event('mop-employee-session-expired'));
+    throw new EmployeeRequestError(response.status, code);
+  };
+  const download = async (attachmentId: string, signal?: AbortSignal) => {
+    const response = await fetch(`/api/employee/apps/${appId}/attachments/${encodeURIComponent(attachmentId)}`, { credentials: 'same-origin', headers, ...(signal ? { signal } : {}) });
+    if (!response.ok) await fail(response);
+    return { blob: await response.blob(), fileName: decodeURIComponent(response.headers.get('X-Mop-Attachment-Name') ?? 'file') };
+  };
+  return {
+    async upload(file, target, options) {
+      const query = new URLSearchParams({ entityType: target.entityType, entityId: target.entityId, intentId: target.intentId ?? crypto.randomUUID(), fileName: target.fileName ?? (file instanceof File ? file.name : 'file') });
+      const response = await fetch(`/api/employee/apps/${appId}/attachments?${query}`, { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: file, ...(options?.signal ? { signal: options.signal } : {}) });
+      if (!response.ok) await fail(response);
+      return response.json();
+    },
+    async list(target, options) {
+      const query = new URLSearchParams({ entityType: target.entityType, entityId: target.entityId, ...(target.afterId ? { afterId: target.afterId } : {}) });
+      const response = await fetch(`/api/employee/apps/${appId}/attachments?${query}`, { credentials: 'same-origin', headers, ...(options?.signal ? { signal: options.signal } : {}) });
+      if (!response.ok) await fail(response);
+      return response.json();
+    },
+    download: (attachmentId, options) => download(attachmentId, options?.signal),
+    async save(attachmentId) {
+      const { blob, fileName } = await download(attachmentId);
+      const url = URL.createObjectURL(blob), link = document.createElement('a');
+      link.href = url; link.download = fileName; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  };
+}
+
 const messageFor = (error: unknown) =>
   error instanceof EmployeeRequestError && error.status === 403 ? '没有访问此页面的权限，或应用授权已变更。'
   : error instanceof Error && error.message === 'INVALID_APP_MODULE' ? '应用页面文件无效，请联系应用开发者重新打包。'
@@ -69,7 +108,14 @@ export function AppPageV2({ app, path, onNavigate }: { app: AppV2Entry; path: st
   const runtime = useMemo<AppRuntime | null>(() => {
     if (!session) return null;
     const short = (code: string) => code.startsWith(`app.${session.appId}.`) ? code.slice(session.appId.length + 5) : code;
+    const platform = {
+      async invoke(operation: string, params?: AppGatewayJson, signal?: AbortSignal) {
+        const response = await employeeRequest<{ result: AppGatewayJson }>(`/apps/${session.appId}/v2-platform`, { method: 'POST', body: { operation, params: params ?? {} }, admissionKey: session.admissionKey, ...(signal ? { signal } : {}) });
+        return response.result;
+      },
+    };
     return {
+      platform, directory: createPlatformDirectoryClient(platform), files: createFiles(session.appId, session.admissionKey),
       appId: session.appId,
       user: { personId: session.user.personId, name: session.user.name, organizationUnitId: session.user.organizationUnitId ?? '', permissions: session.user.permissions, has: code => session.user.permissions.includes(short(code)) },
       route: { path: session.route.path, params: session.route.params },

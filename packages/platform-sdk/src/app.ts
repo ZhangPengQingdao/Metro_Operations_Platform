@@ -1,6 +1,7 @@
 /** Application model v2 front end. Apps export `defineApp(...)`; the platform shell renders its pages in place, same origin. */
 import { createContext, createElement, useContext, type ComponentType, type ReactNode } from 'react';
 import type { AppGatewayJson } from './app-gateway.js';
+import type { createPlatformDirectoryClient } from './app-directory.js';
 import { isAppPagePath } from './manifest.js';
 
 export interface AppPageProps { params: Readonly<Record<string, string>> }
@@ -22,12 +23,31 @@ export interface AppUser {
   has(permission: string): boolean;
 }
 
+export interface AppAttachment { attachmentId: string; fileName: string; contentType: string; sizeBytes: number; createdAt?: string }
+/**
+ * Original files attached to a business record (`entityType` + `entityId`). The app must provide an
+ * `authorize-attachment` API that returns `{organizationId}` for the record, and request
+ * `attachments.create` / `attachments.read` in app.json. Files up to 50MB: Word, Excel, PDF, ZIP and images.
+ */
+export interface AppFiles {
+  upload(file: Blob, target: { entityType: string; entityId: string; fileName?: string; intentId?: string }, options?: { signal?: AbortSignal }): Promise<AppAttachment>;
+  list(target: { entityType: string; entityId: string; afterId?: string }, options?: { signal?: AbortSignal }): Promise<{ attachments: AppAttachment[]; nextCursor: string | null }>;
+  download(attachmentId: string, options?: { signal?: AbortSignal }): Promise<{ blob: Blob; fileName: string }>;
+  /** Downloads and hands the file to the browser's save dialog. */
+  save(attachmentId: string): Promise<void>;
+}
+
 /** Supplied by the platform shell. Server-side authorization still applies to every call. */
 export interface AppRuntime {
   readonly appId: string;
   readonly user: AppUser;
   readonly route: { readonly path: string; readonly params: Readonly<Record<string, string>> };
   readonly api: { call<T = AppGatewayJson>(apiId: string, input?: AppGatewayJson, options?: { signal?: AbortSignal }): Promise<T> };
+  /** Read-only platform directory calls from the page (people, organizations, lines and stations, assets), using the app's grants. */
+  readonly platform: { invoke(operation: string, params?: AppGatewayJson, signal?: AbortSignal): Promise<AppGatewayJson> };
+  /** Typed helpers over `platform`, e.g. `directory.members({organizationUnitId})`, `directory.responsibleStations(...)`. */
+  readonly directory: ReturnType<typeof createPlatformDirectoryClient>;
+  readonly files: AppFiles;
   navigate(path: string): void;
   toast(message: string, tone?: 'success' | 'error' | 'info'): void;
   confirm(options: { title: string; message?: string; confirmLabel?: string; danger?: boolean }): Promise<boolean>;

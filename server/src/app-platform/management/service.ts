@@ -319,6 +319,12 @@ export async function createAppManagement(configFile:string,origin:string){
    const png=await v2.store.read(appId,record.runtime.sha256,'icon.png');
    return png?{contentType:'image/png',bytes:png,color:record.runtime.manifest.color??null}:null;
   },
+  /** Read-only directory call from a v2 page, bound to the page's admission. */
+  async invokeEmployeeV2Platform(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:{operation:string;params:unknown},admissionKey:string){
+   assertOpen();const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);
+   const host=v2.findHost(appId);if(admission.installation.runtime?.model!=='v2'||!host)throw new GatewayError('ACCESS_DENIED',403);
+   return host.invokeEmployeePlatform(admission.identity,request);
+  },
   installV2:(context:PlatformManagementContext,bytes:Uint8Array)=>queue.run(async()=>{try{return await v2.installer.install(context,bytes);}finally{invalidateAppSessions();}}),
   migrationHistory:(context:PlatformManagementContext,appId:string,afterSequence:number)=>queue.run(async()=>{
    const installation=await registry.get(context,appId);
