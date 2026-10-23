@@ -18,7 +18,7 @@ import {createPostgresPeopleDirectoryRepository} from '../../platform/people/ind
 import {getDatabasePool,type QueryableClient} from '../../core/database/index.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;publications?:AppCapabilityPublication;attachmentBackend?:AttachmentBackend}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;publications?:AppCapabilityPublication;attachmentBackend?:AttachmentBackend}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -198,7 +198,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    return reply.code(503).send({error:'EMPLOYEE_MANAGEMENT_UNAVAILABLE'});
   });
-  scoped.addHook('preHandler',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==options.origin)throw new EmployeeIdentityError(403,'EMPLOYEE_ORIGIN_DENIED');});
+  scoped.addHook('preHandler',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==(options.adminOrigin??options.origin))throw new EmployeeIdentityError(403,'EMPLOYEE_ORIGIN_DENIED');});
   scoped.get('/employee-accounts',async req=>options.service.list(await options.resolveAdmin(req),req.query));
   scoped.get<{Params:{appId:string}}>('/apps/:appId/employee-access',async req=>{const context=await options.resolveAdmin(req);if(!options.access)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.access.list(context,req.params.appId);});
   scoped.put<{Params:{appId:string}}>('/apps/:appId/employee-access',{bodyLimit:4096},async req=>{const context=await options.resolveAdmin(req);if(!options.access)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');const result=await options.access.set(context,req.params.appId,req.body);options.management?.invalidateEmployeeSessions();return result;});

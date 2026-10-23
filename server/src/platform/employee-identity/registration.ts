@@ -1,3 +1,4 @@
+import {expectedOrigin} from '../../core/http/sites.js';
 import {passwordSchema} from '../../core/security/index.js';
 import {randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';
@@ -43,8 +44,8 @@ export class RegistrationService {
  await db.query('UPDATE platform_employee_registrations SET status=$1,password_hash=NULL,reviewed_at=now(),reviewer_id=$2,person_id=$3 WHERE id=$4',[v.decision==='approve'?'approved':'rejected',c.administrator.id,personId,id]);await appendAdminAudit(db,{actorId:c.administrator.id,action:'employee.registration.'+v.decision,targetId:id});return {ok:true};
  }));}catch(e){if((e as {code?:string}).code==='23505')throw new EmployeeIdentityError(409,'REGISTRATION_CONFLICT');throw e;}}
 }
-export async function registerRegistrationRoutes(app:FastifyInstance,o:{pool:ConnectablePool;origin:string;resolveAdmin:(r:FastifyRequest)=>Promise<PlatformAdministratorContext>}){const s=new RegistrationService(o.pool);await app.register(async api=>{
- api.addHook('onRequest',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==o.origin)throw new EmployeeIdentityError(403,'REGISTRATION_ORIGIN_DENIED');});
+export async function registerRegistrationRoutes(app:FastifyInstance,o:{pool:ConnectablePool;origin:string;adminOrigin?:string;resolveAdmin:(r:FastifyRequest)=>Promise<PlatformAdministratorContext>}){const s=new RegistrationService(o.pool);await app.register(async api=>{
+ api.addHook('onRequest',async(req,reply)=>{reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==expectedOrigin(req.url,o))throw new EmployeeIdentityError(403,'REGISTRATION_ORIGIN_DENIED');});
  api.setErrorHandler((e,_req,reply)=>{if(e instanceof EmployeeIdentityError)return reply.code(e.statusCode).send({error:e.code});if(e instanceof z.ZodError)return reply.code(400).send({error:'REGISTRATION_INVALID_INPUT'});const status=(e as {statusCode?:number}).statusCode;return reply.code(status===401||status===403||status===429?status:503).send({error:status===429?'REGISTRATION_RATE_LIMIT':status===401?'ADMIN_AUTH_REQUIRED':'REGISTRATION_UNAVAILABLE'});});
  api.get('/api/auth/registration/organizations',{config:{rateLimit:{max:30,timeWindow:'1 minute'}}},async req=>{const q=z.object({q:z.string().trim().max(100).default(''),after:z.string().uuid().optional()}).parse(req.query);return {organizations:await s.organizations(q.q,q.after)};});
  api.post('/api/auth/registration',{bodyLimit:4096,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},req=>s.submit(req.body));

@@ -15,6 +15,8 @@ export default function Login(){
  return <AdminLogin onRegister={()=>setRegister(true)} title="登录" onLogin={async(username,password)=>{
   const response=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
   const value=await response.json();
+  // Separate admin site: the account belongs to the other origin, so sign in there.
+  if(response.status===409&&(value.error==='LOGIN_USE_ADMIN_SITE'||value.error==='LOGIN_USE_EMPLOYEE_SITE')&&typeof value.site==='string'&&/^https?:\/\/[^/]+$/.test(value.site)){window.location.assign(`${value.site}/#/login`);throw Error(value.error==='LOGIN_USE_ADMIN_SITE'?'管理员请在管理端登录，正在跳转…':'员工请在员工端登录，正在跳转…');}
   if(!response.ok)throw Error(value.error==='LOGIN_RATE_LIMIT'?'尝试次数过多，请稍后再试。':value.error==='LOGIN_ACCOUNT_CONFLICT'?'账号存在重名，请联系管理员调整账号名称。':response.status===401?'用户名或密码不正确。':'登录暂不可用，请稍后再试。');
   navigate(value.kind==='admin'?'/admin':employeeDestination,{replace:true});
  }}/>;

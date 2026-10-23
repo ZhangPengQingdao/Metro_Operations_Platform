@@ -1,3 +1,4 @@
+import {expectedOrigin} from '../../core/http/sites.js';
 import {createHash,randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
@@ -12,7 +13,7 @@ const rows=async<T>(db:QueryableClient,sql:string,args:readonly unknown[]=[])=>(
 const fail=(code:string,status=403):never=>{throw new EmployeeIdentityError(status,code);};
 const summary=`id,app_id AS "appId",name,version,kind,status,revision,reason,created_at AS "createdAt"`;
 type Submission={id:string;person_id:string;app_id:string;kind:string;target_revision:number|null;package:unknown;status:string;revision:string};
-export function registerAppSubmissionRoutes(app:FastifyInstance,options:{pool:ConnectablePool;origin:string;employee:EmployeeIdentityService;resolveAdmin:(req:FastifyRequest)=>Promise<PlatformAdministratorContext>;management?:AppManagement}){
+export function registerAppSubmissionRoutes(app:FastifyInstance,options:{pool:ConnectablePool;origin:string;adminOrigin?:string;employee:EmployeeIdentityService;resolveAdmin:(req:FastifyRequest)=>Promise<PlatformAdministratorContext>;management?:AppManagement}){
  async function read<T>(work:(db:QueryableClient)=>Promise<T>){const db=await options.pool.connect();try{return await work(db);}finally{db.release();}}
  async function submitter(req:FastifyRequest){return (await options.employee.resolveIdentity(req.cookies[EMPLOYEE_SESSION_COOKIE])).userId;}
  async function native(req:FastifyRequest){const context=await options.resolveAdmin(req);if(!(await context.authorize('platform.authorization.manage',{})).allowed)fail('ADMIN_ACCESS_DENIED');return context;}
@@ -27,7 +28,7 @@ export function registerAppSubmissionRoutes(app:FastifyInstance,options:{pool:Co
  app.register(async scoped=>{
   let uploads=0;const admitted=new WeakSet<FastifyRequest>();
   scoped.addHook('onRequest',async(req,reply)=>{
-   reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==options.origin)fail('ORIGIN_DENIED');
+   reply.header('Cache-Control','no-store');if(req.method!=='GET'&&req.headers.origin!==expectedOrigin(req.url,options))fail('ORIGIN_DENIED');
    if(req.url.startsWith('/api/admin/'))await native(req);else await submitter(req);
    if(req.method==='POST'){if(uploads>=2)fail('SUBMISSION_BUSY',429);uploads++;admitted.add(req);}
   });

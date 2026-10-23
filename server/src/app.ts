@@ -6,6 +6,7 @@ import {registerUnifiedLogin} from './platform/employee-identity/unified-login.j
 import Fastify from 'fastify';
 import {registerPlatformUpdateRoutes} from './app-platform/admin/update-routes.js';
 import {getCoreConfig} from './core/config/index.js';
+import {resolvePlatformSites} from './core/http/sites.js';
 import {getDatabasePool} from './core/database/index.js';
 import {createFastifyRuntimeOptions} from './core/http/index.js';
 import {createProductionAdminIdentityService,registerAdminIdentityRoutes} from './core/admin-identity/index.js';
@@ -30,7 +31,9 @@ export async function buildApp(){
  if(!pool)throw new Error('DATABASE_URL_REQUIRED');
  const identity=createProductionAdminIdentityService(pool);
  const origin=new URL(config.http.publicBaseUrl.value??config.http.corsOrigin.value).origin;
- registerAdminIdentityRoutes(app,{origin,service:identity});
+ const sites=resolvePlatformSites(origin,process.env.ADMIN_PUBLIC_BASE_URL),adminOrigin=sites.admin;
+ app.get('/api/platform/sites',async(_req,reply)=>{reply.header('Cache-Control','no-store');return sites;});
+ registerAdminIdentityRoutes(app,{origin:adminOrigin,service:identity});
  const file=process.env.MOP_APP_MANAGEMENT_CONFIG;
  const management=file?await createAppManagement(file,origin):undefined;
  if(management)app.addHook('onClose',async()=>management.close());
@@ -42,14 +45,14 @@ export async function buildApp(){
   app.addHook('onClose',async()=>control.close());
  }
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
- registerPlatformUpdateRoutes(app,{origin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
+ registerPlatformUpdateRoutes(app,{origin:adminOrigin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
  const employeeIdentity=new EmployeeIdentityService(pool);
- registerAppSubmissionRoutes(app,{pool,origin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
- await registerRegistrationRoutes(app,{origin,pool,resolveAdmin:resolveContext});
- registerUnifiedLogin(app,{origin,pool,admin:identity,employee:employeeIdentity});
- registerEmployeeRoutes(app,{origin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),publications:new AppCapabilityPublication(pool),resolveAdmin:resolveContext,management});
- await registerAdminConsoleRoutes(app,{origin,identity,pool,management,
-  lifecycle:management?{origin,resolveContext,getHost:management.getHost}:undefined,
-  install:management?{origin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});
+ registerAppSubmissionRoutes(app,{pool,origin,adminOrigin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
+ await registerRegistrationRoutes(app,{origin,adminOrigin,pool,resolveAdmin:resolveContext});
+ registerUnifiedLogin(app,{origin,adminOrigin,pool,admin:identity,employee:employeeIdentity});
+ registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),publications:new AppCapabilityPublication(pool),resolveAdmin:resolveContext,management});
+ await registerAdminConsoleRoutes(app,{origin:adminOrigin,identity,pool,management,
+  lifecycle:management?{origin:adminOrigin,resolveContext,getHost:management.getHost}:undefined,
+  install:management?{origin:adminOrigin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});
  return app;
 }
