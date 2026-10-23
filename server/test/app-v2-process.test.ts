@@ -38,7 +38,8 @@ test('child process serves calls with the employee context and proxies platform 
   await app.start();
   assert.equal(app.status().state, 'running');
   assert.deepEqual([...app.handlerNames].sort(), ['crash', 'echo', 'fail', 'lookup', 'save', 'secret', 'slow']);
-  assert.ok(logs.some(line => line.includes('[app:demo] started demo')));
+  for (let i = 0; i < 20 && !logs.some(line => line.includes('[app:demo] started demo')); i++) await wait(25);
+  assert.ok(logs.some(line => line.includes('[app:demo] started demo')), 'start() hook runs after ready');
   assert.deepEqual(await app.call('echo', { a: 1 }, employee), { input: { a: 1 }, person: employee.personId, can: true });
   assert.deepEqual(await app.call('lookup', { q: '张' }, employee), { rows: [{ name: '张三' }] });
   assert.equal(platform[0]!.operation, 'platform.people.members');

@@ -43,6 +43,16 @@ export class AppGateway {
       try {return await this.options.registry.authenticateServiceCredential(appId,credential);} catch {throw new GatewayError('INVALID_CREDENTIAL',401);}
     },signal,assertAdmission,resolveEmployee);
   }
+  /**
+   * Application model v2: the platform itself runs the app process, so no credential is presented.
+   * The service identity comes from the registry record at call time; grants and audit are unchanged.
+   */
+  invokeHosted(appId:string,serviceIdentity:()=>Promise<string>,request:unknown,signal?:AbortSignal,resolveEmployee?:()=>Promise<PlatformPersonActorContext>):Promise<AppGatewayResponse> {
+    return this.invoke(appId,async()=>parseGatewayRequest(request,this.admission.limits.requestBytes),async()=>{
+      const serviceIdentityId=await serviceIdentity();
+      return {actorType:'service' as const,trustedIdentity:{source:'service' as const},execution:{type:'service' as const,appId,serviceIdentityId}};
+    },signal,undefined,resolveEmployee);
+  }
   /** Host-only entry point: identity MUST come from verified L1 session/Bridge composition. */
   invokeDelegated(appId:string,trustedIdentity:TrustedActorIdentity,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
     const identity=structuredClone(trustedIdentity);

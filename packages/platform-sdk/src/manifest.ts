@@ -161,6 +161,7 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
       if (item.dashboard === true && item.permission === undefined) fail(`${path}.permission`, '工作台摘要接口必须声明权限');
     });
     if (api.filter(item => record(item) && item.dashboard === true).length > 1) fail('api', '最多一个工作台摘要接口');
+    if (api.some(item => record(item) && item.permission === undefined) && !codes.size) fail('api', '未声明权限的接口表示“有本应用任一权限即可调用”，需要至少声明一个权限');
   }
 
   if (value.limits !== undefined) {

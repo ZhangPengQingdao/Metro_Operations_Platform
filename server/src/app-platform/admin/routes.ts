@@ -22,7 +22,11 @@ import {AppRegistryError,AppRegistryService,PostgresAppRegistryRepository} from 
 import type {AppLifecycleRoutesOptions} from '../runtime/lifecycle-routes.js';
 import type {AppInstallRoutesOptions} from '../install/routes.js';
 import {withInstallUpload,INSTALL_BODY_LIMIT} from '../install/wire.js';
-import {previewAppPackageV2,summarizeV1Installation} from '../install/package-v2.js';
+import {previewAppPackageV2,summarizeInstallation} from '../install/package-v2.js';
+import {AppInstallV2Error} from '../v2/installer.js';
+import {AppProjectionError} from '../v2/projection.js';
+import {AppMigrationV2Error} from '../v2/migration.js';
+import {AppV2CallError} from '../v2/host.js';
 import {MOPKG_LIMITS,MopkgError} from '@metro/platform-sdk/mopkg';
 import {LocationDirectoryError} from '../../platform/locations/index.js';
 
@@ -59,7 +63,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(req.method!=='GET'&&req.headers.origin!==options.origin)throw new AdminIdentityError(403,'ADMIN_ORIGIN_DENIED');
    await createAdministratorContext(req,options.identity);
    const requestPath=req.url.split('?')[0];
-   if(req.method==='POST'&&(['/api/admin/install','/api/admin/install-preview','/api/admin/install-approve','/api/admin/app-packages/preview'].includes(requestPath)||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(requestPath))){
+   if(req.method==='POST'&&(['/api/admin/install','/api/admin/install-preview','/api/admin/install-approve','/api/admin/app-packages/preview','/api/admin/app-packages/install'].includes(requestPath)||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(requestPath))){
     if(uploads>=2)throw new AdminIdentityError(429,'INSTALL_BUSY');uploads++;admitted.add(req);
    }
   });
@@ -78,6 +82,10 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(error instanceof InstallError){const status=error.code==='INSTALL_NOT_FOUND'?404:error.code==='INSTALL_ACCESS_DENIED'?403:error.code.startsWith('INVALID_')?400:409;return reply.code(status).send({error:error.code});}
    if(error instanceof AppPackageError)return reply.code(400).send({error:error.code});
    if(error instanceof MopkgError)return reply.code(400).send({error:error.code});
+   if(error instanceof AppInstallV2Error)return reply.code(error.code==='PACKAGE_INVALID'?400:409).send({error:error.code,issues:error.issues});
+   if(error instanceof AppProjectionError)return reply.code(400).send({error:'PACKAGE_INVALID'});
+   if(error instanceof AppMigrationV2Error)return reply.code(409).send({error:error.code});
+   if(error instanceof AppV2CallError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'ADMIN_INVALID_INPUT'});
    const code=error instanceof Error&&'code' in error&&typeof error.code==='string'?error.code:'';
    if(code==='APP_CAPABILITIES_NOT_SUPPORTED')return reply.code(409).send({error:code});
@@ -231,15 +239,25 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   });
   // Application model v2 single-file package: read-only preview until the v2 runtime is installed.
   scoped.post('/app-packages/preview',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
-   const {package:encoded}=z.object({package:z.string().min(1).max(Math.ceil(MOPKG_LIMITS.packageBytes/3)*4)}).strict().parse(req.body);
-   if(encoded.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw new MopkgError('MOPKG_INVALID');
-   return withRegistry(req,(service,context)=>previewAppPackageV2(Buffer.from(encoded,'base64'),{
-    platformVersion:getCoreConfig().runtime.releaseVersion.value,
+   const bytes=mopkgBody(req.body);
+   return withRegistry(req,(service,context)=>previewAppPackageV2(bytes,{
+    platformVersion:getCoreConfig().runtime.releaseVersion.value,installAvailable:!!options.management,
     findInstalled:async appId=>{
-     try{return summarizeV1Installation((await service.get(context,appId)).manifest);}
+     try{return summarizeInstallation(await service.get(context,appId));}
      catch(error){if(error instanceof AppRegistryError&&error.code==='APP_NOT_FOUND')return null;throw error;}
     },
    }));
+  });
+  scoped.post('/app-packages/install',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
+   if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
+   const bytes=mopkgBody(req.body);
+   return options.management.installV2(await createAdministratorContext(req,options.identity),bytes);
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/icon',async(req,reply)=>{
+   const icon=await options.management?.appIcon(req.params.appId);
+   if(!icon)return reply.code(404).send({error:'APP_ICON_NOT_FOUND'});
+   reply.header('Cache-Control','private, max-age=300').header('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'").header('X-Content-Type-Options','nosniff');
+   return reply.type(icon.contentType).send(icon.bytes);
   });
   scoped.post('/install-approve',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
@@ -261,4 +279,10 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    return withInstallUpload(wrapped?body.package:req.body,options.install.uploadRoot,input=>options.install!.installer.install(context,{...input,frontendRunMode:wrapped?body.frontendRunMode as 'standard'|'trusted':'standard'}));
   });
  },{prefix:'/api/admin'});
+}
+/** `{package:<base64 .mopkg>}` request body. */
+function mopkgBody(body:unknown){
+ const {package:encoded}=z.object({package:z.string().min(1).max(Math.ceil(MOPKG_LIMITS.packageBytes/3)*4)}).strict().parse(body);
+ if(encoded.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw new MopkgError('MOPKG_INVALID');
+ return Buffer.from(encoded,'base64');
 }

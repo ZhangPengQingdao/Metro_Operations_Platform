@@ -10,6 +10,7 @@ import type {EmployeeAppAccess} from './access.js';
 import type {AppCapabilityPublication} from '../capabilities/publication.js';
 import {AppManagementError} from '../management/ui.js';
 import {AppStdioApiError} from '../runtime/stdio-api.js';
+import {AppV2CallError} from '../v2/host.js';
 import {createAppAttachmentTransfer,AppAttachmentError,APP_ATTACHMENT_MAX_BYTES,type AppAttachmentDirectory} from './attachment-service.js';
 import {createLocalStorageAdapter,type StorageAdapter} from '../../core/storage/index.js';
 import {createPostgresAttachmentRepository,AttachmentError,type AttachmentRepository} from '../../platform/attachments/index.js';
@@ -39,6 +40,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(error&&typeof error==='object'&&'statusCode' in error&&error.statusCode===413)return reply.code(413).send({error:'FILE_TOO_LARGE'});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    if(error instanceof GatewayError)return reply.code(error.statusCode).send({version:'1.0',error:{code:error.code,writeOutcome:error.writeOutcome}});
+   if(error instanceof AppV2CallError)return reply.code(error.statusCode).send({error:{code:error.code,writeOutcome:error.writeOutcome}});
    if(error instanceof AppStdioApiError)return reply.code(error.code==='ACCESS_DENIED'||error.code==='API_DENIED'?403:503).send({error:{code:'APP_API_FAILED',writeOutcome:error.writeOutcome}});
    if(error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AppManagementError)return reply.code(503).send({error:error.code});
@@ -90,6 +92,25 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
    return options.management.employeeUi(req.params.appId,query.path,()=>resolveRequestIdentity(req));
+  });
+  // Application model v2: page session, immutable page bundle and icon.
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/v2-session',async req=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
+   return options.management.employeeV2Session(req.params.appId,query.path,()=>resolveRequestIdentity(req));
+  });
+  scoped.get<{Params:{appId:string;sha256:string;file:string}}>('/apps/:appId/v2/:sha256/:file',async(req,reply)=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   const params=z.object({appId:z.string().max(64),sha256:z.string().regex(/^[a-f0-9]{64}$/),file:z.enum(['ui.js','ui.css'])}).strict().parse(req.params);
+   const bytes=await options.management.employeeV2Asset(params.appId,params.sha256,params.file,()=>resolveRequestIdentity(req));
+   reply.header('Cache-Control','private, max-age=31536000, immutable').header('X-Content-Type-Options','nosniff');
+   return reply.type(params.file==='ui.js'?'text/javascript; charset=utf-8':'text/css; charset=utf-8').send(bytes);
+  });
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/icon',async(req,reply)=>{
+   const icon=await options.management?.appIcon(req.params.appId);
+   if(!icon)return reply.code(404).send({error:'APP_ICON_NOT_FOUND'});
+   reply.header('Cache-Control','private, max-age=300').header('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'").header('X-Content-Type-Options','nosniff');
+   return reply.type(icon.contentType).send(icon.bytes);
   });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/ui-admission',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');

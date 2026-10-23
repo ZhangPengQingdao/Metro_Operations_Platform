@@ -35,6 +35,10 @@ import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey
 import {createSandboxResourceServer} from '../sandbox/resource-server.js';
 import {buildSandboxDocument} from '../sandbox/document.js';
 import {bindEmployeeAttachmentActor} from '../employee/attachment-service.js';
+import {join} from 'node:path';
+import {AppDataServiceV2} from '../v2/data.js';
+import {createAppRuntimeV2} from '../v2/runtime.js';
+import {pageRouteId} from '../v2/projection.js';
 /** Opt-in application management composition; does not run schema migrations on startup. */
 export async function createAppManagement(configFile:string,origin:string){
  const config=await loadAppManagementConfig(configFile);
@@ -82,9 +86,20 @@ export async function createAppManagement(configFile:string,origin:string){
    return host.invokeApi(actor,request,signal,assertAdmission);
   },
  });
- const gateway=createManagementGateway(getDatabasePool()!,[...(storage?.runtimeData.operations()??[]),capabilityOperation]);
+ // v2 installations are looked up per call on the pool, so runtime reads never queue behind lifecycle work on `db`.
+ const lookups=new PostgresAppRegistryRepository(getDatabasePool()!);
+ const findInstallation=(appId:string)=>lookups.findByAppId(appId);
+ const v2Data=new AppDataServiceV2({pool:getDatabasePool()!,findInstallation});
+ const gateway=createManagementGateway(getDatabasePool()!,[...v2Data.operations(storage?.runtimeData),capabilityOperation]);
  const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
  runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:apiAuthorization,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
+ const v2=createAppRuntimeV2({root:join(config.artifactRoot,'v2'),registry,pool:getDatabasePool()!,gateway,api:apiAuthorization,findInstallation,
+  listInstallations:()=>lookups.list(1000),platformVersion:()=>getCoreConfig().runtime.releaseVersion.value,maintenanceBlocked:()=>maintenanceBlocked});
+ // Hosts for both models; v2 apps never get a Docker lifecycle host.
+ const hosts={
+  findHost:(appId:string)=>v2.findHost(appId)??runtime.findHost(appId),
+  async getHost(appId:string){return await v2.isV2(appId)?v2.host(appId):runtime.getHost(appId);},
+ };
  const approve=async(_context:PlatformManagementContext,manifest:Parameters<typeof manifestApprovalDigest>[0])=>{
   const fresh=await loadAppManagementConfig(configFile);
   return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&(await approvals.current()).approvedManifestDigests.includes(manifestApprovalDigest(manifest));
@@ -105,7 +120,10 @@ export async function createAppManagement(configFile:string,origin:string){
  const installer=new AppInstaller({supportsTrusted:trustedConfigured,beforeInstall:(context,record)=>applyApprovedCapabilities(context,record.appId),registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
  const versions=new AppVersionService({afterUpdate:applyApprovedCapabilities,registry,journal:versionJournal,installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:appId=>runtime.getHost(appId)});
  async function assertRuntimeApproval(context:PlatformManagementContext|undefined,appId:string){
-  const current=context?await registry.get(context,appId):await registry.runtimeSnapshot(appId),binding=await installJournal.get(appId);
+  const installed=context?await registry.get(context,appId):await registry.runtimeSnapshot(appId);
+  // v2 packages are approved by the administrator who installed them; there is no publisher key policy.
+  if(installed.runtime?.model==='v2'){if(!installed.enabled)throw new AppManagementError('APP_RUNTIME_APPROVAL_REQUIRED');return;}
+  const current=installed,binding=await installJournal.get(appId);
   if(!binding||!['installed','recovered'].includes(binding.state))throw new AppManagementError('INSTALL_RECOVERY_REQUIRED');
   const digest=manifestApprovalDigest(current.manifest);
   const prepared=manifestApprovalDigest(binding.prepared.manifest)===digest?binding.prepared:(await versionJournal.list(appId)).find(record=>manifestApprovalDigest(record.prepared.manifest)===digest)?.prepared;
@@ -117,7 +135,7 @@ export async function createAppManagement(configFile:string,origin:string){
  }
 
  async function admitEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
-  const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+  const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
   const identity=await resolveIdentity();
   if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
   return employeeAppSessions.get(identity,appId,()=>{
@@ -159,17 +177,18 @@ export async function createAppManagement(configFile:string,origin:string){
  const maintenance=process.env.MOP_MAINTENANCE_STATE?new PlatformMaintenance({
   list:async()=>{const records=await repository.list(1001);if(records.length>1000)throw Error('MAINTENANCE_APPLICATION_LIMIT');return records;},
   gate:closed=>{maintenanceBlocked=closed;},
-  status:async appId=>{const record=await repository.findByAppId(appId);if(!record)throw Error('MAINTENANCE_INSTALLATION_MISSING');const host=runtime.findHost(appId);return host&&maintenanceContext?host.status(maintenanceContext):{installation:record,serving:false};},
-  drain:async appId=>{const host=runtime.findHost(appId);if(!host)throw Error('MAINTENANCE_HOST_MISSING');await host.drainForMaintenance();},
+  status:async appId=>{const record=await repository.findByAppId(appId);if(!record)throw Error('MAINTENANCE_INSTALLATION_MISSING');const host=hosts.findHost(appId);return host&&maintenanceContext?host.status(maintenanceContext):{installation:record,serving:false};},
+  drain:async appId=>{const host=hosts.findHost(appId);if(!host)throw Error('MAINTENANCE_HOST_MISSING');await host.drainForMaintenance();},
   change:async(appId,revision,action)=>{
    if(!maintenanceContext)throw Error('MAINTENANCE_CONTEXT_REQUIRED');
    if(action==='enable'){await versions.assertActivationAllowed(maintenanceContext,appId);await assertRuntimeApproval(maintenanceContext,appId);}
-   const result=await (await runtime.getHost(appId)).execute(maintenanceContext,{revision,action});
+   const result=await (await hosts.getHost(appId)).execute(maintenanceContext,{revision,action});
    invalidateAppSessions();
    return result;
   },
  },process.env.MOP_MAINTENANCE_STATE):undefined;
  await maintenance?.initialize();
+ await v2.boot();
  return {
   trustedAvailable:()=>!!resources&&trustedConfigured,
   invalidateEmployeeSessions:invalidateAppSessions,
@@ -197,6 +216,10 @@ export async function createAppManagement(configFile:string,origin:string){
       const navigation=await employeeNavigation(admitted);
       if(!navigation.routes.length)return null;
       const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);
+      const v2Package=admitted.installation.runtime;
+      if(v2Package?.model==='v2'&&m.ui.mode==='sandbox')return {appId,name:m.name,description:m.description,version:m.version,...navigation,model:'v2' as const,
+       v2:{sha256:v2Package.sha256,color:v2Package.manifest.color??null,pages:v2Package.manifest.pages.map(({path,title,permission})=>({path,title,...(permission?{permission}:{})}))},
+       ...(m.dashboard&&navigation.routes.some(route=>route.id===m.dashboard!.routeId)?{dashboard:{routeId:m.dashboard.routeId}}:{}),runtimeRevision:admitted.installation.revision};
       return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,...navigation,...(m.dashboard&&navigation.routes.some(route=>route.id===m.dashboard!.routeId)?{dashboard:{routeId:m.dashboard.routeId}}:{}),runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
      }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
     }));
@@ -207,12 +230,13 @@ export async function createAppManagement(configFile:string,origin:string){
   },
   async employeeDashboard(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();
-   const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
     invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{}})});
   },
   async employeeUi(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
    assertOpen();const first=await admitEmployee(appId,resolveIdentity),m=first.installation.manifest;
+   if(first.installation.runtime?.model==='v2')throw new AppManagementError('APP_V2_SESSION_REQUIRED');
    if(m.ui.mode!=='sandbox'||!(await employeeNavigation(first)).routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
    const canonical=new URL(origin);if(!resources&&(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname)))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
    const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);if(!artifact)throw new AppManagementError('APP_UI_ARTIFACT_MISSING');
@@ -230,12 +254,12 @@ export async function createAppManagement(configFile:string,origin:string){
    return {admissionKey:employeeAdmissionKey(admission)};
   },
   async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown,admissionKey:string){
-   const host=runtime.findHost(appId);
+   const host=hosts.findHost(appId);
    if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeDelegated(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},request);
   },
   async invokeEmployeeApi(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:Parameters<Awaited<ReturnType<typeof runtime.getHost>>['invokeEmployeeApi']>[1],admissionKey:string){
-   assertOpen();const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   assertOpen();const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},request);
   },
   async authorizeEmployeeAttachment(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],admissionKey:string,
@@ -244,7 +268,7 @@ export async function createAppManagement(configFile:string,origin:string){
    const first=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(first,admissionKey);
    const route=first.installation.manifest.api.find(api=>api.id==='authorize-attachment'&&api.method==='POST'&&api.businessPermission);
    if(!route)throw new GatewayError('ACCESS_DENIED',403);
-   const host=runtime.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    const result=await host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},
     {apiId:route.id,method:'POST',path:route.path,payload:request});
    if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).sort().join(',')!=='organizationId')throw new GatewayError('ACCESS_DENIED',403);
@@ -262,6 +286,40 @@ export async function createAppManagement(configFile:string,origin:string){
    const context=bindEmployeeAttachmentActor(person,service);
    return {context,organizationId:authorization.organizationId};
   },
+  /** v2 page session: admission key, the employee's granted permissions and the module address. */
+  async employeeV2Session(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+   assertOpen();const admission=await admitEmployee(appId,resolveIdentity),installation=admission.installation,v2Package=installation.runtime;
+   if(v2Package?.model!=='v2')throw new GatewayError('ACCESS_DENIED',403);
+   const page=matchPage(v2Package.manifest.pages,path);if(!page)throw new GatewayError('ACCESS_DENIED',403);
+   const requestId=randomUUID();
+   const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId},requestId,traceId:requestId});
+   if(actor.actorType!=='person')throw new GatewayError('ACCESS_DENIED',403);
+   const granted:string[]=[];
+   for(const permission of v2Package.manifest.permissions)if(await apiAuthorization.authorize(actor,`app.${appId}.${permission.code}`))granted.push(permission.code);
+   if(page.page.permission&&!granted.includes(page.page.permission))throw new GatewayError('ACCESS_DENIED',403);
+   const assets=await v2.store.read(appId,v2Package.sha256,'ui.css');
+   return {appId,name:installation.manifest.name,admissionKey:employeeAdmissionKey(admission),sha256:v2Package.sha256,
+    moduleUrl:`/api/employee/apps/${appId}/v2/${v2Package.sha256}/ui.js`,...(assets?{cssUrl:`/api/employee/apps/${appId}/v2/${v2Package.sha256}/ui.css`}:{}),
+    route:{path,pattern:page.page.path,params:page.params,title:page.page.title},
+    user:{personId:actor.person.id,name:actor.person.name,organizationUnitId:actor.person.organization?.id??null,permissions:granted}};
+  },
+  /** Immutable page bundle for an admitted employee; the hash pins the installed version. */
+  async employeeV2Asset(appId:string,sha256:string,file:'ui.js'|'ui.css',resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+   assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
+   if(admission.installation.runtime?.model!=='v2'||admission.installation.runtime.sha256!==sha256)throw new GatewayError('ACCESS_DENIED',403);
+   const bytes=await v2.store.read(appId,sha256,file);if(!bytes)throw new GatewayError('ACCESS_DENIED',403);
+   return bytes;
+  },
+  /** App icon file of an installed v2 app (null for v1 apps, which keep their manifest icon paths). */
+  async appIcon(appId:string){
+   const record=await findInstallation(appId);
+   if(record?.runtime?.model!=='v2')return null;
+   const svg=await v2.store.read(appId,record.runtime.sha256,'icon.svg');
+   if(svg)return {contentType:'image/svg+xml',bytes:svg,color:record.runtime.manifest.color??null};
+   const png=await v2.store.read(appId,record.runtime.sha256,'icon.png');
+   return png?{contentType:'image/png',bytes:png,color:record.runtime.manifest.color??null}:null;
+  },
+  installV2:(context:PlatformManagementContext,bytes:Uint8Array)=>queue.run(async()=>{try{return await v2.installer.install(context,bytes);}finally{invalidateAppSessions();}}),
   migrationHistory:(context:PlatformManagementContext,appId:string,afterSequence:number)=>queue.run(async()=>{
    const installation=await registry.get(context,appId);
    const attempts=await new AppMigrationLedger(registry,db).listHistory(context,appId,afterSequence,100);
@@ -292,7 +350,7 @@ export async function createAppManagement(configFile:string,origin:string){
   versionStatus:(context:PlatformManagementContext,appId:string)=>queue.run(()=>versions.status(context,appId)),
   versionRecover:(context:PlatformManagementContext,appId:string,requestId:string)=>queue.run(async()=>{const result=await versions.recover(context,appId,requestId);invalidateAppSessions();return result;}),
   async getHost(appId:string){
-   const host=await runtime.getHost(appId);
+   const host=await hosts.getHost(appId);
    return {status:(context:PlatformManagementContext)=>queue.run(()=>host.status(context)),
     execute:(context:PlatformManagementContext,input:Parameters<typeof host.execute>[1])=>queue.run(async()=>{
      assertOpen();
@@ -305,9 +363,22 @@ export async function createAppManagement(configFile:string,origin:string){
     prepareCredential:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.prepareCredential(context,revision)),
    };
   },
-  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{await assertRuntimeApproval(context,appId);if(frontendRunMode(await registry.get(context,appId))==='trusted'&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize,trustedAppId)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();},trustedAppId):undefined});}),
-  close:()=>queue.close(async()=>{await resources?.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
+  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{if((await registry.get(context,appId)).runtime?.model==='v2')throw new AppManagementError('APP_V2_EMPLOYEE_ONLY');await assertRuntimeApproval(context,appId);if(frontendRunMode(await registry.get(context,appId))==='trusted'&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize,trustedAppId)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();},trustedAppId):undefined});}),
+  close:()=>queue.close(async()=>{await resources?.close();await v2.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
  };
  }catch(error){await resources?.close();await storage?.closeRuntimeConnections();db.release();throw error;}
 }
 export type AppManagement=Awaited<ReturnType<typeof createAppManagement>>;
+
+/** Matches a v2 page path pattern (`/records/:id`) against a concrete path. */
+function matchPage(pages:readonly {path:string;title:string;permission?:string}[],path:string){
+ if(typeof path!=='string'||path.length>512||!path.startsWith('/'))return null;
+ const parts=path==='/'?[]:path.slice(1).split('/');
+ for(const page of pages){
+  const pattern=page.path==='/'?[]:page.path.slice(1).split('/');
+  if(pattern.length!==parts.length)continue;
+  const params:Record<string,string>={};
+  if(pattern.every((segment,index)=>{const value=parts[index]!;if(segment.startsWith(':')){if(!/^[A-Za-z0-9_-]{1,128}$/.test(value))return false;params[segment.slice(1)]=value;return true;}return segment===value;}))return {page,params};
+ }
+ return null;
+}

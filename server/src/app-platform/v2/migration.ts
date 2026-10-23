@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS platform_app_v2_requests(
 CREATE INDEX IF NOT EXISTS platform_app_v2_requests_created ON platform_app_v2_requests(created_at);`;
 
 export const appV2Migration: MigrationDefinition = {
-  id: 'platform-app-v2-expand', title: 'Application model v2 migrations and write idempotency', ownerTaskId: 'PLATFORM-APP-V2-P2',
+  id: 'platform-app-v2-expand', title: 'Application model v2 migrations and write idempotency', ownerTaskId: 'PLATFORM-APPV2-002',
   phase: 'expand', layer: 'L4', dataRows: [], migrationRows: ['MIG-APP-V2'], sourceTables: [],
   targetTables: ['platform_app_v2_migrations', 'platform_app_v2_requests'], dependsOn: ['app-registry-expand'],
   recoveryNotes: 'Additive tables only; existing v1 applications and their storage are untouched.',

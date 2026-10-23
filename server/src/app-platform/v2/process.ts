@@ -56,12 +56,12 @@ export class AppProcessV2 {
     await this.spawn();
   }
 
-  call(api: string, input: unknown, employee: AppBackendEmployeeContext, signal?: AbortSignal): Promise<unknown> {
+  call(api: string, input: unknown, employee: AppBackendEmployeeContext, signal?: AbortSignal, id: string = randomUUID()): Promise<unknown> {
     const child = this.child;
     if (this.state !== 'running' || !child?.connected) return Promise.reject(new AppProcessError('APP_NOT_RUNNING'));
     if (this.calls.size >= MAX_CALLS) return Promise.reject(new AppProcessError('APP_BUSY'));
     if (signal?.aborted) return Promise.reject(new AppProcessError('ABORTED'));
-    const id = randomUUID();
+    if (this.calls.has(id)) return Promise.reject(new AppProcessError('DUPLICATE_CALL'));
     return new Promise((resolve, reject) => {
       const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); this.calls.delete(id); };
       const onAbort = () => { this.send({ t: 'abort', id }); finish(); reject(new AppProcessError('ABORTED', 'unknown')); };

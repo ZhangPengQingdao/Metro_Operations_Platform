@@ -71,7 +71,7 @@ process.on('message', (message: ParentMessage) => {
 });
 process.on('disconnect', () => process.exit(0));
 
-const base: AppServerBaseContext = { appId, data: createAppDataClient(gateway()), platform: gateway(), signal: lifetime.signal, log, uuid: () => randomUUID() };
-try { await definition.hooks.start?.(base); }
-catch (error) { console.error('start hook failed:', error); send({ t: 'fatal', code: 'START_HOOK_FAILED' }); process.exit(1); }
+// Ready first: start() typically schedules timers that call the platform, which only serves running apps.
 send({ t: 'ready', handlers: Object.keys(definition.handlers) });
+const base: AppServerBaseContext = { appId, data: createAppDataClient(gateway()), platform: gateway(), signal: lifetime.signal, log, uuid: () => randomUUID() };
+try { await definition.hooks.start?.(base); } catch (error) { console.error('start hook failed:', error); }
