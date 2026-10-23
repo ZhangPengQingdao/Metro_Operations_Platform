@@ -14,7 +14,7 @@
 
 ## 平台发行
 
-1. 从最新 `main` 创建 `codex/` 分支；完成测试、版本与 CHANGELOG，提交并推送 PR，等待全部 CI 通过后合入 `main`。
+1. 在 `main` 或当前改造的专用分支（见 AGENTS.md）上完成测试、版本与 CHANGELOG，提交并推送 PR，等待全部 CI 通过后合入 `main`。
 2. 在 `main` 触发 GitHub Actions 的 **Build signed Linux release**。工作流使用 `production-release` 环境内的 `MOP_RELEASE_SIGNING_KEY`，生成签名资产和草稿 `v<版本>` Release。
 3. 核对草稿的目标 commit、版本、签名资产和检查结果，发布正式 Release。已发布资产不可替换；修复要升版重新发行。
 4. 更新前只读检查目标及应用工作状态：

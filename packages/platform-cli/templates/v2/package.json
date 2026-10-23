@@ -1,0 +1,19 @@
+{
+  "name": "__APP_ID__",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "check": "mop check",
+    "build": "mop build",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@metro/platform-sdk": "^__PLATFORM_VERSION__"
+  },
+  "devDependencies": {
+    "@metro/platform-cli": "^__PLATFORM_VERSION__",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

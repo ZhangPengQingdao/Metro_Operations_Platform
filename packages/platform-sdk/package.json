@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-sdk",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Public contracts and application SDK for Metro Operations Platform.",
   "type": "module",
   "sideEffects": false,
@@ -81,6 +81,22 @@
     "./app-dashboard": {
       "types": "./dist/app-dashboard.d.ts",
       "import": "./dist/app-dashboard.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    },
+    "./mopkg": {
+      "types": "./dist/mopkg.d.ts",
+      "import": "./dist/mopkg.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     }
   },
   "scripts": {

@@ -1,0 +1,13 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {"kind": "createTable", "table": "records", "columns": [
+      {"name": "id", "type": "uuid", "nullable": false},
+      {"name": "title", "type": "text", "nullable": false},
+      {"name": "organization_id", "type": "uuid", "nullable": false},
+      {"name": "created_by", "type": "uuid", "nullable": false},
+      {"name": "created_at", "type": "timestamptz", "nullable": false}
+    ], "primaryKey": ["id"]},
+    {"kind": "createIndex", "table": "records", "name": "records_created", "columns": ["created_at", "id"]}
+  ]
+}

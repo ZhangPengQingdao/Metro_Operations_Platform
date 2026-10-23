@@ -1,0 +1,3 @@
+/* 构建时自动限定在本应用容器内；颜色、字号使用平台 CSS 变量。 */
+.records-actions { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.records-empty { color: var(--afc-color-muted); text-align: center; padding: 32px 0; }

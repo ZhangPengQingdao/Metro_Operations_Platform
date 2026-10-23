@@ -84,4 +84,8 @@ export const PLATFORM_SDK_MODULES = [
  {path:'./app-contracts',description:'版本能力参考数据，不是实例配置或运行授权状态。'},
  {path:'./app-dashboard',description:'员工工作台摘要类型、数据校验与单次批量计数/预览辅助函数。'},
  {path:'./app-api-documentation',description:'有界输入输出结构、示例校验；不替代 handler 输入及权限检查。'},
+ {path:'./manifest',description:'应用模型 v2：app.json 校验、平台版本范围、声明式迁移校验；校验不授予权限。'},
+ {path:'./mopkg',description:'应用模型 v2（Node）：.mopkg 单文件包的生成、读取与布局检查，CLI 与平台共用。'},
+ {path:'./app',description:'应用模型 v2 页面：defineApp、useApp；页面由平台同源渲染（0.27.0 接通运行）。'},
+ {path:'./server',description:'应用模型 v2 接口：defineServer、createAppServerContext 与按数据范围的 can/require。'},
 ] as const;

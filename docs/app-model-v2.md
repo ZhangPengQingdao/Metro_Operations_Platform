@@ -1,6 +1,8 @@
 # 应用模型 v2 架构方案
 
-状态：已确认（2026-10-23），按第 8 节分阶段实施。基于 0.25.0 代码审计（2026-10-23）。本文不改变现有运行方式；实施按第 8 节分阶段进行。
+状态：已确认（2026-10-23），按第 8 节分阶段实施。基于 0.25.0 代码审计（2026-10-23）。
+
+实施进度：P1 已在 0.26.0 完成（清单、SDK、`mop-app init/check/build`、`.mopkg` 安装预览），见第 8 节。
 
 ## 1. 目标与定位
 
@@ -78,7 +80,7 @@ export default defineApp({
 });
 ```
 
-`useApp()` 提供：`api.call(apiId, input)`、`user`（当前员工、组织、本应用权限与数据范围）、`navigate(path)`、`toast`、`confirm`、`files`（上传/下载/图片）、`platform`（人员、车站、设备的只读查询）。弹窗、主题、导航由共享组件与外壳直接处理，不再需要 `platform.ui.*` 桥接操作。
+`useApp()` 提供：`appId`、`api.call(apiId, input)`、`user`（当前员工、组织、本应用已授予的权限 `has()`）、`route`（路径与参数）、`navigate(path)`、`toast`、`confirm`。`files`（上传/下载/图片）与 `platform`（人员、车站、设备的只读查询）随 P2 运行时补充。弹窗、主题、导航由共享组件与外壳直接处理，不再需要 `platform.ui.*` 桥接操作。
 
 ### 4.2 加载与共享依赖
 
@@ -124,7 +126,7 @@ export default defineServer({
 });
 ```
 
-`ctx` 提供：`employee`（与 v1 `AppBackendEmployeeContext` 相同字段）、`can/require`（复用 `allowsAppResource` 语义）、`data`（与 v1 `createAppDataClient` 相同方法）、`platform.people/locations/assets/ai/notifications/signatures/attachments/webhook`、`log`、`uuid`。
+`ctx` 提供：`employee`（与 v1 `AppBackendEmployeeContext` 相同字段）、`can/require`（复用 `allowsAppResource` 语义）、`data`（与 v1 `createAppDataClient` 相同方法）、`platform.invoke(operation, params)`（调用 `platform.people.members` 等平台能力，受 `platformAccess` 限制）、`log`、`uuid`。
 
 **兼容**：v1 写法 `createAppBackend({input: process.stdin, output: process.stdout, handlers})` 继续可用。新版 SDK 检测到 IPC 通道（`process.send` 存在）时改走 IPC、忽略 stdin/stdout；现有 8 个应用的 `entry.mjs`、`handlers.mjs`、`service.mjs` 无需改动，用新 SDK 重新构建即可。
 
@@ -214,7 +216,7 @@ extinguisher-inspection-1.0.0.mopkg
     {"code": "inspect", "name": "提交巡检",     "scopes": ["self", "workgroup"]},
     {"code": "manage",  "name": "管理灭火器台账", "scopes": ["department", "all"]}
   ],
-  "platformAccess": ["people.read", "locations.read", "attachments"],
+  "platformAccess": ["people.read", "locations.read", "attachments.create", "attachments.read"],
   "pages": [
     {"path": "/",            "title": "巡检任务",   "permission": "read",   "nav": true},
     {"path": "/devices",     "title": "灭火器台账", "permission": "manage", "nav": true},
@@ -246,16 +248,16 @@ extinguisher-inspection-1.0.0.mopkg
 
 ### 7.3 开发工具
 
-一个 npm 包 `@metro/cli`（内含 SDK、模板和 Agent Skill），开发者只下载这一个东西：
+沿用现有 npm 包 `@metro/platform-cli`（命令 `mop-app`，内含项目模板和 Agent Skill；SDK 作为项目依赖安装）：
 
 | 命令 | 作用 |
 |---|---|
-| `mop init <目录>` | 生成项目：`app.json`、`icon.svg`、`src/ui.jsx`、`src/server.js`、`migrations/001-initial.json`、测试样例，并写入 Agent Skill（`.claude/skills/metro-app/`、`AGENTS.md`） |
-| `mop dev` | 监听源码、增量构建到 `.mop/dev/`；本地平台开启开发模式（`MOP_DEV_APPS_DIR`）后自动加载该目录，前端改动刷新即生效，后端改动自动重启子进程 |
-| `mop check` | 校验清单、页面与接口对应、权限引用、迁移顺序与包体积 |
-| `mop build` | 输出 `dist/<id>-<version>.mopkg`，这是唯一交付物 |
+| `mop-app init <目录> [--id] [--name]` | 生成项目：`app.json`、`icon.svg`、`src/ui.jsx`、`src/server.js`、`migrations/001-initial.json`、测试样例，并写入 Agent Skill（`.claude/skills/metro-app/`、`AGENTS.md`） |
+| `mop-app dev`（P2） | 监听源码、增量构建到 `.mop/dev/`；本地平台开启开发模式（`MOP_DEV_APPS_DIR`）后自动加载该目录，前端改动刷新即生效，后端改动自动重启子进程 |
+| `mop-app check` | 校验清单、权限引用、图标、迁移编号与结构、源码入口；与平台安装预览使用同一套规则 |
+| `mop-app build` | 构建页面（React 与组件库不打包）与接口，核对接口函数与 `api` 一致，CSS 自动加应用前缀，输出 `dist/<id>-<version>.mopkg`，这是唯一交付物 |
 
-开发者中心“工具与下载”简化为：下载 `@metro/cli` 一个包 + 查看文档。
+开发者中心“工具与下载”简化为：下载 CLI 与 SDK + 查看文档；v1 的 create/validate/pack/sign/verify/export-upload 命令保留到 1.0.0。
 
 ### 7.4 安装与升级
 
@@ -271,7 +273,7 @@ extinguisher-inspection-1.0.0.mopkg
 
 | 阶段 | 内容 | 交付与验收 |
 |---|---|---|
-| P1 包与清单（0.26.0） | SDK 增加 manifest v2 schema、`defineApp`、`defineServer`；`@metro/cli` 的 init/check/build；`.mopkg` 解析与安装预览 | 用模板做一个“灭火器巡检”示例，`mop build` 产出单文件，管理端能解析并展示安装预览；实际运行在 P2 接通，此阶段不改变现有应用 |
+| P1 包与清单（0.26.0，已完成） | SDK 增加 `manifest`、`mopkg`、`app`（defineApp/useApp）、`server`（defineServer）；CLI 的 init/check/build；管理端 `.mopkg` 安装预览（`POST /api/admin/app-packages/preview`，只读） | 用模板做一个“灭火器巡检”示例，`mop-app build` 产出单文件，管理端能解析并展示安装预览；实际运行在 P2 接通，此阶段不改变现有应用 |
 | P2 运行时（0.27.0） | 进程管理器 + IPC 网关；同源前端加载、import map 共享依赖、ErrorBoundary；应用数据服务直连 schema；`app_requests`、`app_migrations` | 示例应用以 v2 方式完整运行；测量首次打开、二次进入、接口 p50/p95，与 0.25.0 基线对比 |
 | P3 应用迁移（0.27.x–0.28.x） | 按下表逐个迁移现有应用 | 每个应用：本地测试通过 → 备份 → 生产升级 → 核对数据与权限 |
 | P4 清理（0.29.0 或 1.0.0） | 删除 Docker 运行时、iframe 沙箱、资源域、包签名、存储租约与证据、能力开放等 v1 代码与测试；更新 docs、Skill、`AGENTS.md` | 全量测试、类型检查、构建通过；部署文档去掉资源域与 Docker 要求 |

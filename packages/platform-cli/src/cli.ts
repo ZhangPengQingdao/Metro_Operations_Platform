@@ -6,7 +6,59 @@ import metadata from '../package.json';
 import {randomUUID} from 'node:crypto';
 import {AppPackageError,validateAppDirectory,packAppDirectory,snapshotPackage,readDeveloperFile} from '../../../server/src/app-platform/developer/package.js';
 import {signAppDirectory,verifyAppDirectory,readPackageSignature} from '../../../server/src/app-platform/developer/signature.js';
+import {buildProject,checkProject,CliError,initProject} from './v2.js';
+
+const USAGE_V2=`mop-app — 运管平台应用工具
+
+  mop-app init <目录> [--id <应用ID>] [--name <应用名称>]   新建应用项目
+  mop-app check [目录]                                     校验 app.json、图标、迁移与源码入口
+  mop-app build [目录]                                     构建并输出 dist/<id>-<版本>.mopkg
+
+旧版签名包命令（应用模型 v1，将在 1.0.0 移除）：
+  create | validate | pack | sign | verify | export-upload`;
+
+function option(args:string[],name:string){
+ const index=args.indexOf(name);
+ if(index<0)return undefined;
+ const value=args[index+1];
+ if(!value||value.startsWith('--'))throw new CliError(`${name} 需要一个值`);
+ args.splice(index,2);return value;
+}
+
+async function runV2(command:string,args:string[]){
+ try{
+  if(command==='init'){
+   const id=option(args,'--id'),name=option(args,'--name');
+   if(args.length!==1)throw new CliError('用法：mop-app init <目录> [--id <应用ID>] [--name <应用名称>]');
+   const result=await initProject(args[0]!,{id,name,templates:new URL('./templates/',import.meta.url),platformVersion:metadata.version});
+   console.log(`已创建 ${result.name}（${result.id}）：${result.root}\n下一步：cd ${args[0]} && npm install && npm test && npm run build`);
+  }else{
+   if(args.length>1)throw new CliError(`用法：mop-app ${command} [目录]`);
+   if(command==='check'){
+    const result=await checkProject(args[0]??'.');
+    for(const warning of result.warnings)console.warn(`提示：${warning}`);
+    console.log(`检查通过：${result.manifest.name} ${result.manifest.version}`);
+   }else{
+    const result=await buildProject(args[0]??'.');
+    for(const warning of result.warnings)console.warn(`提示：${warning}`);
+    console.log(`已生成 ${result.output}（${(result.bytes/1024).toFixed(1)} KB，sha256 ${result.sha256}）`);
+    for(const file of result.files)console.log(`  ${file.path}  ${file.bytes} B`);
+   }
+  }
+  return 0;
+ }catch(error){
+  if(!(error instanceof CliError))throw error;
+  console.error(`错误：${error.message}`);
+  for(const issue of error.issues)console.error(`  ${issue.path}：${issue.message}`);
+  return 1;
+ }
+}
+
 const [command,...args]=process.argv.slice(2);
+if(command==='init'||command==='check'||command==='build'){
+ // build loads server.js; exit explicitly so timers started at module load cannot keep the CLI alive.
+ process.exit(await runV2(command,args).catch(error=>{console.error(`错误：${error instanceof Error?error.message:String(error)}`);return 1;}));
+}
 try{
  let result:unknown;
  if(command==='create'&&args.length===4)result=await createAppProject(args[0],args[1],args[2],args[3],{templates:new URL('./templates/',import.meta.url),sdkVersion:metadata.version});
@@ -20,7 +72,7 @@ try{
   const json=JSON.stringify(value);if(Buffer.byteLength(json)>92*1024*1024)throw new AppPackageError('INSTALL_PACKAGE_TOO_LARGE');
   await writeFile(resolve(args[2]),args[2].endsWith('.gz')?gzipSync(json):json,{flag:'wx',mode:0o600});result={appId:value.manifest.id,version:value.manifest.version,requestId,output:resolve(args[2])};
  }else{
-  console.error('Usage: mop-app create <new-dir> <app-id> <standard|sandbox|backend|trusted> <publisher-id> | validate <built-dir> | pack <built-dir> <new-dir> | sign <built-dir> <key-id> <private-key-file> <new-signature-file> | verify <built-dir> <signature-file> <key-id> <publisher-id> <public-key-file> | export-upload <built-dir> <signature-file> <new-output.json|new-output.mop.gz>');process.exitCode=2;
+  console.error(USAGE_V2);process.exitCode=2;
  }
  if(result)console.log(JSON.stringify({ok:true,result}));
 }catch(error){console.error(JSON.stringify({ok:false,code:error instanceof AppPackageError?error.code:'PACKAGE_IO_FAILED'}));process.exitCode=1;}

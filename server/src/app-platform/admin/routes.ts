@@ -22,6 +22,8 @@ import {AppRegistryError,AppRegistryService,PostgresAppRegistryRepository} from 
 import type {AppLifecycleRoutesOptions} from '../runtime/lifecycle-routes.js';
 import type {AppInstallRoutesOptions} from '../install/routes.js';
 import {withInstallUpload,INSTALL_BODY_LIMIT} from '../install/wire.js';
+import {previewAppPackageV2,summarizeV1Installation} from '../install/package-v2.js';
+import {MOPKG_LIMITS,MopkgError} from '@metro/platform-sdk/mopkg';
 import {LocationDirectoryError} from '../../platform/locations/index.js';
 
 export interface AdminConsoleOptions {
@@ -57,7 +59,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(req.method!=='GET'&&req.headers.origin!==options.origin)throw new AdminIdentityError(403,'ADMIN_ORIGIN_DENIED');
    await createAdministratorContext(req,options.identity);
    const requestPath=req.url.split('?')[0];
-   if(req.method==='POST'&&(['/api/admin/install','/api/admin/install-preview','/api/admin/install-approve'].includes(requestPath)||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(requestPath))){
+   if(req.method==='POST'&&(['/api/admin/install','/api/admin/install-preview','/api/admin/install-approve','/api/admin/app-packages/preview'].includes(requestPath)||/^\/api\/admin\/apps\/[^/]+\/upgrade$/.test(requestPath))){
     if(uploads>=2)throw new AdminIdentityError(429,'INSTALL_BUSY');uploads++;admitted.add(req);
    }
   });
@@ -75,6 +77,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(error instanceof AppStorageError)return reply.code(error.code==='STORAGE_ACCESS_DENIED'?403:409).send({error:error.code});
    if(error instanceof InstallError){const status=error.code==='INSTALL_NOT_FOUND'?404:error.code==='INSTALL_ACCESS_DENIED'?403:error.code.startsWith('INVALID_')?400:409;return reply.code(status).send({error:error.code});}
    if(error instanceof AppPackageError)return reply.code(400).send({error:error.code});
+   if(error instanceof MopkgError)return reply.code(400).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'ADMIN_INVALID_INPUT'});
    const code=error instanceof Error&&'code' in error&&typeof error.code==='string'?error.code:'';
    if(code==='APP_CAPABILITIES_NOT_SUPPORTED')return reply.code(409).send({error:code});
@@ -225,6 +228,18 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');
    const context=await createAdministratorContext(req,options.identity);
    return withInstallUpload(req.body,options.management.uploadRoot,input=>options.management!.previewPackage(context,input));
+  });
+  // Application model v2 single-file package: read-only preview until the v2 runtime is installed.
+  scoped.post('/app-packages/preview',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
+   const {package:encoded}=z.object({package:z.string().min(1).max(Math.ceil(MOPKG_LIMITS.packageBytes/3)*4)}).strict().parse(req.body);
+   if(encoded.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))throw new MopkgError('MOPKG_INVALID');
+   return withRegistry(req,(service,context)=>previewAppPackageV2(Buffer.from(encoded,'base64'),{
+    platformVersion:getCoreConfig().runtime.releaseVersion.value,
+    findInstalled:async appId=>{
+     try{return summarizeV1Installation((await service.get(context,appId)).manifest);}
+     catch(error){if(error instanceof AppRegistryError&&error.code==='APP_NOT_FOUND')return null;throw error;}
+    },
+   }));
   });
   scoped.post('/install-approve',{bodyLimit:INSTALL_BODY_LIMIT},async req=>{
    if(!options.management)throw new AdminIdentityError(503,'APP_INSTALL_NOT_CONFIGURED');

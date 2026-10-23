@@ -1,0 +1,20 @@
+{
+  "id": "__APP_ID__",
+  "name": "__APP_NAME__",
+  "version": "0.1.0",
+  "description": "__APP_NAME__：记录列表与新增示例",
+  "color": "#2563EB",
+  "platform": ">=__PLATFORM_VERSION__",
+  "permissions": [
+    {"code": "read", "name": "查看记录", "scopes": ["self", "workgroup", "department", "all"]},
+    {"code": "create", "name": "新增记录", "scopes": ["self", "workgroup", "department", "all"]}
+  ],
+  "platformAccess": [],
+  "pages": [
+    {"path": "/", "title": "记录", "permission": "read", "nav": true}
+  ],
+  "api": [
+    {"id": "list", "permission": "read"},
+    {"id": "create", "permission": "create"}
+  ]
+}
