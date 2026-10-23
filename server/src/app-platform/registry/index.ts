@@ -7,7 +7,7 @@ import { validateScope, type AuthorizationService, type DataScope } from '../../
 import type { AppGrantResolver, ResolvePlatformActorInput } from '../../platform/context/index.js';
 import { isNativeManagementActor, managementActorId, type PlatformManagementContext } from '../../platform/context/index.js';
 import { checkAppManifestCompatibility, validateAppManifest, type AppManifestHost } from '../manifest/index.js';
-import { AppRegistryError, frontendRunMode, type AppFrontendRunMode, type AppLifecycleAction, type AppInstallation, type AppInstallationHistory, type InstallationGrant, type StoredAppInstallation } from './model.js';
+import { AppRegistryError, frontendRunMode, type AppFrontendRunMode, type AppLifecycleAction, type AppInstallation, type AppRuntimePackage, type AppInstallationHistory, type InstallationGrant, type StoredAppInstallation } from './model.js';
 import type { AppRegistryRepository } from './repository.js';
 export * from './model.js';
 export * from './repository.js';
@@ -33,7 +33,7 @@ export class AppRegistryService {
   /** Expose the existing boundary for atomic first-install identity and package binding. */
   get atomic() { return this.repository.atomic; }
 
-  async register(context: PlatformManagementContext, manifestInput: unknown, reason?: string, frontendMode:AppFrontendRunMode='standard'): Promise<AppInstallation> {
+  async register(context: PlatformManagementContext, manifestInput: unknown, reason?: string, frontendMode:AppFrontendRunMode='standard', runtime?: AppRuntimePackage): Promise<AppInstallation> {
     const parsed = validateAppManifest(manifestInput);
     return runAtomicOperation([this.repository], async () => {
       await admin(context, 'manage');
@@ -43,7 +43,8 @@ export class AppRegistryService {
       if(frontendMode==='trusted'&&parsed.manifest.ui.mode!=='sandbox')throw new AppRegistryError('FRONTEND_MODE_REQUIRES_UI');
       if (!checkAppManifestCompatibility(parsed.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       const now = this.clock().toISOString();
-      const record: StoredAppInstallation = { id: randomUUID(), appId: parsed.manifest.id, manifest: parsed.manifest, enabled: false, frontendRunMode:frontendMode, revision: 1, grants: [], serviceIdentityId: null, credentialDigest: null, createdAt: now, updatedAt: now };
+      if (runtime && (runtime.model !== 'v2' || runtime.manifest.id !== parsed.manifest.id || !/^[a-f0-9]{64}$/.test(runtime.sha256))) throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
+      const record: StoredAppInstallation = { id: randomUUID(), appId: parsed.manifest.id, manifest: parsed.manifest, enabled: false, frontendRunMode:frontendMode, ...(runtime ? { runtime: structuredClone(runtime) } : {}), revision: 1, grants: [], serviceIdentityId: null, credentialDigest: null, createdAt: now, updatedAt: now };
       await this.repository.insert(record);
       await this.audit(context, record, 'registered', reason);
       return publicRecord(record);
@@ -120,6 +121,14 @@ export class AppRegistryService {
       if (typeof enabled !== 'boolean') throw new AppRegistryError('INVALID_ENABLED');
       if (enabled && !checkAppManifestCompatibility(record.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       record.enabled = enabled;
+    });
+  }
+  /** v2 installer only: record the package that matches the (already upgraded) projected manifest. */
+  setRuntimePackage(context:PlatformManagementContext,appId:string,revision:number,runtime:AppRuntimePackage){
+    return this.change(context,appId,revision,'runtime-package-changed',`Package ${runtime.manifest.version} ${runtime.sha256.slice(0,12)}`,async record=>{
+      if(record.enabled)throw new AppRegistryError('DISABLE_REQUIRED');
+      if(record.runtime?.model!=='v2'||runtime.model!=='v2'||runtime.manifest.id!==record.appId||runtime.manifest.version!==record.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
+      record.runtime=structuredClone(runtime);
     });
   }
   setFrontendRunMode(context:PlatformManagementContext,appId:string,revision:number,mode:AppFrontendRunMode){

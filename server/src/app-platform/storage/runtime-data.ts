@@ -16,14 +16,14 @@ import {assertRuntimeWritesSettled,recoverRuntimeStorageLease} from './runtime-e
 import {GatewayError,jsonSnapshot,type AppGatewayOperation,type GatewayJson} from '../gateway/model.js';
 const identifier=z.string().regex(/^[a-z][a-z0-9_]{0,62}$/).refine(v=>!v.startsWith('pg_')&&!v.startsWith('platform_'));
 const base={table:identifier,id:z.string().uuid()};
-const readInput=z.object(base).strict();
-const readManyInput=z.object({table:identifier,ids:z.array(z.string().uuid()).min(1).max(50)}).strict();
-const writeInput=z.object({...base,requestId:z.string().uuid(),action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id'in v.values));
-const transactionItem=z.object({...base,action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional(),expected:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>
+export const readInput=z.object(base).strict();
+export const readManyInput=z.object({table:identifier,ids:z.array(z.string().uuid()).min(1).max(50)}).strict();
+export const writeInput=z.object({...base,requestId:z.string().uuid(),action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id'in v.values));
+export const transactionItem=z.object({...base,action:z.enum(['insert','update','delete']),values:z.record(identifier,z.unknown()).optional(),expected:z.record(identifier,z.unknown()).optional()}).strict().refine(v=>
  (v.action==='delete'?v.values===undefined:!!v.values&&Object.keys(v.values).length>0&&Object.keys(v.values).length<=63&&!('id' in v.values))&&
  (v.action==='insert'?v.expected===undefined:!!v.expected&&Object.keys(v.expected).length>0&&Object.keys(v.expected).length<=63&&!('id' in v.expected)));
-const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
-const readBatchInput=z.object({operations:z.array(z.union([readInput,readManyInput,runtimeListInput,runtimeCountInput,runtimeDailyCountInput])).min(1).max(4)}).strict();
+export const transactionInput=z.object({requestId:z.string().uuid(),operations:z.array(transactionItem).min(1).max(16)}).strict();
+export const readBatchInput=z.object({operations:z.array(z.union([readInput,readManyInput,runtimeListInput,runtimeCountInput,runtimeDailyCountInput])).min(1).max(4)}).strict();
 const rows=async<T>(db:QueryableClient,sql:string,args?:readonly unknown[])=>((await db.query(sql,args)) as {rows:T[]}).rows;
 const q=(v:string)=>`"${v}"`; // Only validated binding and identifier values.
 export interface RuntimeStorageOptions{
@@ -250,7 +250,7 @@ export class AppRuntimeDataService{
   return new Map(found.map(c=>[c.name,c.type]));
  }
 }
-function validValue(type:string,value:unknown){if(value===null)return true;if(type==='jsonb')return value!==undefined;
+export function validValue(type:string,value:unknown){if(value===null)return true;if(type==='jsonb')return value!==undefined;
  if(type==='date')return typeof value==='string'&&value.slice(0,4)!=='0000'&&z.string().date().safeParse(value).success;
  if(type==='timestamptz')return typeof value==='string'&&z.string().datetime({offset:true}).safeParse(value).success;
  if(type==='text')return typeof value==='string';if(type==='uuid')return z.string().uuid().safeParse(value).success;

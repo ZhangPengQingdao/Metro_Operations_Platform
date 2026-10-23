@@ -1,5 +1,6 @@
 import type { AppManifest } from '../manifest/index.js';
 import type { AppPermissionGrant } from '../../platform/authorization/index.js';
+import type { AppManifestV2 } from '@metro/platform-sdk/manifest';
 
 export interface InstallationGrant extends AppPermissionGrant { serviceIdentityId: string | null }
 export type AppFrontendRunMode = 'standard' | 'trusted';
@@ -14,6 +15,8 @@ export interface AppLifecycleOperation {
   startedAt: string;
   settledAt: string | null;
 }
+/** Installed v2 package identity, set only by the v2 installer. */
+export interface AppRuntimePackage { model: 'v2'; sha256: string; manifest: AppManifestV2 }
 export interface AppInstallation {
   id: string;
   appId: string;
@@ -21,6 +24,8 @@ export interface AppInstallation {
   enabled: boolean;
   /** Platform installation setting; absent legacy records are standard. Never read from the manifest. */
   frontendRunMode?: AppFrontendRunMode;
+  /** Application model v2 package; `manifest` above is its v1-shaped projection used by shared services. */
+  runtime?: AppRuntimePackage;
   lifecycle?: AppLifecycleOperation;
   revision: number;
   grants: InstallationGrant[];
@@ -33,7 +38,7 @@ export interface StoredAppInstallation extends AppInstallation { credentialDiges
 export interface AppInstallationHistory {
   installationId: string;
   revision: number;
-  action: 'registered' | 'enabled' | 'disabled' | 'frontend-mode-changed' | 'grant-approved' | 'grant-revoked' | 'credential-issued' | 'credential-revoked' | 'lifecycle-started' | 'lifecycle-completed' | 'lifecycle-failed' | 'lifecycle-cancelled';
+  action: 'registered' | 'enabled' | 'disabled' | 'frontend-mode-changed' | 'runtime-package-changed' | 'grant-approved' | 'grant-revoked' | 'credential-issued' | 'credential-revoked' | 'lifecycle-started' | 'lifecycle-completed' | 'lifecycle-failed' | 'lifecycle-cancelled';
   lifecycle?: AppLifecycleOperation;
   actorPersonId: string | null;
   actorAdministratorId?: string | null;
