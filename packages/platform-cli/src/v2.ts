@@ -1,6 +1,7 @@
 /** Application model v2 commands: init, check and build a single `.mopkg` file. */
 import { build as esbuild, transform, type Metafile, type Plugin } from 'esbuild';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { watch } from 'node:fs';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -171,3 +172,33 @@ export async function buildProject(target: string): Promise<BuildResult> {
   } finally { await rm(work, { recursive: true, force: true }); }
 }
 
+export type DevEvent = { type: 'built'; result: BuildResult; target: string } | { type: 'failed'; error: unknown };
+/**
+ * Rebuilds on every change and writes `<out>/<id>.mopkg` atomically. A platform started with
+ * `MOP_DEV_APPS_DIR=<out>` installs each new package automatically. Returns a stop function.
+ */
+export async function devProject(target: string, options: { out: string; onEvent(event: DevEvent): void }): Promise<() => void> {
+  const root = resolve(target), out = resolve(options.out);
+  await mkdir(out, { recursive: true });
+  let timer: NodeJS.Timeout | null = null, running = false, again = false;
+  const run = async () => {
+    if (running) { again = true; return; }
+    running = true;
+    try {
+      const result = await buildProject(root);
+      const destination = join(out, `${result.manifest.id}.mopkg`), staging = `${destination}.${process.pid}.tmp`;
+      await writeFile(staging, await readFile(resolve(process.cwd(), result.output)));
+      await rename(staging, destination);
+      options.onEvent({ type: 'built', result, target: destination });
+    } catch (error) { options.onEvent({ type: 'failed', error }); }
+    finally { running = false; if (again) { again = false; void run(); } }
+  };
+  await run();
+  const ignored = /(^|[\\/])(node_modules|dist|\.mop|\.git)([\\/]|$)/;
+  const watcher = watch(root, { recursive: true }, (_event, file) => {
+    if (!file || ignored.test(String(file))) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; void run(); }, 200);
+  });
+  return () => { if (timer) clearTimeout(timer); watcher.close(); };
+}

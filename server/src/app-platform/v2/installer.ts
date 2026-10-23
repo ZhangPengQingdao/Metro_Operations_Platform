@@ -32,7 +32,8 @@ export interface AppInstallV2Result { state: 'installed' | 'updated' | 'repaired
 export class AppInstallerV2 {
   constructor(private readonly options: AppInstallerV2Options) {}
 
-  async install(context: PlatformManagementContext, bytes: Uint8Array): Promise<AppInstallV2Result> {
+  /** `dev` (development mode only) also accepts a rebuilt package of the same version while the app is running. */
+  async install(context: PlatformManagementContext, bytes: Uint8Array, options: { dev?: boolean } = {}): Promise<AppInstallV2Result> {
     const { registry } = this.options;
     const preview = await previewAppPackageV2(bytes, {
       platformVersion: this.options.platformVersion(), installAvailable: true,
@@ -56,7 +57,8 @@ export class AppInstallerV2 {
       if (existing.runtime?.model !== 'v2') throw new AppInstallV2Error('V1_APP_UPGRADE_NOT_SUPPORTED');
       record = await registry.get(context, appId);
       // Same version is only accepted as a repair of a stopped installation.
-      if (kind === 'reinstall' && record.enabled) throw new AppInstallV2Error('VERSION_NOT_NEWER');
+      if (kind === 'reinstall' && record.enabled && !options.dev) throw new AppInstallV2Error('VERSION_NOT_NEWER');
+      if (options.dev && kind === 'reinstall' && record.runtime?.sha256 === preview.sha256 && record.enabled) return { state: 'repaired', appId, version: manifest.version, enabled: true };
       if (record.enabled) record = await host.execute(context, { revision: record.revision, action: 'disable' });
     }
     const wasEnabled = !!existing?.enabled;

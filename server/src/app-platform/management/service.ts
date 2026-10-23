@@ -39,6 +39,7 @@ import {join} from 'node:path';
 import {AppDataServiceV2} from '../v2/data.js';
 import {createAppRuntimeV2} from '../v2/runtime.js';
 import {pageRouteId} from '../v2/projection.js';
+import {devAdministratorContext,startDevAppsWatcher} from '../v2/dev.js';
 /** Opt-in application management composition; does not run schema migrations on startup. */
 export async function createAppManagement(configFile:string,origin:string){
  const config=await loadAppManagementConfig(configFile);
@@ -189,6 +190,9 @@ export async function createAppManagement(configFile:string,origin:string){
  },process.env.MOP_MAINTENANCE_STATE):undefined;
  await maintenance?.initialize();
  await v2.boot();
+ // Local development only: `mop-app dev` drops packages here and they are installed automatically.
+ const stopDevWatcher=process.env.MOP_DEV_APPS_DIR?await startDevAppsWatcher({directory:process.env.MOP_DEV_APPS_DIR,log:line=>console.log(line),
+  install:bytes=>queue.run(async()=>{try{const result=await v2.installer.install(devAdministratorContext(),bytes,{dev:true});return `${result.appId} ${result.version} ${result.state}`;}finally{invalidateAppSessions();}})}):undefined;
  return {
   trustedAvailable:()=>!!resources&&trustedConfigured,
   invalidateEmployeeSessions:invalidateAppSessions,
@@ -370,7 +374,7 @@ export async function createAppManagement(configFile:string,origin:string){
    };
   },
   ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{if((await registry.get(context,appId)).runtime?.model==='v2')throw new AppManagementError('APP_V2_EMPLOYEE_ONLY');await assertRuntimeApproval(context,appId);if(frontendRunMode(await registry.get(context,appId))==='trusted'&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize,trustedAppId)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();},trustedAppId):undefined});}),
-  close:()=>queue.close(async()=>{await resources?.close();await v2.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
+  close:()=>queue.close(async()=>{stopDevWatcher?.();await resources?.close();await v2.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
  };
  }catch(error){await resources?.close();await storage?.closeRuntimeConnections();db.release();throw error;}
 }

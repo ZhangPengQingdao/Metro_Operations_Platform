@@ -6,13 +6,14 @@ import metadata from '../package.json';
 import {randomUUID} from 'node:crypto';
 import {AppPackageError,validateAppDirectory,packAppDirectory,snapshotPackage,readDeveloperFile} from '../../../server/src/app-platform/developer/package.js';
 import {signAppDirectory,verifyAppDirectory,readPackageSignature} from '../../../server/src/app-platform/developer/signature.js';
-import {buildProject,checkProject,CliError,initProject} from './v2.js';
+import {buildProject,checkProject,CliError,devProject,initProject} from './v2.js';
 
 const USAGE_V2=`mop-app — 运管平台应用工具
 
   mop-app init <目录> [--id <应用ID>] [--name <应用名称>]   新建应用项目
   mop-app check [目录]                                     校验 app.json、图标、迁移与源码入口
   mop-app build [目录]                                     构建并输出 dist/<id>-<版本>.mopkg
+  mop-app dev [目录] [--out <目录>]                         改动后自动构建到开发目录，本地平台自动安装
 
 旧版签名包命令（应用模型 v1，将在 1.0.0 移除）：
   create | validate | pack | sign | verify | export-upload`;
@@ -55,11 +56,23 @@ async function runV2(command:string,args:string[]){
 }
 
 const [command,...args]=process.argv.slice(2);
-if(command==='init'||command==='check'||command==='build'){
+if(command==='dev'){
+ try{
+  const out=option(args,'--out')??process.env.MOP_DEV_APPS_DIR??'.mop/dev';
+  if(args.length>1)throw new CliError('用法：mop-app dev [目录] [--out <目录>]');
+  const time=()=>new Date().toLocaleTimeString();
+  await devProject(args[0]??'.',{out,onEvent:event=>{
+   if(event.type==='built')console.log(`[${time()}] 已构建 ${event.result.manifest.name} ${event.result.manifest.version} → ${event.target}`);
+   else if(event.error instanceof CliError){console.error(`[${time()}] ${event.error.message}`);for(const issue of event.error.issues)console.error(`  ${issue.path}：${issue.message}`);}
+   else console.error(`[${time()}] 构建失败：${event.error instanceof Error?event.error.message:String(event.error)}`);
+  }});
+  console.log(`正在监听改动（Ctrl+C 退出）。本地平台以 MOP_DEV_APPS_DIR=${resolve(out)} 启动即可自动安装。`);
+ }catch(error){console.error(`错误：${error instanceof Error?error.message:String(error)}`);process.exit(1);}
+}else if(command==='init'||command==='check'||command==='build'){
  // build loads server.js; exit explicitly so timers started at module load cannot keep the CLI alive.
  process.exit(await runV2(command,args).catch(error=>{console.error(`错误：${error instanceof Error?error.message:String(error)}`);return 1;}));
 }
-try{
+else try{
  let result:unknown;
  if(command==='create'&&args.length===4)result=await createAppProject(args[0],args[1],args[2],args[3],{templates:new URL('./templates/',import.meta.url),sdkVersion:metadata.version});
  else if(command==='validate'&&args.length===1){const value=await validateAppDirectory(args[0]);result={appId:value.manifest.id,version:value.manifest.version,artifactBytes:value.artifactBytes};}
