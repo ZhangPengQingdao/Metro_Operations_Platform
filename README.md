@@ -50,6 +50,7 @@ npm run version:check
 - [Linux 安装与在线更新实施方案](docs/linux-install-and-update-plan.md)
 - [版本规则](docs/versioning.md)
 - [当前能力边界](docs/limitations.md)
+- [应用模型 v2 架构方案](docs/app-model-v2.md)
 - [拆分说明](docs/extraction.md)
 
 SDK 位于 `packages/platform-sdk`，独立打包工具位于 `packages/platform-cli`，共享组件位于 `src/components/ui`。源码、数据及启动流程不依赖旧仓库。
