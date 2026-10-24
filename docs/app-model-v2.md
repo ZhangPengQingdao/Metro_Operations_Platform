@@ -2,7 +2,7 @@
 
 状态：已确认（2026-10-23），按第 8 节分阶段实施。基于 0.25.0 代码审计（2026-10-23）。
 
-实施进度：P1 已在 0.26.0 完成（清单、SDK、`mop-app init/check/build`、`.mopkg` 安装预览）；P2 运行时已在 0.27.0 完成（安装、子进程、同源页面、数据服务），见第 8 节。
+实施进度：P1 已在 0.26.0 完成（清单、SDK、`mop-app init/check/build`、`.mopkg` 安装预览）；P2 运行时已在 0.27.0 完成（安装、子进程、同源页面、数据服务），P2 收尾在 0.28.0 完成（管理端独立域名、`mop-app dev`、页面平台目录与附件、旧版后端兼容），见第 8 节。
 
 ## 1. 目标与定位
 
@@ -80,7 +80,7 @@ export default defineApp({
 });
 ```
 
-`useApp()` 提供：`appId`、`api.call(apiId, input)`、`user`（当前员工、组织、本应用已授予的权限 `has()`）、`route`（路径与参数）、`navigate(path)`、`toast`、`confirm`。`files`（上传/下载/图片）与 `platform`（人员、车站、设备的只读查询）随 P2 运行时补充。弹窗、主题、导航由共享组件与外壳直接处理，不再需要 `platform.ui.*` 桥接操作。
+`useApp()` 提供：`appId`、`api.call(apiId, input)`、`user`（当前员工、组织、本应用已授予的权限 `has()`）、`route`（路径与参数）、`navigate(path)`、`toast`、`confirm`、`platform` / `directory`（人员、组织、线路车站、设备的只读查询，按应用授权与员工范围执行）、`files`（按业务记录上传、列出、下载原件附件，由应用的 `authorize-attachment` 接口授权）。弹窗、主题、导航由共享组件与外壳直接处理，不再需要 `platform.ui.*` 桥接操作。
 
 ### 4.2 加载与共享依赖
 
@@ -103,7 +103,7 @@ export default defineApp({
 - 服务端对每次调用按**员工权限**校验，应用不能获得超出当前员工的能力；
 - 应用代码**不在管理端加载**。v1 的管理端应用页面（`AdminApplicationOutlet`，`requiresEmployee` 为假的页面）迁到员工端，由应用的管理权限（如 `manage`）控制。
 
-待确认：管理端是否改为独立子域名或端口，彻底与员工端分开 cookie 作用域（建议做，成本是多一个反向代理站点）。
+管理端独立域名已在 0.28.0 提供：配置 `ADMIN_PUBLIC_BASE_URL` 后两类会话的 Cookie 分属不同主机，员工端页面无法借用管理员会话。
 
 ## 5. 后端：子进程托管
 
@@ -253,7 +253,7 @@ extinguisher-inspection-1.0.0.mopkg
 | 命令 | 作用 |
 |---|---|
 | `mop-app init <目录> [--id] [--name]` | 生成项目：`app.json`、`icon.svg`、`src/ui.jsx`、`src/server.js`、`migrations/001-initial.json`、测试样例，并写入 Agent Skill（`.claude/skills/metro-app/`、`AGENTS.md`） |
-| `mop-app dev`（P2） | 监听源码、增量构建到 `.mop/dev/`；本地平台开启开发模式（`MOP_DEV_APPS_DIR`）后自动加载该目录，前端改动刷新即生效，后端改动自动重启子进程 |
+| `mop-app dev [--out <目录>]` | 监听源码、增量构建到 `.mop/dev/`；本地平台开启开发模式（`MOP_DEV_APPS_DIR`）后自动加载该目录，前端改动刷新即生效，后端改动自动重启子进程 |
 | `mop-app check` | 校验清单、权限引用、图标、迁移编号与结构、源码入口；与平台安装预览使用同一套规则 |
 | `mop-app build` | 构建页面（React 与组件库不打包）与接口，核对接口函数与 `api` 一致，CSS 自动加应用前缀，输出 `dist/<id>-<version>.mopkg`，这是唯一交付物 |
 
@@ -276,7 +276,7 @@ extinguisher-inspection-1.0.0.mopkg
 |---|---|---|
 | P1 包与清单（0.26.0，已完成） | SDK 增加 `manifest`、`mopkg`、`app`（defineApp/useApp）、`server`（defineServer）；CLI 的 init/check/build；管理端 `.mopkg` 安装预览（`POST /api/admin/app-packages/preview`，只读） | 用模板做一个“灭火器巡检”示例，`mop-app build` 产出单文件，管理端能解析并展示安装预览；实际运行在 P2 接通，此阶段不改变现有应用 |
 | P2 运行时（0.27.0，已完成） | 进程管理器 + IPC；同源页面加载、共享模块表、错误边界；数据服务直连 schema；`platform_app_v2_requests`、`platform_app_v2_migrations`；`.mopkg` 安装/升级/修复 | 本地真实 PostgreSQL + 浏览器验收：安装、负责人配置角色、员工打开页面、写入、带参数页面跳转、升级（新迁移）、撤权后按钮隐藏且接口拒绝。接口往返 p50 7ms / p95 9ms，在线升级 122ms（本机测量，非生产数据） |
-| P2 后续 | 管理端独立域名；`mop-app dev`；`useApp().files/platform`；v1 `createAppBackend` 的 IPC 兼容（P3 前提） | 随 P3 开始前完成 |
+| P2 收尾（0.28.0，已完成） | 管理端独立域名；`mop-app dev` 与平台开发模式；`useApp().platform/directory/files`；v1 `createAppBackend` 经 IPC 运行（P3 前提） | 浏览器验收：分站登录与跳转、员工端调用管理接口被拒、页面查询成员、附件上传下载、开发模式改动自动生效；真实待办后端在子进程中注册 12 个接口 |
 | P3 应用迁移（0.27.x–0.28.x） | 按下表逐个迁移现有应用 | 每个应用：本地测试通过 → 备份 → 生产升级 → 核对数据与权限 |
 | P4 清理（0.29.0 或 1.0.0） | 删除 Docker 运行时、iframe 沙箱、资源域、包签名、存储租约与证据、能力开放等 v1 代码与测试；更新 docs、Skill、`AGENTS.md` | 全量测试、类型检查、构建通过；部署文档去掉资源域与 Docker 要求 |
 

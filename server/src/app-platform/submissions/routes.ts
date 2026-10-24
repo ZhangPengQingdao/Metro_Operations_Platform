@@ -1,4 +1,4 @@
-import {expectedOrigin} from '../../core/http/sites.js';
+import {expectedOrigin} from '../../core/http/index.js';
 import {createHash,randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';

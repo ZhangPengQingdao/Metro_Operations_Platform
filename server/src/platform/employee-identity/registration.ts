@@ -1,4 +1,4 @@
-import {expectedOrigin} from '../../core/http/sites.js';
+import {expectedOrigin} from '../../core/http/index.js';
 import {passwordSchema} from '../../core/security/index.js';
 import {randomUUID} from 'node:crypto';
 import bcrypt from 'bcryptjs';

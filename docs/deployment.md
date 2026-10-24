@@ -32,3 +32,11 @@ API 入口 `npm --prefix server start`；`HOST` 默认为 127.0.0.1，容器内�
 - 进程：每个启用的应用由 API 进程以 Node 子进程运行（同一容器或主机、同一系统用户），环境变量只含 `NODE_ENV`、`TZ`、`PATH`、`MOP_APP_ID`，不含数据库地址或密钥。平台启动时自动拉起已启用的应用；异常退出按 1s→60s 退避重启，5 分钟内连续 5 次后停止重启，管理员可在应用状态中重新启动。
 - 内存：每个应用默认上限 256MB（`app.json` 的 `limits.memoryMiB` 可调），按已启用应用数量预留。
 
+## 管理端独立域名（可选，0.28.0 起）
+
+设置 `ADMIN_PUBLIC_BASE_URL=https://admin.<域名>`（与 `PUBLIC_BASE_URL` 不同的主机），反向代理把两个域名都指向同一前端与 `/api/`。管理员只能在管理端域名登录，员工只能在员工端域名登录；会话 Cookie 只发往各自主机。前端会把 `/admin`、`/employee` 路由自动跳到所属域名。不设置时两者共用 `PUBLIC_BASE_URL`。
+
+## 本地开发模式
+
+非生产环境可设置 `MOP_DEV_APPS_DIR=<绝对路径>`：平台自动安装该目录中的 `.mopkg`（含同版本重建），配合 `mop-app dev --out <同一目录>` 使用。生产环境（`NODE_ENV=production`）拒绝启用。首次安装后仍需指定负责人并配置角色。
+

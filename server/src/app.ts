@@ -6,7 +6,7 @@ import {registerUnifiedLogin} from './platform/employee-identity/unified-login.j
 import Fastify from 'fastify';
 import {registerPlatformUpdateRoutes} from './app-platform/admin/update-routes.js';
 import {getCoreConfig} from './core/config/index.js';
-import {resolvePlatformSites} from './core/http/sites.js';
+import {resolvePlatformSites} from './core/http/index.js';
 import {getDatabasePool} from './core/database/index.js';
 import {createFastifyRuntimeOptions} from './core/http/index.js';
 import {createProductionAdminIdentityService,registerAdminIdentityRoutes} from './core/admin-identity/index.js';

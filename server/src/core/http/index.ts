@@ -93,3 +93,4 @@ export async function registerCoreErrorHandler(app: FastifyInstance) {
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+export { expectedOrigin, resolvePlatformSites, type PlatformSites } from './sites.js';
