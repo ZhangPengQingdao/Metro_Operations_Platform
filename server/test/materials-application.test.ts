@@ -5,13 +5,13 @@ import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {compileAppMigration} from '../src/app-platform/storage/declarative-migration.ts';
-import {createMaterialsService} from '../../applications/materials/service.mjs';
+import {createMaterialsService} from '../../applications/materials/src/service.mjs';
 
 test('independent materials service uses declarative schema and rolls back stock if ledger insertion fails',async()=>{
  const db=new PGlite(),schema='app_'+randomUUID().replaceAll('-','');
  try{
   await db.exec(`CREATE SCHEMA "${schema}"`);
-  const migration=await readFile(new URL('../../applications/materials/migration-001.json',import.meta.url),'utf8');
+  const migration=await readFile(new URL('../../applications/materials/migrations/001-initial.json',import.meta.url),'utf8');
   for(const sql of compileAppMigration(migration,schema))await db.exec(sql);
   const employee={personId:randomUUID(),organizationUnitId:randomUUID()};let failLedger=false;
   // Test-only SDK transport: application source uses no SQL or platform imports.
@@ -34,11 +34,11 @@ test('independent materials service uses declarative schema and rolls back stock
   }};
   const service=createMaterialsService(gateway),material=await service.create({requestId:randomUUID(),name:'螺栓',sku:'BOLT',unit:'个'},employee);
   const inbound=await service.move({requestId:randomUUID(),materialId:material.id,direction:'in',quantity:8},employee);
-  const upgrade=await readFile(new URL('../../applications/materials/migration-002.json',import.meta.url),'utf8');
+  const upgrade=await readFile(new URL('../../applications/materials/migrations/002-specification.json',import.meta.url),'utf8');
   for(const sql of compileAppMigration(upgrade,schema))await db.exec(sql);
   const retained=(await db.query(`SELECT quantity,specification FROM "${schema}".materials`)).rows[0];assert.equal(retained.quantity,8);assert.equal(retained.specification,null);
 
-  const receiverMigration=await readFile(new URL('../../applications/materials/migration-003.json',import.meta.url),'utf8');
+  const receiverMigration=await readFile(new URL('../../applications/materials/migrations/003-receiver.json',import.meta.url),'utf8');
   for(const sql of compileAppMigration(receiverMigration,schema))await db.exec(sql);
   assert.equal((await db.query(`SELECT receiver_id FROM "${schema}".movements WHERE id=$1`,[inbound.id])).rows[0].receiver_id,null);
   failLedger=true;await assert.rejects(service.move({requestId:randomUUID(),materialId:material.id,direction:'out',quantity:3},employee),/ledger failed/);failLedger=false;
@@ -54,7 +54,7 @@ test('independent materials service uses declarative schema and rolls back stock
 test('materials handlers interoperate with SDK channel and preserve uncertainty without killing the backend',async()=>{
  const {PassThrough}=await import('node:stream');
  const {createAppBackend}=await import('@metro/platform-sdk/app-backend');
- const {createMaterialsHandlers}=await import('../../applications/materials/handlers.mjs');
+ const {createMaterialsHandlers}=await import('../../applications/materials/src/handlers.mjs');
  const {startAppStdioGateway}=await import('../src/app-platform/runtime/stdio-gateway.ts');
  const input=new PassThrough(),output=new PassThrough();let storageCalls=0;
  const backend=createAppBackend({input,output,handlers:createMaterialsHandlers({invoke:async()=>{storageCalls++;throw Error('unknown database response');}})});
@@ -68,33 +68,34 @@ test('materials handlers interoperate with SDK channel and preserve uncertainty 
  }finally{backend.close();await backend.drain();host.api.confirmContainerStopped();await host.stop();}
 });
 
-test('materials build can be signed and exported by standalone public CLI',async()=>{
- const {execFile}=await import('node:child_process'),{promisify}=await import('node:util');const exec=promisify(execFile);
- const {mkdtemp,writeFile,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
- const {generateKeyPairSync}=await import('node:crypto');const root=await mkdtemp(join(tmpdir(),'mop-material-package-'));
- const repository=new URL('../../',import.meta.url),cli=new URL('../../packages/platform-cli/dist/cli.mjs',import.meta.url);
- const {fileURLToPath}=await import('node:url');const app=fileURLToPath(new URL('../../applications/materials/dist',import.meta.url));
- try{
-  await exec(process.execPath,['applications/materials/build.mjs'],{cwd:repository});
-  await exec(process.execPath,['applications/materials/build.mjs','--upgrade'],{cwd:repository});
-  const original=JSON.parse(await readFile(join(app,'manifest.json'),'utf8')),upgraded=JSON.parse(await readFile(join(app+'-upgrade','manifest.json'),'utf8'));
-  const {isAppendOnlyStorageVersion}=await import('../src/app-platform/manifest/storage-version.ts');assert.equal(isAppendOnlyStorageVersion(original,upgraded),true);
-  const run=(...args:string[])=>exec(process.execPath,[fileURLToPath(cli),...args],{cwd:root});
-  const pair=generateKeyPairSync('ed25519');await writeFile(join(root,'key.pem'),pair.privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
-  await writeFile(join(root,'public.pem'),pair.publicKey.export({type:'spki',format:'pem'}));
-  await run('validate',app);await run('sign',app,'test-key','key.pem','signature.json');
-  await run('verify',app,'signature.json','test-key','metro-apps','public.pem');
-  await run('export-upload',app,'signature.json','materials.json');
-  const upload=JSON.parse(await readFile(join(root,'materials.json'),'utf8'));assert.equal(upload.manifest.id,'materials');assert.equal(upload.artifacts.length,5);assert.deepEqual(upload.manifest.storage.migrations.map((m:any)=>m.id),['initial','specification','receiver']);
-  const {withInstallUpload}=await import('../src/app-platform/install/wire.ts');
-  const {verifyAppDirectory}=await import('../src/app-platform/developer/signature.ts');
-  await withInstallUpload(upload,join(root,'uploads'),input=>verifyAppDirectory(input.directory,input.signatureFile,{keyId:'test-key',publisherId:'metro-apps',publicKeyPem:pair.publicKey.export({type:'spki',format:'pem'}).toString(),revoked:false}));
- }finally{await rm(root,{recursive:true,force:true});}
+/** Builds applications/materials with the public CLI and returns its single-file package and registry projection. */
+async function buildMaterialsPackage(){
+ const {execFile}=await import('node:child_process'),{promisify}=await import('node:util'),{fileURLToPath}=await import('node:url');
+ const app=fileURLToPath(new URL('../../applications/materials/',import.meta.url)),cli=fileURLToPath(new URL('../../packages/platform-cli/dist/cli.mjs',import.meta.url));
+ await promisify(execFile)(process.execPath,[cli,'build'],{cwd:app});
+ const bytes=await readFile(new URL('../../applications/materials/dist/materials-0.3.0.mopkg',import.meta.url));
+ const {inspectMopkg,readMopkg}=await import('@metro/platform-sdk/mopkg'),{projectV2Manifest}=await import('../src/app-platform/v2/projection.ts'),{createHash}=await import('node:crypto');
+ const inspection=inspectMopkg(bytes),files=readMopkg(bytes);
+ return {inspection,files,projection:projectV2Manifest(inspection.manifest!,inspection,path=>createHash('sha256').update(files.get(path)!).digest('hex'))};
+}
+
+test('materials builds as one v2 package whose migrations equal the v1 files byte for byte',async()=>{
+ const {inspection,files,projection}=await buildMaterialsPackage();
+ assert.deepEqual(inspection.issues,[]);
+ assert.deepEqual(inspection.migrations.map(m=>m.id),['001-initial','002-specification','003-receiver']);
+ for(const [index,name] of ['001-initial','002-specification','003-receiver'].entries()){
+  const source=await readFile(new URL(`../../applications/materials/migrations/${name}.json`,import.meta.url));
+  assert.ok(files.get(inspection.migrations[index]!.file)!.equals(source));
+ }
+ assert.ok(!files.get('ui.js')!.toString('utf8').includes('createAppSandboxClient'),'the page no longer uses the sandbox bridge');
+ assert.deepEqual(projection.api.filter(api=>api.businessEntry).map(api=>api.id).sort(),['bootstrap','list','recipients','session']);
+ assert.equal(projection.api.find(api=>api.id==='reverse-outbound')?.businessPermission,'app.materials.delete-consumption');
+ assert.deepEqual(projection.routes.map(route=>[route.path,route.permission]),[['/','app.materials.read-stock'],['/records','app.materials.read-records'],['/settings','app.materials.manage']]);
 });
 
 test('default composition accepts declared isolated app APIs without enabling unrelated extensions',async()=>{
  const {isAppRuntimeSupported}=await import('../src/app-platform/management/config.ts');
- const manifest=JSON.parse(await readFile(new URL('../../applications/materials/dist/manifest.json',import.meta.url),'utf8'));
+ const manifest=(await buildMaterialsPackage()).projection as any;
  const config:any={managedStorage:true,docker:{}};
  assert.equal(isAppRuntimeSupported(manifest,config),true);
  for(const change of [{api:[{...manifest.api[0],permission:'platform.authorization.manage'}]},{api:[{...manifest.api[0],permission:undefined}]},{tools:[{}]},{jobs:[{}]},{network:{frontendOrigins:[],backendOrigins:['https://example.com']}}])assert.equal(isAppRuntimeSupported({...manifest,...change},config),false);

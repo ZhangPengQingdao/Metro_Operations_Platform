@@ -1,4 +1,4 @@
-# 物料管理应用（试装版）
+# 物料管理应用
 
 独立业务代码只依赖 `@metro/platform-sdk`。本目录没有旧 AFC 源码引用、平台内部导入或数据库连接；不迁移旧数据。
 
@@ -14,7 +14,22 @@
 
 `npm test` 运行规则测试。平台测试另以 PGlite 执行声明式迁移及 SQL 事务，验证流水失败回滚库存。这些测试不替代实际托管存储、Docker、浏览器或安装验收。
 
-构建：`npm run build` 输出首版 dist；`node build.mjs --upgrade` 输出 dist-upgrade（保留追加的可空规格字段迁移）。使用独立 CLI validate/sign/verify/export-upload 导出 JSON 安装包，私钥不随应用分发。测试已覆盖签名、上传格式导入再验签及追加迁移兼容性。页面遇到未知写入停止继续写入并保留请求编号，不自动重试。
+## 0.3.0：应用模型 v2（P3 试点）
+
+本应用已改为 v2 项目：`app.json`、`icon.svg`、`src/`（页面 `ui.jsx`、接口 `server.js` 及业务模块）、`migrations/`（与旧版 `migration-00x.json` 逐字节相同）。后端仍使用 `createAppBackend`，在平台子进程中原样运行；页面改为 `defineApp`，直接渲染在平台内，标题与侧栏由平台生成，「设置」仅对有 `manage` 权限的人显示。
+
+```sh
+npm test            # 业务规则测试
+npm run check
+npm run build       # 输出 dist/materials-0.3.0.mopkg
+```
+
+要求平台 0.29.0 及以上。已安装旧版（0.2.x 签名包）的站点按以下步骤转换，数据、负责人、角色与使用人员保留：
+
+1. 管理端「应用管理」中停用物料管理；
+2. 上传 `materials-0.3.0.mopkg`，预览显示“从旧版签名包转换”后安装；
+3. 若提示需要数据库管理员处理，按提示执行一次 `REASSIGN OWNED BY "app_<安装ID>_owner" TO "<平台数据库账号>";`（存储管理账号执行），再上传同一个包；
+4. 转换完成后应用自动启用。旧版的已执行迁移记为已应用，不会重复执行。
 
 ## 工班权限与设置
 
