@@ -1,17 +1,10 @@
 import {build} from 'esbuild';
-import postcss from 'postcss';
-import tailwind from 'tailwindcss';
-import autoprefixer from 'autoprefixer';
-import {readFile,writeFile} from 'node:fs/promises';
+import {writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 // Build public application UI from the same L2 sources as the platform.
 // Published artifacts contain no imports of repository source paths.
 await build({stdin:{contents:`export * from './src/components/ui/app-exports';`,resolveDir:root,loader:'ts'},bundle:true,format:'esm',platform:'browser',target:'es2022',external:['react','react-dom'],outfile:root+'packages/platform-sdk/dist/ui.js',minify:true});
-const source=(await readFile(root+'index.css','utf8')).replace(/^@import[^;]+;/gm,'');
-const result=await postcss([tailwind({content:[root+'src/components/ui/**/*.{ts,tsx}'],safelist:['afc-theme-neutral','afc-filter-bar-wrapper--spread'],theme:{extend:{}},plugins:[]}),autoprefixer()]).process(source,{from:root+'index.css'});
-await writeFile(root+'packages/platform-sdk/dist/ui-styles.js',`export const platformUiCss=${JSON.stringify(result.css)};\n`);
-await writeFile(root+'packages/platform-sdk/dist/ui-styles.d.ts','export declare const platformUiCss:string;\n');
 await writeFile(root+'packages/platform-sdk/dist/ui.d.ts',`import type {ComponentProps,ComponentType,ButtonHTMLAttributes,InputHTMLAttributes,SelectHTMLAttributes,TableHTMLAttributes,HTMLAttributes,ReactNode} from 'react';
 export declare const PencilSimpleLine:ComponentType<{size?:number;weight?:'regular'|'light'|'bold'}>;
 export declare const Trash:typeof PencilSimpleLine;

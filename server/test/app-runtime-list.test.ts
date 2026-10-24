@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
-import {runtimeListInput,runtimeListQuery} from '../src/app-platform/storage/runtime-list.ts';
-import {AppRuntimeDataService} from '../src/app-platform/storage/runtime-data.ts';
+import {runtimeListInput,runtimeListQuery} from '../src/app-platform/v2/data-query.ts';
+import {AppDataServiceV2} from '../src/app-platform/v2/data.ts';
 const id=(n:number)=>`55000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const columns=new Map([['id','uuid'],['name','text'],['quantity','int4'],['active','bool'],['extra','jsonb']]);
 test('storage pages are ordered by UUID, use literal search and filter before applying the cursor limit',async()=>{
@@ -28,7 +28,7 @@ test('storage list rejects arbitrary SQL, schema, ordering, excessive pages and 
 });
 test('storage list is read-authorized and never allows employee identity to open the storage connection',async()=>{
  let connections=0;
- const service=new AppRuntimeDataService({endpoint:{host:'127.0.0.1',port:5432,database:'test',ssl:false},connectAdmin:async()=>{connections++;throw Error('must not connect');},findInstallation:async()=>null});
+ const service=new AppDataServiceV2({pool:{connect:async()=>{connections++;throw Error('must not connect');}} as never,findInstallation:async()=>null});
  const op=service.operations().find(o=>o.name==='platform.app_data.list')!;
  assert.equal(op.permissionCode,'platform.app_data.read');assert.equal(op.mode,'read');
  const employee={actorType:'person',execution:{type:'application',appId:'example'}} as Parameters<typeof op.execute>[0];

@@ -1,34 +1,24 @@
-import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {isAbsolute} from 'node:path';
 import {z} from 'zod';
-import {readDeveloperFile} from '../developer/package.js';
-import type {AppManifest} from '../manifest/index.js';
+
+export class AppManagementError extends Error {constructor(readonly code:string){super(code);}}
+
 const absolute=z.string().min(1).refine(value=>isAbsolute(value)&&!/[\x00-\x1f,]/.test(value));
 const schema=z.object({
- version:z.literal(1), artifactRoot:absolute, runtimeRoot:absolute, uploadRoot:absolute,
- publisherPolicyFile:absolute,
- // Exact manifest approval is separate from publisher signature trust.
- approvedManifestDigests:z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(512),
- managedStorage:z.boolean().optional(),
- docker:z.object({socketPath:absolute,runtimeImage:z.string().regex(/^.+@sha256:[a-f0-9]{64}$/),
-  approval:z.object({imageId:z.string().regex(/^sha256:[a-f0-9]{64}$/),config:z.record(z.unknown())}).strict(),
- }).strict().optional(),
+ version:z.literal(1),
+ /** Installed `.mopkg` files, unpacked per version under `<artifactRoot>/v2`. */
+ artifactRoot:absolute,
+ /** Temporary upload files. */
+ uploadRoot:absolute,
+ // Keys written by platform versions before 1.0.0 (signed packages, Docker runtime); accepted and ignored.
+ runtimeRoot:z.unknown().optional(),publisherPolicyFile:z.unknown().optional(),approvedManifestDigests:z.unknown().optional(),managedStorage:z.unknown().optional(),docker:z.unknown().optional(),
 }).strict();
-export interface AppManagementConfig {version:1;artifactRoot:string;runtimeRoot:string;uploadRoot:string;publisherPolicyFile:string;approvedManifestDigests:string[];managedStorage?:boolean;docker?:{socketPath:string;runtimeImage:string;approval:{imageId:string;config:Record<string,unknown>}}}
+export interface AppManagementConfig {version:1;artifactRoot:string;uploadRoot:string}
 export async function loadAppManagementConfig(file:string):Promise<AppManagementConfig>{
- const data=schema.parse(JSON.parse((await readDeveloperFile(file,262144)).toString('utf8')));
- return {version:1,artifactRoot:data.artifactRoot!,runtimeRoot:data.runtimeRoot!,uploadRoot:data.uploadRoot!,publisherPolicyFile:data.publisherPolicyFile!,approvedManifestDigests:data.approvedManifestDigests!,...(data.managedStorage!==undefined?{managedStorage:data.managedStorage}:{}),...(data.docker?{docker:{socketPath:data.docker.socketPath!,runtimeImage:data.docker.runtimeImage!,approval:{imageId:data.docker.approval!.imageId!,config:data.docker.approval!.config!}}}:{})};
-}
-function canonical(value:unknown):string{if(Array.isArray(value))return `[${value.map(canonical).join(',')}]`;if(value!==null&&typeof value==='object'){const record=value as Record<string,unknown>;return `{${Object.keys(record).sort().map(key=>`${JSON.stringify(key)}:${canonical(record[key])}`).join(',')}}`;}return JSON.stringify(value);}
-export function manifestApprovalDigest(manifest:AppManifest){return createHash('sha256').update(canonical(manifest)).digest('hex');}
-export function isAppRuntimeSupported(manifest:AppManifest,config:AppManagementConfig){
- // Admission never silently ignores uncomposed capabilities.
- return ['none','sandbox'].includes(manifest.ui.mode)
-  && (manifest.backend.mode==='none'||(manifest.backend.mode==='isolated'&&!!config.docker))
-  && (manifest.storage.mode==='none'||(manifest.storage.mode==='managed'&&config.managedStorage===true)) && !manifest.events.publish.length && !manifest.events.subscribe.length
-  && !manifest.jobs.length && !manifest.tools.length
-  && (!manifest.api.length || (manifest.backend.mode==='isolated' && !!config.docker
-   && manifest.api.every(api=>!!api.permission && api.permission.startsWith(`app.${manifest.id}.`)
-    && manifest.permissions.defined.some(permission=>permission.code===api.permission))))
-  && !manifest.network.frontendOrigins.length && !manifest.network.backendOrigins.length;
+ if(!isAbsolute(file))throw new AppManagementError('APP_MANAGEMENT_CONFIG_INVALID');
+ const text=await readFile(file,'utf8');
+ if(Buffer.byteLength(text)>262144)throw new AppManagementError('APP_MANAGEMENT_CONFIG_INVALID');
+ const data=schema.parse(JSON.parse(text));
+ return {version:1,artifactRoot:data.artifactRoot,uploadRoot:data.uploadRoot};
 }

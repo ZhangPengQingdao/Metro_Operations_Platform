@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform-api",
   "private": true,
-  "version": "0.30.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -19,11 +19,6 @@
     "@fastify/helmet": "^13.1.1",
     "@fastify/multipart": "^9.4.0",
     "@fastify/rate-limit": "^11.2.0",
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/fastify": "2.0.0",
-    "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.44.2",

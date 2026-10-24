@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {AppRegistryService,PostgresAppRegistryRepository,APP_REGISTRY_SQL} from '../src/app-platform/registry/index.ts';
 import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from '../src/app-platform/management/platform-grants.ts';
 import type {AppManifest} from '../src/app-platform/manifest/index.ts';
+import {demoManifest} from './helpers/registry-manifest.ts';
 import type {PlatformManagementContext} from '../src/platform/context/index.ts';
 
 test('platform grant batch is atomic, excludes business permissions, and requires disabled application',async()=>{
@@ -14,7 +14,7 @@ test('platform grant batch is atomic, excludes business permissions, and require
  let allowed=true,writeActive=false;
  const context={actorType:'administrator',administrator:{id:'10000000-0000-4000-8000-000000000001'},execution:{type:'platform'},authorize:async()=>({allowed})} as unknown as PlatformManagementContext;
  const registry=new AppRegistryService(new PostgresAppRegistryRepository(client),{host:()=>({platformVersion:'0.0.1',capabilities:[],applications:[]}),authorization:{listPermissions:async()=>[{code:'platform.app_data.read',status:'active'},{code:'platform.app_data.write',status:writeActive?'active':'inactive'},{code:'platform.attachments.create',status:'active'},{code:'platform.attachments.read',status:'active'}] as never}});
- const manifest=JSON.parse(await readFile(new URL('../../examples/app-sdk/dist/sandbox/manifest.json',import.meta.url),'utf8')) as AppManifest;
+ const manifest=structuredClone(demoManifest) as AppManifest;
  manifest.permissions.requested=['platform.app_data.read','platform.app_data.write'];
  manifest.routes=manifest.routes.map(r=>({...r,permission:'platform.app_data.read'}));
  await registry.register(context,manifest);
@@ -26,7 +26,7 @@ test('platform grant batch is atomic, excludes business permissions, and require
  allowed=false;await assert.rejects(approveInstalledPlatformGrants(registry,context,manifest.id));allowed=true;
  result=await registry.setEnabled(context,manifest.id,result.revision,true);
  await assert.rejects(approveInstalledPlatformGrants(registry,context,manifest.id),/DISABLE_REQUIRED/);
- const serviceManifest={...manifest,id:'service-grants-check',backend:{mode:'external' as const,origin:'https://service.example.com'}};
+ const serviceManifest={...manifest,id:'service-grants-check',backend:{mode:'isolated' as const,runtime:'node' as const,entryArtifactId:'backend',limits:{memoryMiB:256,cpuMillis:1000,timeoutSeconds:30}},artifacts:[...manifest.artifacts,{id:'backend',kind:'backend' as const,path:'server.js',bytes:1,sha256:'1'.repeat(64)}],permissions:{...manifest.permissions,defined:[]}};
  await registry.register(context,serviceManifest);
  await assert.rejects(approveInstalledPlatformGrants(registry,context,serviceManifest.id),/SERVICE_IDENTITY_MISMATCH/);
  let serviceRecord=await registry.get(context,serviceManifest.id);
@@ -40,8 +40,5 @@ test('platform grant batch is atomic, excludes business permissions, and require
  const fileGrants=(await approveInstalledPlatformGrants(registry,context,fileManifest.id)).grants;
  for(const code of ['platform.attachments.create','platform.attachments.read'])assert.deepEqual(fileGrants.filter(g=>g.permissionCode===code).map(g=>g.mode),['service']);
  assert.throws(()=>requestedPlatformCapabilities({...manifest,permissions:{...manifest.permissions,requested:['platform.authorization.manage']}}),/APP_CAPABILITIES_NOT_SUPPORTED/);
- const consumer={...manifest,compatibility:{...manifest.compatibility,applications:[{id:'provider',version:{minInclusive:'1.0.0',maxExclusive:'2.0.0'}}]},permissions:{...manifest.permissions,requested:['platform.apps.invoke','app.provider.create']}};
- assert.deepEqual(requestedPlatformCapabilities(consumer),['platform.apps.invoke']);
- assert.throws(()=>requestedPlatformCapabilities({...consumer,compatibility:{...consumer.compatibility,applications:[]}}),/APP_CAPABILITIES_NOT_SUPPORTED/);
  }finally{await db.close();}
 });

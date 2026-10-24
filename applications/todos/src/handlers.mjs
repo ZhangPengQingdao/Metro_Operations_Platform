@@ -5,7 +5,7 @@ const operations={'dashboard-summary':'dashboard-summary',session:'session',dire
 export function createTodosHandlers(gateway){
  const service=createTodosService(gateway);
  return new Map(Object.entries(operations).map(([id,method])=>[id,{
-  method:'POST',path:`/${id}`,requireEmployeeContext:true,
+  method:'POST',path:`/${id}`,
   async execute(payload,signal,employee){
    try{return {ok:true,result:await service[method](payload,employee,signal)};}
    catch(error){

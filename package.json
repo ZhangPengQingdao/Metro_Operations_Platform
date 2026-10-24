@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "0.30.0",
+  "version": "1.0.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -17,18 +17,14 @@
     "test": "npm --prefix server test",
     "version:check": "node scripts/version.mjs --check",
     "version:bump": "node scripts/version.mjs",
-    "build:samples": "node examples/app-sdk/build.mjs && node examples/backend-sdk/build.mjs",
-    "pretest": "npm run build:sdk && npm run build:samples && npm run build:cli",
+    "pretest": "npm run build:sdk && npm run build:cli",
     "build:cli": "npm --workspace @metro/platform-cli run build",
     "build:developer": "node scripts/build-developer-assets.mjs"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.2.9",
-    "@metro/platform-sdk": "0.30.0",
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/ext-apps": "2.0.0",
+    "@metro/platform-sdk": "1.0.0",
     "@phosphor-icons/react": "^2.1.10",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",

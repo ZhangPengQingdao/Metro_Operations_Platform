@@ -6,9 +6,11 @@ import type { PlatformActorContext, PlatformActorContextResolver, PlatformManage
 import type { AppGateway } from '../gateway/gateway.js';
 import { GatewayError, jsonSnapshot, type GatewayJson } from '../gateway/model.js';
 import type { AppInstallation, AppRegistryService } from '../registry/index.js';
-import type { AppLifecycleRequest } from '../runtime/lifecycle-host.js';
 import { AppProcessError, AppProcessV2, type AppProcessStatus } from './process.js';
 import type { AppPackageStoreV2 } from './store.js';
+
+/** Administrator lifecycle action; installing and upgrading go through `.mopkg` upload. */
+export interface AppLifecycleRequest { revision: number; action: 'enable' | 'disable' }
 
 /** Error returned to the employee client; `code` may be the application's own error code. */
 export class AppV2CallError extends Error {
@@ -98,8 +100,7 @@ export class AppHostV2 {
   install(context: PlatformManagementContext, revision: number) { return this.exclusive(() => this.transition(context, revision, 'install')); }
 
   execute(context: PlatformManagementContext, request: AppLifecycleRequest) {
-    if (request.action !== 'enable' && request.action !== 'disable') return Promise.reject(new AppV2CallError('UPLOAD_PACKAGE_REQUIRED', 409));
-    return this.exclusive(() => this.transition(context, request.revision, request.action as 'enable' | 'disable'));
+    return this.exclusive(() => this.transition(context, request.revision, request.action));
   }
 
   /** Restarts a process that stopped after repeated crashes, without changing the installation. */
@@ -110,7 +111,6 @@ export class AppHostV2 {
       return installation;
     });
   }
-  prepareCredential(): Promise<never> { return Promise.reject(new AppV2CallError('NOT_APPLICABLE', 409)); }
 
   async status(context: PlatformManagementContext) { return this.statusOf(await this.options.registry.get(context, this.options.appId)); }
   private statusOf(installation: AppInstallation) {
@@ -130,7 +130,7 @@ export class AppHostV2 {
   async drainForMaintenance() { await this.exclusive(() => this.stopProcess()); }
   async close() { await this.exclusive(() => this.stopProcess()); }
 
-  /** Employee API call: same permission rules as v1 hosted APIs, dispatched over IPC instead of Docker stdio. */
+  /** Employee API call: checks the API's permission (or business authorization) and dispatches it to the app process over IPC. */
   async invokeEmployeeApi(resolveIdentity: () => Promise<TrustedActorIdentity>, request: ApiRequest, signal?: AbortSignal): Promise<GatewayJson> {
     if (this.options.maintenanceBlocked?.()) throw new AppV2CallError('PLATFORM_MAINTENANCE', 503);
     const identity = structuredClone(await resolveIdentity());
@@ -190,8 +190,4 @@ export class AppHostV2 {
     const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, undefined, employee ? async () => employee : undefined);
     return response.result;
   }
-
-  /** v1-only entry points: sandbox bridge gateway and cross-application capability calls. */
-  invokeDelegated(): Promise<never> { return Promise.reject(new GatewayError('ACCESS_DENIED', 403)); }
-  invokeApi(): Promise<never> { return Promise.reject(new GatewayError('OPERATION_DENIED', 403)); }
 }

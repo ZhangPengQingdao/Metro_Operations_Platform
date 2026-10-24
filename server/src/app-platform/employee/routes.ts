@@ -7,9 +7,7 @@ import type {AppManagement} from '../management/service.js';
 import {GatewayError} from '../gateway/model.js';
 import {AdminIdentityError} from '../../core/admin-identity/index.js';
 import type {EmployeeAppAccess} from './access.js';
-import type {AppCapabilityPublication} from '../capabilities/publication.js';
-import {AppManagementError} from '../management/ui.js';
-import {AppStdioApiError} from '../runtime/stdio-api.js';
+import {AppManagementError} from '../management/config.js';
 import {AppV2CallError} from '../v2/host.js';
 import {createAppAttachmentTransfer,AppAttachmentError,APP_ATTACHMENT_MAX_BYTES,type AppAttachmentDirectory} from './attachment-service.js';
 import {createLocalStorageAdapter,type StorageAdapter} from '../../core/storage/index.js';
@@ -18,7 +16,7 @@ import {createPostgresPeopleDirectoryRepository} from '../../platform/people/ind
 import {getDatabasePool,type QueryableClient} from '../../core/database/index.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;publications?:AppCapabilityPublication;attachmentBackend?:AttachmentBackend}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -41,7 +39,6 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    if(error instanceof GatewayError)return reply.code(error.statusCode).send({version:'1.0',error:{code:error.code,writeOutcome:error.writeOutcome}});
    if(error instanceof AppV2CallError)return reply.code(error.statusCode).send({error:{code:error.code,writeOutcome:error.writeOutcome}});
-   if(error instanceof AppStdioApiError)return reply.code(error.code==='ACCESS_DENIED'||error.code==='API_DENIED'?403:503).send({error:{code:'APP_API_FAILED',writeOutcome:error.writeOutcome}});
    if(error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AppManagementError)return reply.code(503).send({error:error.code});
    if(error instanceof AppAttachmentError)return reply.code(error.code==='FILE_TOO_LARGE'?413:error.code==='ACCESS_DENIED'?403:error.code==='ATTACHMENT_UNAVAILABLE'?503:error.code==='ATTACHMENT_LIMIT'?409:400).send({error:error.code});
@@ -73,8 +70,6 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.post<{Params:{id:string}}>('/notifications/:id/read',{bodyLimit:1024},async req=>options.service.markNotificationRead(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.params.id));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
-  scoped.get<{Params:{appId:string}}>('/apps/:appId/capabilities',async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.state(req.params.appId,(await resolveRequestIdentity(req)).userId);});
-  scoped.put<{Params:{appId:string}}>('/apps/:appId/capabilities',{bodyLimit:4096},async req=>{if(!options.publications)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.publications.set(req.params.appId,(await resolveRequestIdentity(req)).userId,req.body);});
   async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});
@@ -88,12 +83,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    return options.management.employeeDashboard(req.params.appId,()=>resolveRequestIdentity(req));
   });
-  scoped.get<{Params:{appId:string}}>('/apps/:appId/ui',async req=>{
-   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
-   const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
-   return options.management.employeeUi(req.params.appId,query.path,()=>resolveRequestIdentity(req));
-  });
-  // Application model v2: page session, immutable page bundle and icon.
+  // Application pages: page session, immutable page bundle and icon.
   scoped.get<{Params:{appId:string}}>('/apps/:appId/v2-session',async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
@@ -116,15 +106,6 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!icon)return reply.code(404).send({error:'APP_ICON_NOT_FOUND'});
    reply.header('Cache-Control','private, max-age=300').header('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'").header('X-Content-Type-Options','nosniff');
    return reply.type(icon.contentType).send(icon.bytes);
-  });
-  scoped.get<{Params:{appId:string}}>('/apps/:appId/ui-admission',async req=>{
-   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
-   const query=z.object({path:z.string().max(512).default('/')}).strict().parse(req.query);
-   return options.management.employeeUiAdmission(req.params.appId,query.path,()=>resolveRequestIdentity(req));
-  });
-  scoped.post<{Params:{appId:string}}>('/apps/:appId/gateway',{bodyLimit:65536},async req=>{
-   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
-   return options.management.invokeEmployee(req.params.appId,()=>resolveRequestIdentity(req),req.body,z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']));
   });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/api',{bodyLimit:65536},async req=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');

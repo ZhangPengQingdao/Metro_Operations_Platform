@@ -14,7 +14,7 @@ import {createPostgresPeopleDirectoryRepository} from '../src/platform/people/in
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 import type {AppManifest} from '../src/app-platform/manifest/index.ts';
 import type {AppManagement} from '../src/app-platform/management/service.ts';
-import {AppStdioApiError} from '../src/app-platform/runtime/stdio-api.ts';
+import {AppV2CallError} from '../src/app-platform/v2/host.ts';
 import {EmployeeAppAccess} from '../src/app-platform/employee/access.ts';
 
 const org='51000000-0000-4000-8000-000000000001',person='51000000-0000-4000-8000-000000000002',position='51000000-0000-4000-8000-000000000003',place='51000000-0000-4000-8000-000000000004',otherPlace='51000000-0000-4000-8000-000000000005';
@@ -60,7 +60,7 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   await assert.rejects(service.login({username:'employee',password:'x'.repeat(73)}));
   const gateway=createManagementGateway(pool),origin='http://127.0.0.1:3102';
   let apiCalls=0,apiFailure=false;
-  await app.register(cookie);registerEmployeeRoutes(app,{origin,service,resolveAdmin:async()=>{throw new AdminIdentityError(401,'ADMIN_AUTH_REQUIRED');},management:{invokeEmployee:(id,resolve,request)=>gateway.invokeDelegatedFromSession(id,resolve,request),invokeEmployeeApi:async(id,resolve,request,binding)=>{apiCalls++;assert.equal(id,manifest.id);assert.equal(binding,'test-host-binding');assert.equal((await resolve()).userId,person);if(apiFailure)throw new AppStdioApiError('ACCESS_DENIED','unknown');return {ok:true};}} as AppManagement});await app.ready();
+  await app.register(cookie);registerEmployeeRoutes(app,{origin,service,resolveAdmin:async()=>{throw new AdminIdentityError(401,'ADMIN_AUTH_REQUIRED');},management:{invokeEmployeeV2Platform:async(id,resolve,request)=>(await gateway.invokeDelegatedFromSession(id,resolve,{version:'1.0',operation:request.operation,params:request.params})).result,invokeEmployeeApi:async(id,resolve,request,binding)=>{apiCalls++;assert.equal(id,manifest.id);assert.equal(binding,'test-host-binding');assert.equal((await resolve()).userId,person);if(apiFailure)throw new AppV2CallError('ACCESS_DENIED',403,'unknown');return {ok:true};}} as AppManagement});await app.ready();
   const deniedAdmin=await app.inject({method:'POST',url:'/api/admin/employee-accounts',headers:{origin},payload:{personId:person,username:'test',password:'Employee-test-password1'}});
   assert.equal(deniedAdmin.statusCode,401);assert.equal(deniedAdmin.json().error,'ADMIN_AUTH_REQUIRED');
   await assert.rejects(service.create({...actor,authorize:async code=>({...await actor.authorize(code,{}),allowed:false})},{personId:person,username:'test',password:'Employee-test-password1'}),/EMPLOYEE_MANAGEMENT_DENIED/);
@@ -77,8 +77,8 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   assert.equal((await apiCall(apiPayload,{origin,'x-mop-employee-admission':'test-host-binding',cookie:`afc_admin_session=${session.value}`})).statusCode,401);assert.equal(apiCalls,1);
   apiFailure=true;const failedApi=await apiCall();assert.equal(failedApi.statusCode,403);assert.equal(failedApi.json().error.writeOutcome,'unknown');apiFailure=false;
   const payload={version:'1.0',operation:'platform.locations.get',params:{id:place}};
-  const call=(body:unknown=payload)=>app.inject({method:'POST',url:'/api/employee/apps/directory-reader/gateway',headers,payload:body as object});
-  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/gateway',headers:{origin,cookie:headers.cookie},payload})).statusCode,400);
+  const call=(body:{operation:string;params:unknown}=payload)=>app.inject({method:'POST',url:'/api/employee/apps/directory-reader/v2-platform',headers,payload:{operation:body.operation,params:body.params}});
+  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/v2-platform',headers:{origin,cookie:headers.cookie},payload:{operation:payload.operation,params:payload.params}})).statusCode,400);
   assert.equal((await app.inject({method:'GET',url:'/api/admin/employee-accounts',headers:{cookie:headers.cookie}})).statusCode,401);
   assert.equal((await call()).statusCode,403);
   const permission=(await authorization.listPermissions()).find(p=>p.code==='platform.locations.read')!;
@@ -127,8 +127,8 @@ test('employee login → real Gateway directory data; role/app intersection, ser
   assert.deepEqual(Object.keys(result.json().result).sort(),['code','id','locationType','name','organizationUnitId','status']);
   assert.equal((await call({...payload,params:{id:otherPlace}})).statusCode,403);
   assert.equal((await call({...payload,params:{id:place,organizationUnitId:org}})).statusCode,400);
-  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/gateway',headers:{origin,cookie:`afc_admin_session=${session.value}`},payload})).statusCode,401);
-  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/gateway',headers:{...headers,origin:'https://evil.example'},payload})).statusCode,403);
+  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/v2-platform',headers:{origin,cookie:`afc_admin_session=${session.value}`},payload:{operation:payload.operation,params:payload.params}})).statusCode,401);
+  assert.equal((await app.inject({method:'POST',url:'/api/employee/apps/directory-reader/v2-platform',headers:{...headers,origin:'https://evil.example'},payload:{operation:payload.operation,params:payload.params}})).statusCode,403);
   const issued=await registry.issueServiceCredential(actor,manifest.id,installation.revision);installation=issued.installation;
   await assert.rejects(gateway.invokeService(manifest.id,issued.credential,payload));
   installation=await registry.approveGrant(actor,manifest.id,installation.revision,{mode:'service',serviceIdentityId:installation.serviceIdentityId!,permissionCode:permission.code,scope:{kind:'explicit',targets:[{type:'location',id:place}]}});

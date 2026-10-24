@@ -24,7 +24,7 @@ await notifications.cancel(result.id);
 
 id 和 entityId 为UUID；personIds 必须去重，1～50个在职人员ID，组织须启用。entityType 为小写字母开头的字母/数字/下划线/短横线标识，最长64。title 最长160字符，body 最长1000。内容应只含接收人允许看到的信息。
 
-routeId 可省略；提供时必须是本应用签名清单 routes 中的路由。平台构造 /employee/app/<appId>/<path>，拒绝自定义URL和跨应用链接。通知本身不授予应用准入、路由权限或业务数据权限；接收人打开时仍检查。当前跳转定位页面，不提供任意查询参数或具体记录定位协议。
+routeId 可省略；提供时必须是本应用 app.json pages 中不带参数的页面。平台构造 /employee/app/<appId>/<path>，拒绝自定义URL和跨应用链接。通知本身不授予应用准入、路由权限或业务数据权限；接收人打开时仍检查。当前跳转定位页面，不提供任意查询参数或具体记录定位协议。
 
 ## 兼容与限制
 

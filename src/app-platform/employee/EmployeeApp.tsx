@@ -2,183 +2,44 @@ import {EmployeeDashboard} from './EmployeeDashboard';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {PasswordInput} from '../identity/PasswordInput';
 import {isPasswordCompliant,PASSWORD_POLICY_MESSAGE} from '../identity/password-policy';
-import type {AppManifest} from '@metro/platform-sdk/app-manifest';
 import {ManagedApplications,type ManagedApplication} from './ManagedApplications';
 import {ProfileSections} from '../identity/ProfileSections';
-import {createEmployeeApiBridge,type EmployeeApiRoute} from './api-bridge';
-import React,{useCallback,useEffect,useLayoutEffect,useMemo,useState} from 'react';
+import {useCallback,useEffect,useState} from 'react';
 import {Link,Navigate,useLocation,useNavigate} from 'react-router-dom';
 import {Button,Input,IconButton,PlatformIcon} from '../../components/ui';
 import {AdminShell,type AdminApplication} from '../admin/AdminShell';
 import '../admin/admin.css';
 import {employeeRequest,EmployeeRequestError} from './client';
-import {SandboxFrame,type SandboxFrameResource} from '../host/sandbox/react';
-import type {SandboxJson,SandboxFileOperations} from '../host/sandbox/bridge';
-import {rememberApp,type RetainedApp} from './retained-apps';
 import {readThemePreference} from '../identity/theme';
 import {AppPageV2} from '../host/v2/AppPage';
 
 type Account={id:string;personId:string;username:string;name?:string;passwordChangeRequired?:boolean};
-type App={dashboard?:{routeId:string};appId:string;name:string;icon?:AppManifest['icon'];description:string;version:string;runtimeRevision:number;frontendRunMode?:'standard'|'trusted';bundleUrl?:string;model?:'v2';v2?:{sha256:string;color:string|null;pages:{path:string;title:string;permission?:string}[]};navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
-type Resource={api:EmployeeApiRoute[];appId:string;name:string;instanceKey:string;admissionKey:string;clientRouting:boolean;downloads?:true;resource:SandboxFrameResource;initialRoute:string};
-function EmployeeApplication({account,path,visible,prefetch,onNavigation}:{account:Account;path:string;visible:boolean;prefetch:boolean;onNavigation:(appId:string,ids:string[])=>void}){
- const [current,setCurrent]=useState<Resource|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0),[activeRoute,setActiveRoute]=useState('/'),[pending,setPending]=useState(true);
- const section=React.useRef<HTMLElement>(null),entryStart=React.useRef(0);
- const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(path),appId=match?.[1],requestedRoute=match?.[2]??'/';
- const record=(name:string)=>{if(visible&&entryStart.current)section.current?.setAttribute(`data-mop-${name}-ms`,String(Math.round(performance.now()-entryStart.current)));};
- useLayoutEffect(()=>{if(visible){entryStart.current=performance.now();section.current?.removeAttribute('data-mop-admission-ms');section.current?.removeAttribute('data-mop-frame-ms');section.current?.removeAttribute('data-mop-reused');setPending(true);}},[visible,path,serial,account.id]);
- useEffect(()=>{
-  if(!visible&&(!prefetch||current))return;
-  const controller=new AbortController();let active=true,loading=false,first=true;
-  const soft=!!current&&current.appId===appId&&(current.clientRouting||current.initialRoute===requestedRoute);let admitted=soft?current:null;
-  if(!soft)setCurrent(null);
-  setError('');
-  async function load(){if(loading||!active)return;if(!appId){setError('应用不存在。');return;}loading=true;
-   try{
-    const route=encodeURIComponent(requestedRoute);
-    if(admitted){
-     const check=await employeeRequest<{admissionKey:string}>(`/apps/${appId}/ui-admission?path=${route}`,{signal:controller.signal});
-     if(check.admissionKey===admitted.admissionKey){
-      if(active&&first){record('admission');section.current?.setAttribute('data-mop-reused','true');}
-      if(active&&first){setActiveRoute(requestedRoute);if(requestedRoute===activeRoute)setPending(false);first=false;}
-      return;
-     }
-    }
-    const value=await employeeRequest<Resource>(`/apps/${appId}/ui?path=${route}`,{signal:controller.signal});
-    if(active){if(first)record('admission');admitted={...value,initialRoute:requestedRoute};setError('');setCurrent(admitted);setActiveRoute(requestedRoute);setPending(false);first=false;}
-   }catch(e){if(active){admitted=null;setCurrent(null);setPending(false);setError(e instanceof Error?e.message:'应用不可用。');}}finally{loading=false;}
-  }
-  void load();const focus=()=>{if(document.visibilityState==='visible')void load();};const timer=visible?setInterval(focus,30000):undefined;if(visible){window.addEventListener('focus',focus);document.addEventListener('visibilitychange',focus);}
-  return()=>{active=false;controller.abort();clearInterval(timer);window.removeEventListener('focus',focus);document.removeEventListener('visibilitychange',focus);};
- },[path,serial,account.id,visible,prefetch]);
- useEffect(()=>{if(!pending||!current?.clientRouting)return;const timer=setTimeout(()=>{setCurrent(null);setError('应用切页未完成，请重新打开。');setPending(false);},10000);return()=>clearTimeout(timer);},[pending,current?.instanceKey,path]);
- const operations=useMemo(()=>{
-  const invoke=async(endpoint:string,body:unknown,signal:AbortSignal)=>{try{const response=await employeeRequest<{result:SandboxJson}>(`/apps/${appId}/${endpoint}`,{method:'POST',body,signal,admissionKey:current?.admissionKey});return response.result;}catch(e){if(e instanceof EmployeeRequestError&&(e.status===401||e.status===403)){setCurrent(null);setError(e.message);}throw e;}};
-  const routes=createEmployeeApiBridge(current?.api??[],(request,signal)=>invoke('api',request,signal));
-  for(const operation of ['platform.locations.get','platform.assets.get','platform.locations.list','platform.assets.list'])routes.set(operation,{
-   validate:(params:SandboxJson)=>operation==='platform.locations.list'||operation==='platform.assets.list'||!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===1&&typeof (params as {id?:unknown}).id==='string',
-   authorize:async()=>true,
-   execute:(params,signal)=>invoke('gateway',{version:'1.0',operation,params},signal),
-  });
-  routes.set('platform.ui.navigation',{validate:params=>{if(!params||typeof params!=='object'||Array.isArray(params))return false;const ids=(params as {ids?:SandboxJson}).ids;return Array.isArray(ids)&&ids.length<=32&&ids.every((id:SandboxJson)=>typeof id==='string');},authorize:async()=>true,execute:async params=>{onNavigation(appId!, (params as {ids:string[]}).ids);return {ok:true};}});
-  routes.set('platform.ui.context',{validate:params=>!!params&&typeof params==='object'&&!Array.isArray(params)&&Object.keys(params).length===0,authorize:async()=>true,execute:async()=>{
-   const hash=window.location.hash,query=hash.includes('?')?hash.slice(hash.indexOf('?')+1):'';
-   const taskId=appId==='signatures'&&hash.startsWith('#/employee/app/signatures')?new URLSearchParams(query).get('task'):null;
-   return {baseUrl:window.location.origin,taskId:taskId&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId)?taskId:null};
-  }});
-  return routes;
- },[appId,account.id,current,onNavigation]);
- const files=useMemo<SandboxFileOperations|undefined>(()=>{
-  if(!current?.api.some(route=>route.id==='authorize-attachment'&&route.method==='POST')||!appId)return undefined;
-  const request=async(path:string,options:RequestInit)=>{
-   const response=await fetch(`/api/employee/apps/${appId}/attachments${path}`,{...options,credentials:'same-origin',headers:{...options.headers,'X-Mop-Employee-Admission':current.admissionKey}});
-   if(!response.ok){
-    const value=await response.json().catch(()=>null);
-    const error=new EmployeeRequestError(response.status,typeof value?.error==='string'?value.error:'EMPLOYEE_REQUEST_FAILED');
-    if(response.status===401||response.status===403){setCurrent(null);setError(error.message);}
-    throw error;
-   }
-   return response;
-  };
-  return {
-   async upload(params,blob,signal){
-    if(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).sort().join(',')!=='entityId,entityType,fileName,intentId')throw Error('INVALID_FILE_REQUEST');
-    const p=params as Record<string,SandboxJson>;
-    if(Object.values(p).some(value=>typeof value!=='string'))throw Error('INVALID_FILE_REQUEST');
-    const query=new URLSearchParams(p as Record<string,string>);
-    const response=await request(`?${query}`,{method:'POST',body:blob,signal,headers:{'Content-Type':'application/octet-stream'}});
-    return await response.json();
-   },
-   async read(params,signal){
-    if(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).join(',')!=='attachmentId'||typeof (params as {attachmentId?:unknown}).attachmentId!=='string')throw Error('INVALID_FILE_REQUEST');
-    const response=await request(`/${encodeURIComponent((params as {attachmentId:string}).attachmentId)}`,{signal});
-    const encoded=response.headers.get('X-Mop-Attachment-Name');
-    if(!encoded)throw Error('INVALID_FILE_RESPONSE');
-    const fileName=decodeURIComponent(encoded),blob=await response.blob();
-    return {fileName,blob};
-   },
-   async list(params,signal){
-    if(!params||typeof params!=='object'||Array.isArray(params)||typeof (params as {entityType?:unknown}).entityType!=='string'||typeof (params as {entityId?:unknown}).entityId!=='string')throw Error('INVALID_FILE_REQUEST');
-    const p=params as Record<string,SandboxJson>;
-    if(Object.keys(p).some(key=>!['entityType','entityId','afterId'].includes(key))||Object.values(p).some(value=>typeof value!=='string'))throw Error('INVALID_FILE_REQUEST');
-    const response=await request(`?${new URLSearchParams(p as Record<string,string>)}`,{signal});
-    return await response.json();
-   }
-  };
- },[appId,current]);
- const waiting=pending||activeRoute!==requestedRoute;
- return <section ref={section} className="employee-application">{error?<><p className="afc-error" role="alert">{error}</p><Button variant="secondary" onClick={()=>setSerial(v=>v+1)}>重新打开</Button></>:current?<>{waiting&&visible&&<p role="status">正在切换应用页面…</p>}<div style={waiting?{visibility:'hidden'}:undefined}><SandboxFrame key={`${account.id}:${current.instanceKey}`} appId={current.appId} instanceKey={`${account.id}:${current.instanceKey}`} resource={current.resource} operations={operations} files={files} enabled visible={visible} title={current.name} downloads={current.downloads} route={current.clientRouting?activeRoute:undefined} initialRoute={current.clientRouting?current.initialRoute:undefined} onFrameLoad={()=>record('frame')} onRouteReady={route=>{if(route===requestedRoute&&route===activeRoute){record('route');setPending(false);}}}/></div></>:<p role="status">正在加载应用…</p>}</section>;
-}
+type App={dashboard?:{routeId:string};appId:string;name:string;description:string;version:string;runtimeRevision:number;v2:{sha256:string;color:string|null;pages:{path:string;title:string;permission?:string}[]};navigation:{id:string;routeId:string;label:string}[];routes:{id:string;path:string}[]};
 export default function EmployeeApp(){
  const [dashboardBusy,setDashboardBusy]=useState(true);
  const [dashboardSettingsOpen,setDashboardSettingsOpen]=useState(false);
  const closeDashboardSettings=useCallback(()=>setDashboardSettingsOpen(false),[]);
  const [owned,setOwned]=useState<ManagedApplication[]>([]);
- const [menus,setMenus]=useState<Record<string,string[]>>({});
  const {pathname,search}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[unreadNotifications,setUnreadNotifications]=useState(0);
  useEffect(()=>setDashboardSettingsOpen(false),[pathname]);
- const onNavigation=useCallback((appId:string,ids:string[])=>setMenus(old=>JSON.stringify(old[appId])===JSON.stringify(ids)?old:{...old,[appId]:ids}),[]);
- useEffect(()=>{
-  const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(pathname);
-  const app=apps.find(item=>item.appId===match?.[1]),ids=app&&menus[app.appId];
-  if(!app||!ids?.length)return;
-  const currentPath=match?.[2]??'/';
-  if(app.appId==='signatures'&&currentPath==='/sign')return;
-  const current=app.navigation.find(item=>app.routes.some(route=>route.id===item.routeId&&route.path===currentPath));
-  if(current&&ids.includes(current.id))return;
-  const first=app.navigation.find(item=>ids.includes(item.id)&&app.routes.some(route=>route.id===item.routeId));
-  const route=app.routes.find(item=>item.id===first?.routeId);
-  if(route)navigate(`/employee/app/${app.appId}${route.path==='/'?'':route.path}`,{replace:true});
- },[apps,menus,pathname,navigate]);
- const [retainedApps,setRetainedApps]=useState<RetainedApp[]>([]);
- const prefetchLinks=React.useRef(new Map<string,HTMLLinkElement>());
  const activeApp=pathname.startsWith('/employee/app/')&&!/^\/employee\/app\/[^/]+\/~management$/.test(pathname);
  const activeAppId=activeApp?pathname.split('/')[3]:null;
- // v2 apps render in place and need no retained frame; the rest of the retained-frame logic is v1 only.
- const v2AppIds=useMemo(()=>new Set(apps.filter(app=>app.model==='v2').map(app=>app.appId)),[apps]);
- const activeV2=activeAppId?apps.find(app=>app.appId===activeAppId&&app.model==='v2'&&app.v2):undefined;
- const openV2Path=useCallback((path:string)=>{if(activeAppId)navigate(`/employee/app/${activeAppId}${path==='/'?'':path}`);},[activeAppId,navigate]);
- useEffect(()=>{if(activeAppId&&account&&appsLoaded&&apps.some(app=>app.appId===activeAppId&&app.model!=='v2')){setRetainedApps(current=>rememberApp(current,{accountId:account.id,appId:activeAppId,path:pathname,prefetch:false}));try{window.localStorage.setItem(`mop:last-app:${account.id}`,pathname);}catch{}}},[activeAppId,pathname,account?.id,appsLoaded,apps]);
- useEffect(()=>{
-  if(dashboardBusy||!account||activeApp||pathname!=='/employee'||retainedApps.some(item=>item.accountId===account.id)||!apps.length)return;
-  let path:string|null=null;try{path=window.localStorage.getItem(`mop:last-app:${account.id}`);}catch{}
-  const match=/^\/employee\/app\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(\/.*)?$/.exec(path??'');
-  const recent=apps.find(item=>item.appId===match?.[1]&&item.routes.some(route=>route.path===(match?.[2]??'/')));
-  const app=recent??apps[0];if(!app?.routes.length||app.model==='v2')return;
-  const warmPath=recent?path!:`/employee/app/${app.appId}${app.routes[0].path==='/'?'':app.routes[0].path}`;
-  const timer=setTimeout(()=>{if(document.visibilityState==='visible')setRetainedApps(current=>rememberApp(current,{accountId:account.id,appId:app.appId,path:warmPath,prefetch:true}));},300);
-  return()=>clearTimeout(timer);
- },[account?.id,activeApp,pathname,retainedApps,apps,dashboardBusy]);
- useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/auth/me').then(v=>v.passwordChangeRequired?v:employeeRequest<Account>('/profile')).then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
- useEffect(()=>{if(!account||account.passwordChangeRequired)return;const accountId=account.id;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){const allowed=new Set(value.applications.map(app=>app.appId));setRetainedApps(current=>current.every(item=>item.accountId===accountId&&allowed.has(item.appId))?current:current.filter(item=>item.accountId===accountId&&allowed.has(item.appId)));setOwned(managed.applications);setApps(value.applications);setAppsLoaded(true);setError('');}}catch(e){if(active){setApps([]);setAppsLoaded(false);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
+ const activeEntry=activeAppId?apps.find(app=>app.appId===activeAppId):undefined;
+ const openAppPath=useCallback((path:string)=>{if(activeAppId)navigate(`/employee/app/${activeAppId}${path==='/'?'':path}`);},[activeAppId,navigate]);
+ useEffect(()=>{let active=true;const expired=()=>{setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);};window.addEventListener('mop-employee-session-expired',expired);employeeRequest<Account>('/auth/me').then(v=>v.passwordChangeRequired?v:employeeRequest<Account>('/profile')).then(v=>{if(active)setAccount(v);}).catch(e=>{if(active&&!(e instanceof EmployeeRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;window.removeEventListener('mop-employee-session-expired',expired);};},[]);
+ useEffect(()=>{if(!account||account.passwordChangeRequired)return;let active=true;const c=new AbortController();let running=false;async function refresh(){if(running)return;running=true;try{const [value,managed]=await Promise.all([employeeRequest<{applications:App[]}>('/apps',{signal:c.signal}),employeeRequest<{applications:typeof owned}>('/managed-apps',{signal:c.signal})]);if(active){setOwned(managed.applications);setApps(value.applications);setAppsLoaded(true);setError('');}}catch(e){if(active){setApps([]);setAppsLoaded(false);setOwned([]);setError(e instanceof Error?e.message:'读取失败');}}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{active=false;c.abort();clearInterval(timer);window.removeEventListener('focus',focus);};},[account?.id]);
  useEffect(()=>{if(!account||account.passwordChangeRequired){setUnreadNotifications(0);return;}let active=true;let running=false;const controller=new AbortController();async function refresh(){if(running)return;running=true;try{const value=await employeeRequest<{notifications:{readAt?:string|null;readBehavior?:string;navigation?:{href?:string|null}|null}[]}>('/notifications',{signal:controller.signal});if(active)setUnreadNotifications(value.notifications.filter(item=>item.readBehavior==='state_bound'||!item.readAt).length);}catch(error){if(active&&!controller.signal.aborted)console.warn('读取通知失败',error);}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);window.addEventListener('mop-notification-read',focus);return()=>{active=false;controller.abort();clearInterval(timer);window.removeEventListener('focus',focus);window.removeEventListener('mop-notification-read',focus);};},[account?.id]);
- useEffect(()=>{
-  const desired=new Set<string>();
-  if(pathname!=='/employee'||!appsLoaded||!account){for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();return;}
-  for(const app of apps){
-   if(app.frontendRunMode!=='trusted'||!app.bundleUrl||retainedApps.some(item=>item.accountId===account.id&&item.appId===app.appId))continue;
-   let url:URL;
-   try{url=new URL(app.bundleUrl);}catch{continue;}
-   if(url.protocol!=='https:'||url.origin===window.location.origin||!/^\/assets\/[a-z][a-z0-9-]*\/[a-f0-9]{64}\/ui\.js$/.test(url.pathname))continue;
-   desired.add(url.href);
-   if(prefetchLinks.current.has(url.href))continue;
-   const link=document.createElement('link');link.rel='prefetch';link.as='script';link.href=url.href;link.referrerPolicy='no-referrer';document.head.appendChild(link);prefetchLinks.current.set(url.href,link);
-  }
-  for(const [url,link] of prefetchLinks.current)if(!desired.has(url)){link.remove();prefetchLinks.current.delete(url);}
- },[pathname,appsLoaded,apps,retainedApps,account?.id]);
- useEffect(()=>()=>{for(const link of prefetchLinks.current.values())link.remove();prefetchLinks.current.clear();},[]);
- async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);setRetainedApps([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
+ async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin afc-theme-neutral" data-theme={readThemePreference()}><p role="status">正在检查员工会话…</p></main>;
  if(!account)return <Navigate to="/login" state={{returnTo:pathname+search}} replace/>;
- if(account.passwordChangeRequired)return <PasswordChangeRequired kind="employee" onChanged={()=>{setAccount(null);setApps([]);setRetainedApps([]);navigate('/login',{replace:true});}}/>;
+ if(account.passwordChangeRequired)return <PasswordChangeRequired kind="employee" onChanged={()=>{setAccount(null);setApps([]);navigate('/login',{replace:true});}}/>;
  const visibleApps=apps;
- const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,icon:app.icon,...(app.model==='v2'?{iconUrl:`/api/employee/apps/${app.appId}/icon`,color:app.v2?.color??null}:{}),navigation:app.navigation.filter(item=>!menus[app.appId]||menus[app.appId].includes(item.id)).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
+ const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,iconUrl:`/api/employee/apps/${app.appId}/icon`,color:app.v2.color,navigation:app.navigation.flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" headerActions={(pathname==='/employee'||pathname==='/employee/')?<IconButton className="dashboard-settings-trigger" label="首页设置" title="首页设置" aria-haspopup="dialog" disabled={!appsLoaded||dashboardBusy||dashboardSettingsOpen} onClick={()=>setDashboardSettingsOpen(true)}><PlatformIcon name="cog" size={21}/></IconButton>:undefined} user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={(onSaved,onBusy)=><EmployeeProfile onSaved={onSaved} onBusy={onBusy}/>} notificationsContent={<EmployeeMessages/>} notificationCount={unreadNotifications}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
  {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
- {activeV2&&<AppPageV2 key={`${account.id}:${activeV2.appId}`} app={{appId:activeV2.appId,name:activeV2.name,runtimeRevision:activeV2.runtimeRevision,v2:activeV2.v2!}} path={pathname.slice(`/employee/app/${activeV2.appId}`.length)||'/'} onNavigate={openV2Path}/>}
- {activeAppId&&!activeV2&&!retainedApps.some(item=>item.accountId===account.id&&item.appId===activeAppId)&&<p role="status">{appsLoaded&&!apps.some(app=>app.appId===activeAppId)?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
- {retainedApps.filter(item=>item.accountId===account.id&&!v2AppIds.has(item.appId)).sort((a,b)=>a.appId.localeCompare(b.appId)).map(item=>{const visible=activeAppId===item.appId;const runtimeRevision=apps.find(app=>app.appId===item.appId)?.runtimeRevision??0;return <div key={`${account.id}:${item.appId}:${runtimeRevision}`} style={visible?undefined:{display:'none'}}><EmployeeApplication account={account} path={visible?pathname:item.path} visible={visible} prefetch={!visible&&item.prefetch} onNavigation={onNavigation}/></div>;})}
+ {activeEntry&&<AppPageV2 key={`${account.id}:${activeEntry.appId}`} app={{appId:activeEntry.appId,name:activeEntry.name,runtimeRevision:activeEntry.runtimeRevision,v2:activeEntry.v2}} path={pathname.slice(`/employee/app/${activeEntry.appId}`.length)||'/'} onNavigate={openAppPath}/>}
+ {activeAppId&&!activeEntry&&<p role="status">{appsLoaded?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
  </AdminShell>;
 }
 function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean)=>void}){
@@ -208,12 +69,11 @@ function EmployeeProfile({onSaved,onBusy}:{onSaved:()=>void;onBusy:(busy:boolean
 }
 function safeNotificationHref(value:string|null|undefined){
  if(!value)return null;
- if(/^\/employee\/app\/signatures\/sign\?task=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))return value;
  return /^\/employee\/app\/[a-z][a-z0-9-]*(?:\/[a-zA-Z0-9_-]+)*$/.test(value)?value:null;
 }
 function EmployeeMessages(){
  const [messages,setMessages]=useState<{id:string;display:{title:string;body?:string;summary?:string};navigation?:{href?:string|null}|null;createdAt:string;readAt?:string|null;readBehavior?:string}[]|null>(null),[error,setError]=useState(''),[reading,setReading]=useState('');
  useEffect(()=>{const c=new AbortController();employeeRequest<{notifications:NonNullable<typeof messages>}>('/notifications',{signal:c.signal}).then(v=>setMessages(v.notifications)).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[]);
  async function markRead(id:string){setReading(id);try{const result=await employeeRequest<{readAt:string}>(`/notifications/${id}/read`,{method:'POST'});setMessages(rows=>rows?.map(row=>row.id===id?{...row,readAt:result.readAt}:row)??null);window.dispatchEvent(new Event('mop-notification-read'));}catch(e){setError(e instanceof Error?e.message:'结果未确认，请重新打开消息核对');}finally{setReading('');}}
- return error?<p role="alert" className="afc-error">{error}</p>:messages?messages.length?<div className="employee-message-list">{messages.map(item=>{const href=safeNotificationHref(item.navigation?.href);return <article key={item.id}><h2>{item.display.title}</h2><p>{item.display.body??item.display.summary}</p><time className="afc-muted">{new Date(item.createdAt).toLocaleString()}</time>{item.readBehavior==='mark_read'&&!item.readAt&&<Button size="sm" variant="secondary" disabled={!!reading} onClick={()=>void markRead(item.id)}>标为已读</Button>}{item.readAt&&<span className="afc-muted">已读</span>}{href&&<p><Link to={href}>{href.startsWith('/employee/app/signatures/sign?task=')?'打开签字任务':'打开应用'}</Link></p>}</article>;})}</div>:<p className="afc-empty">暂无消息</p>:<p role="status">正在读取消息…</p>;
+ return error?<p role="alert" className="afc-error">{error}</p>:messages?messages.length?<div className="employee-message-list">{messages.map(item=>{const href=safeNotificationHref(item.navigation?.href);return <article key={item.id}><h2>{item.display.title}</h2><p>{item.display.body??item.display.summary}</p><time className="afc-muted">{new Date(item.createdAt).toLocaleString()}</time>{item.readBehavior==='mark_read'&&!item.readAt&&<Button size="sm" variant="secondary" disabled={!!reading} onClick={()=>void markRead(item.id)}>标为已读</Button>}{item.readAt&&<span className="afc-muted">已读</span>}{href&&<p><Link to={href}>{/^\/employee\/app\/[^/]+\/sign\//.test(href)?'打开签字任务':'打开应用'}</Link></p>}</article>;})}</div>:<p className="afc-empty">暂无消息</p>:<p role="status">正在读取消息…</p>;
 }

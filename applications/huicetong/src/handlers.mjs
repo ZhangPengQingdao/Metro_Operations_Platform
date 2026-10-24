@@ -3,7 +3,7 @@ const definitive=new Set(['INVALID_INPUT','EMPLOYEE_REQUIRED','ACCESS_DENIED','C
 const reads=new Set(['plan-suggest','item-workflow','photo-read','authorize-attachment','dashboard-summary','session','members','cycle-list','cycle-get','category-list','item-list','item-get','binding-list','cycle.signature-status','change.list']);
 export function createHuicetongHandlers(gateway){
  const service=createHuicetongService(gateway);
- return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,async execute(payload,signal,employee){
+ return new Map(Object.entries(service).map(([name,execute])=>[name,{method:'POST',path:`/${name}`,async execute(payload,signal,employee){
   try{
    // A binding's personId is the target person, never the authenticated actor.
    if(!payload||typeof payload!=='object'||Array.isArray(payload)||['employee','permissions','businessAuthorization'].some(key=>key in payload)||name!=='binding-upsert'&&'personId' in payload)throw Error('INVALID_INPUT');

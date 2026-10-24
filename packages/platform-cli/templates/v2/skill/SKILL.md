@@ -64,7 +64,7 @@ export default defineServer({
 
 - 平台已按 `api[].permission` 拦截调用；涉及具体记录时再用 `ctx.can/ctx.require(权限, {organizationUnitId, ownerPersonId})` 按数据范围判断，列表要过滤掉无权查看的记录。
 - `ctx.data`：`get(table,id)`、`list(table,{filters,order,pageSize,after,search,range})`、`readBatch([...])`、`transaction(requestId, [insert|update|delete])`。`update/delete` 需带 `expected` 旧值做并发校验。
-- 写操作由前端生成 `requestId`（UUID）传入；同一 `requestId` 重试不会重复写入。
+- 写操作由前端生成 `requestId`（UUID）传入；同一 `requestId` 重试返回第一次的结果，不会重复写入。结果未知时先查询记录，不要换新的 `requestId` 重发。
 - `ctx.platform.invoke('platform.people.members', {...})` 等调用平台能力，须先在 `platformAccess` 申请。
 - 输入一律校验类型与长度；出错时 `throw new Error('INVALID_INPUT')` 之类的代码。
 
@@ -80,4 +80,4 @@ export default defineServer({
 
 ## 交付
 
-`npm run build` 生成 `dist/<id>-<version>.mopkg`。该文件包含 app.json、图标、页面、接口和迁移，管理员上传后可预览并安装。平台 0.27.0 起支持安装运行，0.28.0 起支持 `directory`、`files` 与 `mop-app dev`，0.30.0 起支持 `saveAs`。安装后由管理员指定应用负责人，负责人配置角色和使用人员，员工才能看到应用。
+`npm run build` 生成 `dist/<id>-<version>.mopkg`。该文件包含 app.json、图标、页面、接口和迁移，管理员上传后可预览并安装，员工也可在员工端“应用管理 → 申请上架”提交给管理员审核。平台 0.27.0 起支持安装运行，0.28.0 起支持 `directory`、`files` 与 `mop-app dev`，0.30.0 起支持 `saveAs`。安装后由管理员指定应用负责人，负责人配置角色和使用人员，员工才能看到应用。

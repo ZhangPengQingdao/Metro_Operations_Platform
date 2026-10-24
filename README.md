@@ -1,12 +1,12 @@
 # 运管开放平台
 
-Metro Operations Platform · 0.30.0
+Metro Operations Platform · 1.0.0
 
-独立的运维应用平台，提供管理员控制台、组织/人员/车站/设备目录、授权审计、模型配置、应用签名安装更新和隔离运行基础。业务功能以独立应用接入。
+内部运维应用平台：管理员控制台、员工工作台、组织/人员/车站/设备目录、授权审计、模型配置，以及单文件 `.mopkg` 应用的安装、升级与运行。业务功能以独立应用接入，复用平台的登录、人员、权限、数据存储和部署。
 
 ## 本地开发
 
-需要 Node.js 22.16+、npm、PostgreSQL 16+；独立后端应用另需本地 Docker Engine。
+需要 Node.js 22.16+、npm、PostgreSQL 16+。
 
 ```sh
 npm ci
@@ -36,8 +36,7 @@ npm run version:check
 
 - [开发与目录结构](docs/development.md)
 - [应用接入](docs/applications.md)
-- [慧策通应用 M1](applications/huicetong/README.md)
-- [应用托管存储](docs/managed-storage.md)
+- [应用管理与员工提交审核](docs/application-management-workflow.md)
 - [员工身份与目录接口](docs/employee-gateway.md)
 - [密码规则与首次登录改密](docs/password-policy.md)
 - [管理员线路与车站](docs/line-station-directory.md)
@@ -50,11 +49,11 @@ npm run version:check
 - [Linux 安装与在线更新实施方案](docs/linux-install-and-update-plan.md)
 - [版本规则](docs/versioning.md)
 - [当前能力边界](docs/limitations.md)
-- [应用模型 v2 架构方案](docs/app-model-v2.md)
+- [应用模型 v2](docs/app-model-v2.md)
 - [拆分说明](docs/extraction.md)
 
 SDK 位于 `packages/platform-sdk`，独立打包工具位于 `packages/platform-cli`，共享组件位于 `src/components/ui`。源码、数据及启动流程不依赖旧仓库。
 
 员工自助注册、组织选择与管理员审核见 [员工注册](docs/employee-registration.md)。
 
-开发应用请从 [开发者指南](docs/developer/start.md) 开始；管理端开发者中心提供公开 SDK 参考、实时应用开放接口和版本化 SDK/CLI、标准示例、文档与 Agent Skill 下载。
+开发应用请从 [开发者指南](docs/developer/start.md) 开始：`mop-app init` 新建项目，`mop-app build` 生成一个 `.mopkg`。管理端开发者中心提供公开 SDK 参考和同版本 SDK/CLI、项目示例、文档与 Agent Skill 下载。业务应用位于 `applications/`。

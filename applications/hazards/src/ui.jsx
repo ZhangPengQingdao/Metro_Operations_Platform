@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {createSandboxImageClient} from '@metro/platform-sdk/app-files';
+import {createAppImageClient} from '@metro/platform-sdk/app-files';
 import {defineApp,useApp} from '@metro/platform-sdk/app';
 import {Button,DropdownSelect,DatePicker,TimePicker,Field,Dialog,FilterBar,DataList,TableHeader,TableBody,TableRow,TableHead,TableCell,ListPagination,TableActions,TableActionButton,SearchSelect,Card,CardHeader,CardTitle,CardContent} from '@metro/platform-sdk/ui';
 import {pageForRoute} from './workspace.mjs';
@@ -32,7 +32,7 @@ function App(){
   try{const result=await api.call(name,payload);if(!result.ok){if(write&&result.error?.writeOutcome==='unknown')uncertain=true;const ex=Error(messages[result.error?.code]??(write?'结果未确认，请联系管理员核对':'读取失败，请重试'));ex.definitive=result.error?.writeOutcome==='not_started';throw ex;}return result.result;}
   catch(e){if(write&&!e.definitive)uncertain=true;throw e;}finally{if(write)writing=false;}
  }
- const imageClient=()=>createSandboxImageClient((name,payload,write)=>call(name,payload,write),{begin:'photo-begin',part:'photo-part',finish:'photo-finish',read:'photo-read'});
+ const imageClient=()=>createAppImageClient((name,payload,write)=>call(name,payload,write),{begin:'photo-begin',part:'photo-part',finish:'photo-finish',read:'photo-read'});
  async function load(){if(!session||!['records','cases'].includes(view))return;const id=++token.current;setBusy(true);setError('');try{const result=await call(view==='cases'?'cases':'list',{pageSize:20,...(filters.organizationId?{organizationId:filters.organizationId}:{}),...(view==='records'?{status:filters.status}:{}),...(filters.search?{search:filters.search}:{}),...(cursor?{after:cursor}:{})});if(id===token.current){setRows(result.rows);setNext(result.nextCursor??null);}}catch(e){if(id===token.current)setError(e.message);}finally{if(id===token.current)setBusy(false);}}
  useEffect(()=>{const timer=setTimeout(()=>void load(),filters.search?250:0);return()=>{clearTimeout(timer);token.current++;};},[session,view,filters,cursor]);
  function setFilter(name,value){setCursors([null]);setFilters(current=>({...current,[name]:value}));}

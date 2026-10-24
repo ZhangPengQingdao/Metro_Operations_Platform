@@ -1,13 +1,12 @@
 /**
  * Application model v2 child process entry: `node child.js <server.js> <appId>`.
  * Serves calls from the platform over the IPC channel. Two bundle styles are supported:
- * - v2: `export default defineServer({...})`;
- * - v1: an entry script that calls `createAppBackend({handlers})` (registered through the hosted-runtime hook).
+ * - `export default defineServer({...})`;
+ * - a script that calls `createAppBackend({handlers})` with a handler map (registered through the hosted-runtime hook).
  * The child holds no credentials; every platform capability is executed by the parent.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import type { AppBackendHandler, AppHostedRuntimeHook } from '@metro/platform-sdk/app-backend';
 import { createAppDataClient, type AppGatewayJson } from '@metro/platform-sdk/app-gateway';
@@ -42,22 +41,9 @@ function errorCode(error: unknown) {
 
 if (!serverPath || !appId || !process.send) { console.error('child: missing server path, app id or IPC channel'); process.exit(2); }
 
-// v1 entries started a health HTTP server on port 8080 for Docker. Health is the IPC channel here, and
-// several apps share one host, so that listener is accepted without binding the port.
-const listen = net.Server.prototype.listen;
-net.Server.prototype.listen = function (this: net.Server, ...args: unknown[]) {
-  const port = typeof args[0] === 'number' ? args[0] : (args[0] as { port?: unknown } | null)?.port;
-  if (port === 8080) {
-    const callback = args.find(arg => typeof arg === 'function') as (() => void) | undefined;
-    queueMicrotask(() => { callback?.(); this.emit('listening'); });
-    return this;
-  }
-  return (listen as (...rest: unknown[]) => net.Server).apply(this, args);
-} as typeof net.Server.prototype.listen;
-
-let legacyHandlers: ReadonlyMap<string, AppBackendHandler> | null = null;
+let mappedHandlers: ReadonlyMap<string, AppBackendHandler> | null = null;
 const hook: AppHostedRuntimeHook = {
-  register(handlers) { if (legacyHandlers) throw new Error('BACKEND_ALREADY_REGISTERED'); legacyHandlers = handlers; },
+  register(handlers) { if (mappedHandlers) throw new Error('BACKEND_ALREADY_REGISTERED'); mappedHandlers = handlers; },
   platform: (operation, params) => platform(operation, params),
   signal: lifetime.signal,
 };
@@ -65,8 +51,8 @@ const hook: AppHostedRuntimeHook = {
 
 const loaded: unknown = (await import(pathToFileURL(serverPath).href)).default;
 const definition: AppServerDefinition | null = isAppServerDefinition(loaded) ? loaded : null;
-if (!definition && !legacyHandlers) { send({ t: 'fatal', code: 'INVALID_SERVER_EXPORT' }); process.exit(1); }
-const handlerNames = definition ? Object.keys(definition.handlers) : [...legacyHandlers!.keys()];
+if (!definition && !mappedHandlers) { send({ t: 'fatal', code: 'INVALID_SERVER_EXPORT' }); process.exit(1); }
+const handlerNames = definition ? Object.keys(definition.handlers) : [...mappedHandlers!.keys()];
 
 async function dispatch(message: Extract<ParentMessage, { t: 'call' }>, signal: AbortSignal): Promise<unknown> {
   if (definition) {
@@ -75,7 +61,7 @@ async function dispatch(message: Extract<ParentMessage, { t: 'call' }>, signal: 
     const context = createAppServerContext({ appId, gateway, employee: message.employee, signal, log });
     return handler(message.input as Parameters<typeof handler>[0], context);
   }
-  const handler = legacyHandlers!.get(message.api);
+  const handler = mappedHandlers!.get(message.api);
   if (!handler) throw new AppServerError('UNKNOWN_API');
   return handler.execute(message.input as AppGatewayJson, signal, message.employee);
 }

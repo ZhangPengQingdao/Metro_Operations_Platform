@@ -5,7 +5,6 @@ import argparse,io,base64,fcntl,getpass,grp,hashlib,http.server,json,os,pathlib,
 REPO='ZhangPengQingdao/Metro_Operations_Platform'
 VERSION=re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')
 IMAGE=re.compile(r'^sha256:[a-f0-9]{64}$')
-RUNTIME_IMAGE='node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5'
 ACTIVE={'queued','downloading','verifying','loading','verified','preflight','maintenance','backing_up','migrating','switching','health_check','draining','restoring_apps'}
 def valid_account_password(value):
  categories=[bool(re.search('[A-Z]',value)),bool(re.search('[a-z]',value)),bool(re.search('[0-9]',value)),any(not ch.isspace() and unicodedata.category(ch)[0] in 'PS' for ch in value)]
@@ -244,19 +243,15 @@ class Deployment:
    api['volumes'].append(str(maintenance)+':/run/mop-maintenance')
    api['environment'].update({'MOP_MAINTENANCE_SOCKET':'/run/mop-maintenance/control.sock','MOP_MAINTENANCE_STATE':'/run/mop-maintenance/state.json'})
   if self.config.get('applications'):
-   if self.config.get('proxyMode')=='external':api['environment']['MOP_APP_TRUSTED_ORIGINS_ENABLED']='true'
+   # Installed applications run as child processes of the API; packages are unpacked under apps/.
    apps=root+'/apps'
    db['networks']=['internal','edge']
-   # Shared network namespace keeps both database identities on verified loopback.
+   # The API reaches the database on loopback (DATABASE_URL written by the installer).
    api.pop('networks');api['network_mode']='service:database'
    api['depends_on']={'database':{'condition':'service_healthy'}}
-   api['group_add'].append(str(os.stat('/var/run/docker.sock').st_gid))
-   api['volumes'] += [apps+':'+apps,root+'/secrets/app-management.json:/run/secrets/app-management.json:ro','/var/run/docker.sock:/var/run/docker.sock']
-   proxy=f":80 {{\n handle /api/* {{\n reverse_proxy database:3101\n }}\n handle {{\n root * /srv\n try_files {{path}} /index.html\n file_server\n }}\n}}\n:8081 {{\n header -Set-Cookie\n reverse_proxy database:3103 {{\n header_up -Cookie\n header_up -Authorization\n }}\n}}\n"
-   # Direct HTTPS mode also has a dedicated resource virtual host.
-   if self.config.get('proxyMode')!='external':
-    proxy=proxy.replace(':80 {',self.config['domain']+' {',1).replace(':8081 {',self.config['resourceDomain']+' {',1)
-   else:web['ports'].append(f"127.0.0.1:{self.config['resourcePort']}:8081")
+   api['volumes'] += [apps+':'+apps,root+'/secrets/app-management.json:/run/secrets/app-management.json:ro']
+   proxy=":80 {\n handle /api/* {\n reverse_proxy database:3101\n }\n handle {\n root * /srv\n try_files {path} /index.html\n file_server\n }\n}\n"
+   if self.config.get('proxyMode')!='external':proxy=proxy.replace(':80 {',self.config['domain']+' {',1)
    proxy_file=directory/'Caddyfile';proxy_file.write_text(proxy);proxy_file.chmod(0o644)
    web['volumes'].append(str(proxy_file)+':/etc/caddy/Caddyfile:ro')
   atomic(directory/'compose.json',{'services':{'database':db,'api':api,'web':web},'networks':{'internal':{'internal':True},'edge':{}}})
@@ -293,11 +288,7 @@ class Deployment:
   for _ in range(24):
    try:
     with urllib.request.urlopen('https://'+self.config['domain']+'/api/health/ready',timeout=5) as response:
-     if response.status==200:
-      if self.config.get('applications'):
-       with urllib.request.urlopen('https://'+self.config['resourceDomain']+'/health/live',timeout=5) as resource:
-        if resource.status!=204 or resource.headers.get('X-Mop-Resource')!='1':continue
-      return
+     if response.status==200:return
    except (OSError,urllib.error.URLError):pass
    time.sleep(5)
   raise Failure('HTTPS_HEALTH_CHECK_FAILED')
@@ -472,10 +463,7 @@ def install(root,v,key):
   require(mode in ('1','2'),'INVALID_PROXY_MODE');external=mode=='1'
   http_port=int(input('平台本机端口 [18080]：').strip() or '18080') if external else 80
   require(1024<=http_port<=65535 if external else True,'INVALID_PORT')
-  applications=(input('启用应用试装环境？[y/N]（使用专用数据库的高权限存储连接及 Docker socket，非生产权限隔离）：').strip().lower()=='y')
-  resource_port=int(input('应用资源本机端口 [18081]：').strip() or '18081') if external and applications else 8081
-  require(not external or not applications or (1024<=resource_port<=65535 and resource_port!=http_port),'INVALID_PORT')
-  ports=([http_port]+([resource_port] if applications else [])) if external else [80,443]
+  ports=[http_port] if external else [80,443]
   for port in ports:
    with socket.socket() as listener:
     try:listener.bind(('127.0.0.1' if external else '0.0.0.0',port))
@@ -483,11 +471,7 @@ def install(root,v,key):
   require(not (root/'database').exists(),'EXISTING_DATABASE_REFUSED')
   domain=input('管理端域名（例如 ops.example.com）：').strip().lower()
   require(re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',domain),'INVALID_DOMAIN')
-  resource_domain=input('独立应用资源域名（与管理端不同，例如 apps.example.net）：').strip().lower() if applications else ''
-  require(not applications or (resource_domain!=domain and re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}',resource_domain)),'INVALID_RESOURCE_DOMAIN')
-  if external:
-   print(f'请在 1Panel 配置 https://{domain} → http://127.0.0.1:{http_port}，保留 Host 请求头。')
-   if applications:print(f'应用资源配置 https://{resource_domain} 与 https://*.{resource_domain} → http://127.0.0.1:{resource_port}，配置 wildcard DNS/TLS，保留原始 Host；该域名只用于应用资源，不设置平台 Cookie。')
+  if external:print(f'请在 1Panel 配置 https://{domain} → http://127.0.0.1:{http_port}，保留 Host 请求头。')
   username=input('首位管理员用户名：').strip();require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{2,63}',username),'INVALID_USERNAME')
   password=getpass.getpass('管理员密码（至少 8 字符，大小写字母、数字、特殊符号至少三类）：');require(valid_account_password(password) and password==getpass.getpass('再次输入密码：'),'INVALID_PASSWORD')
   token=getpass.getpass('GitHub 私有仓库只读令牌：').strip();require(10<len(token)<512 and not any(c.isspace() for c in token),'INVALID_GITHUB_TOKEN')
@@ -501,14 +485,11 @@ def install(root,v,key):
   api={'NODE_ENV':'production','HOST':'0.0.0.0','PORT':'3101','DATABASE_URL':f'postgresql://metro_api:{api_password}@database:5432/metro_operations_platform',
    'SESSION_SECRET':secrets.token_hex(32),'AI_PROVIDER_ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_BASE_URL':'https://'+domain,'CORS_ORIGIN':'https://'+domain,'COOKIE_SECURE':'true',
    'MOP_ADMIN_USERNAME':username,'MOP_ADMIN_DISPLAY_NAME':'平台管理员','MOP_ADMIN_PASSWORD':password}
-  if applications:
-   api['DATABASE_URL']=api['DATABASE_URL'].replace('@database:', '@127.0.0.1:')
-   api['MOP_APP_STORAGE_ADMIN_DATABASE_URL']=f'postgresql://postgres:{postgres_password}@127.0.0.1:5432/metro_operations_platform'
-   api['MOP_APP_MANAGEMENT_CONFIG']='/run/secrets/app-management.json'
-   api['MOP_APP_RESOURCE_ORIGIN']='https://'+resource_domain
-   if external:api['MOP_APP_TRUSTED_ORIGINS_ENABLED']='true'
+  # Application management is always on: the API shares the database container's network (loopback).
+  api['DATABASE_URL']=api['DATABASE_URL'].replace('@database:', '@127.0.0.1:')
+  api['MOP_APP_MANAGEMENT_CONFIG']='/run/secrets/app-management.json'
   atomic(secretsdir/'api.json',api,0o400);os.chown(secretsdir/'api.json',1000,1000)
-  atomic(root/'config.json',{'domain':domain,'socketGid':gid,'bootstrapUsername':username.lower(),'proxyMode':'external' if external else 'direct','httpPort':http_port,'applications':applications,'resourceDomain':resource_domain,'resourcePort':resource_port})
+  atomic(root/'config.json',{'domain':domain,'socketGid':gid,'bootstrapUsername':username.lower(),'proxyMode':'external' if external else 'direct','httpPort':http_port,'applications':True})
   shutil.copyfile(key,root/'release-public.pem');(root/'release-public.pem').chmod(0o600)
   atomic(marker,{'version':v,'phase':'configured'})
  else:
@@ -521,22 +502,12 @@ def install(root,v,key):
  if m['format']==1 or config.get('imageTransport')=='archive':
   github.asset(release,'images.tar',directory/'images.tar',m['artifact']['bytes']);verify_archive(directory,m)
  if config.get('applications'):
-  # The trusted installer pins the runtime digest, independently of application packages.
-  command(['docker','pull',RUNTIME_IMAGE],1800)
-  image=json.loads(command(['docker','image','inspect',RUNTIME_IMAGE]))[0]
-  require(image['Architecture']=='amd64' and image['Os']=='linux' and RUNTIME_IMAGE in image.get('RepoDigests',[]),'RUNTIME_IMAGE_MISMATCH')
   apps=root/'apps';apps.mkdir(mode=0o700,exist_ok=True);os.chown(apps,1000,1000)
-  for child in ['packages','runtime','uploads']:
+  for child in ['packages','uploads']:
    folder=apps/child;folder.mkdir(mode=0o700,exist_ok=True);os.chown(folder,1000,1000)
-  probe=apps/'runtime'/('.visibility-'+secrets.token_hex(16));probe.write_text('mop-runtime-visible');probe.chmod(0o444)
-  try:
-   command(['docker','run','--rm','--network','none','--read-only','--user','1000:1000','--cap-drop','ALL','--security-opt','no-new-privileges:true','--mount',f'type=bind,src={probe},dst=/probe,readonly',RUNTIME_IMAGE,'node','-e',"if(require('fs').readFileSync('/probe','utf8')!=='mop-runtime-visible')process.exit(1)"],60)
-  finally:probe.unlink()
-  policy=apps/'publishers.json'
-  if not policy.exists():atomic(policy,{'policyVersion':'1.0','revision':1,'keys':[]});os.chown(policy,1000,1000)
   management=root/'secrets/app-management.json'
   if not management.exists():
-   atomic(management,{'version':1,'artifactRoot':str(apps/'packages'),'runtimeRoot':str(apps/'runtime'),'uploadRoot':str(apps/'uploads'),'publisherPolicyFile':str(policy),'approvedManifestDigests':[],'managedStorage':True,'docker':{'socketPath':'/var/run/docker.sock','runtimeImage':RUNTIME_IMAGE,'approval':{'imageId':image['Id'],'config':image['Config']}}},0o400);os.chown(management,1000,1000)
+   atomic(management,{'version':1,'artifactRoot':str(apps/'packages'),'uploadRoot':str(apps/'uploads')},0o400);os.chown(management,1000,1000)
  deployment=Deployment(root);deployment.prepare(directory,m)
  os.makedirs('/run/mop-updater',mode=0o750,exist_ok=True);os.chown('/run/mop-updater',0,config['socketGid'])
  deployment.compose(directory,'up','-d','--wait','database')

@@ -127,18 +127,8 @@ export class AppRegistryService {
   setRuntimePackage(context:PlatformManagementContext,appId:string,revision:number,runtime:AppRuntimePackage){
     return this.change(context,appId,revision,'runtime-package-changed',`Package ${runtime.manifest.version} ${runtime.sha256.slice(0,12)}`,async record=>{
       if(record.enabled)throw new AppRegistryError('DISABLE_REQUIRED');
-      // A v1 record gets its first runtime package right after the conversion upgrade.
-      if((record.runtime&&record.runtime.model!=='v2')||runtime.model!=='v2'||runtime.manifest.id!==record.appId||runtime.manifest.version!==record.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
+      if(record.runtime?.model!=='v2'||runtime.model!=='v2'||runtime.manifest.id!==record.appId||runtime.manifest.version!==record.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
       record.runtime=structuredClone(runtime);
-    });
-  }
-  setFrontendRunMode(context:PlatformManagementContext,appId:string,revision:number,mode:AppFrontendRunMode){
-    if(mode!=='standard'&&mode!=='trusted')return Promise.reject(new AppRegistryError('INVALID_FRONTEND_MODE'));
-    if(mode==='trusted'&&appId.length>63)return Promise.reject(new AppRegistryError('TRUSTED_APP_ID_TOO_LONG'));
-    return this.change(context,appId,revision,'frontend-mode-changed',`Frontend mode: ${mode}`,async record=>{
-      if(frontendRunMode(record)===mode)throw new AppRegistryError('FRONTEND_MODE_UNCHANGED');
-      if(mode==='trusted'&&record.manifest.ui.mode!=='sandbox')throw new AppRegistryError('FRONTEND_MODE_REQUIRES_UI');
-      record.frontendRunMode=mode;
     });
   }
   approveGrant(context: PlatformManagementContext, appId: string, expectedRevision: number, input: ApproveAppGrantInput, reason?: string) {

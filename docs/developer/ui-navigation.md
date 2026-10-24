@@ -2,44 +2,41 @@
 
 ## 页面责任
 
-平台提供页头、侧边栏、主题和应用容器。应用输出内容页。优先使用 @metro/platform-sdk/ui 的 QueryList、FilterBar、DataList、Table、ListPagination、Dialog、SidebarDialog、OrganizationPicker、OrganizationPeoplePicker 等共享组件。
-
-React / React DOM 19 是 UI 包的可选 peer；无界面的后端应用无需安装。组件只处理显示和交互，人员查询、权限校验与分页请求由应用实现。
+页面直接渲染在平台内容区（同源，不是 iframe）。平台提供页头、页面标题、侧栏、主题、提示和确认框；应用只写内容。
 
 ```jsx
-import {QueryList,TableHeader,TableBody,TableRow,TableHead,TableCell} from '@metro/platform-sdk/ui';
-<QueryList pinActions={false}
-  query={{showDateRange:false,searchValue:search,onSearchChange:setSearch,searchPlaceholder:'搜索姓名'}}
-  emptyState={rows.length ? undefined : '暂无数据'}>
-  <TableHeader><TableRow><TableHead>姓名</TableHead><TableHead>工号</TableHead></TableRow></TableHeader>
-  <TableBody>{rows.map(row => <TableRow key={row.id}><TableCell>{row.name}</TableCell><TableCell>{row.employeeNo}</TableCell></TableRow>)}</TableBody>
-</QueryList>
-```
+import {useState, useEffect} from 'react';
+import {defineApp, useApp} from '@metro/platform-sdk/app';
+import {QueryList, TableHeader, TableBody, TableRow, TableHead, TableCell} from '@metro/platform-sdk/ui';
+import './ui.css';
 
-普通下拉选 DropdownSelect，可搜索选择用 SearchSelect，多人选择用 TagDropdownPicker，日期时间用 DatePicker / TimePicker。行操作用 TableActions / TableActionButton。只展示已实现的筛选与功能。
-
-## 样式与沙箱
-
-标准示例演示从 document.currentScript 获取宿主提供的 data-platform-origin 和 nonce，用 platformUiCss 安装共享样式。脚本入口需打包成可自行执行的浏览器 IIFE，不依赖 CDN。遵守 CSP；页面背景透明，使用 --afc-color-canvas、--afc-color-paper、--afc-color-ink 等主题变量。
-
-标准沙箱没有 allow-forms。保存用普通按钮 onClick，不依赖原生表单提交。导出需在签名清单 ui 中声明 downloads:true，再使用 app-files 的下载函数。打开/关闭弹窗用 sandbox.invoke('platform.ui.modal',{open}) 通知宿主。
-
-## 侧边栏声明
-
-```json
-{
-  "routes": [{"id":"home","path":"/","permission":"app.inventory.read"},{"id":"settings","path":"/settings","permission":"app.inventory.manage"}],
-  "navigation": [{"id":"home","label":"库存","routeId":"home","order":0},{"id":"settings","label":"设置","routeId":"settings","order":1}],
-  "ui": {"mode":"sandbox","entryArtifactId":"frontend","clientRouting":true}
+function Records() {
+  const {api, user, navigate, toast} = useApp();
+  const [rows, setRows] = useState([]);
+  useEffect(() => { void api.call('list', {}).then(reply => { if (reply.ok) setRows(reply.result.rows); }); }, []);
+  return <QueryList query={{showDateRange: false}} emptyState={rows.length ? undefined : '暂无数据'}>
+    <TableHeader><TableRow><TableHead>名称</TableHead></TableRow></TableHeader>
+    <TableBody>{rows.map(row => <TableRow key={row.id} onClick={() => navigate(`/records/${row.id}`)}><TableCell>{row.name}</TableCell></TableRow>)}</TableBody>
+  </QueryList>;
 }
+function Detail({params}) { /* params.id */ }
+export default defineApp({pages: {'/': Records, '/records/:id': Detail}});
 ```
 
-安装后宿主按 navigation 生成标准侧栏，并按 route.permission 过滤和检查访问。应用读取初始 data-app-route，并用 sandbox.onRouteChange 更新内容。platform.ui.navigation 只能收窄已声明、已授权入口；不能提升权限。不要自己绘制另一套平台侧栏，也不要在应用内注入重复的负责人管理入口。
+优先使用 `@metro/platform-sdk/ui` 的共享组件：QueryList、FilterBar、DataList、Table、ListPagination、Dialog、SidebarDialog、DropdownSelect、SearchSelect、TagDropdownPicker、DatePicker / TimePicker、OrganizationPicker、OrganizationPeoplePicker、TableActions / TableActionButton。只展示已实现的筛选与功能。
+
+## 页面与侧栏
+
+页面在 `app.json` 的 `pages` 中声明：`{path, title, permission, nav}`。平台按数组顺序生成侧栏（`nav: true` 的页面），用 `title` 作页面标题，并按 `permission` 检查访问；页面里不要再画大标题或侧栏。带参数的页面（`/records/:id`）不进侧栏，通过 `navigate()` 或通知链接打开，参数在组件的 `params` 和 `useApp().route.params` 中。
+
+## 样式
+
+样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`；构建时自动限定到本应用（`[data-app="<id>"]`），不会影响平台或其他应用。颜色、字号使用平台 CSS 变量（如 `var(--afc-color-muted)`），以跟随明暗主题。暂不支持 `@keyframes`、`@font-face`、`@import`。
 
 ## 图标
 
-最终安装清单使用 icon.paths：24×24 视口下的 SVG path 字符串数组，最多16条、每条≤2048字符。可在源码中存 icon.json，由构建脚本写入 manifest.icon；文件名本身不决定宿主图标。不接受外链图片、完整SVG HTML或脚本。未提供时宿主显示通用图标。
+项目根目录的 `icon.svg`（或 `icon.png`）就是应用图标：白色线条，显示在 `app.json` 的 `color` 底色上。不接受外链图片。
 
 ## 界面验收
 
-检查真实标准沙箱内的查询、保存与失败反馈；导航切换和直接访问；明暗主题；390px窄屏；弹窗关闭；有权限和无权限状态；大列表分页。演示截图不能替代实际点击验收。
+在平台内实际点击：查询、保存与失败反馈；侧栏切换和直接访问页面；明暗主题；弹窗关闭；有权限和无权限状态；大列表分页。截图不能替代实际操作验收。

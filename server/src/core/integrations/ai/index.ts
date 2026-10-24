@@ -1,6 +1,15 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import type { OpenAiToolDefinition } from '../mcp/index.js';
+
+/** OpenAI-compatible function tool declaration. */
+export interface OpenAiToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
 export { getActiveAiRuntimeConfig } from './config.js';
 
 export interface AiProviderRuntimeConfig {

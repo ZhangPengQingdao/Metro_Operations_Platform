@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import {readSandboxFile,readSandboxTextFile} from '@metro/platform-sdk/app-files';
+import {readLocalFile,readLocalTextFile} from '@metro/platform-sdk/app-files';
 
 export const splitDevices=value=>String(value).split(/[\/\\,，、;；\s]+/).map(part=>part.trim()).filter(Boolean);
 export const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
@@ -13,7 +13,7 @@ const normalizeDate=value=>{
 export async function parsePlanImportFile(file,organizationId){
  const options={maxBytes:2_000_000,extensions:['.xlsx','.xls','.csv']};
  const csv=typeof file?.name==='string'&&file.name.toLowerCase().endsWith('.csv');
- const data=csv?await readSandboxTextFile(file,options):await readSandboxFile(file,options);
+ const data=csv?await readLocalTextFile(file,options):await readLocalFile(file,options);
  const book=XLSX.read(data,{type:csv?'string':'array',raw:csv,sheetRows:202}),sheet=book.Sheets[book.SheetNames[0]];
  if(!sheet)throw Error('文件中没有可读取的工作表');
  const raw=XLSX.utils.sheet_to_json(sheet,{defval:''});

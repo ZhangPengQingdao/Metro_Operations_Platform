@@ -3,7 +3,7 @@
  * 通用电子表格导出与解析底座，完全纯净，不绑定具体业务模版。
  */
 import * as XLSX from 'xlsx';
-import {downloadSandboxFile} from './app-files.js';
+import {saveAs} from './save-file.js';
 
 export interface ExcelColumn<T> {
   key: keyof T;
@@ -73,7 +73,7 @@ export function exportToExcel<T extends Record<string, any>>(
 ): void {
   const { filename = 'export.xlsx' } = options;
   const blob = jsonToExcelBlob(options);
-  downloadSandboxFile(filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`, blob, blob.type);
+  saveAs(blob, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
 }
 
 /**

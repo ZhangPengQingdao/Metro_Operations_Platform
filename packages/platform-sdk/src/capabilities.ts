@@ -25,7 +25,6 @@ export const PLATFORM_CAPABILITY_CATALOG = [
   capability('business-audit', 'server/src/platform/audit/index.ts', null, ['platform.audit.record','platform.audit.read']),
   capability('duty', 'server/src/platform/duty/index.ts', null, ['platform.duty.read','platform.duty.catalog.manage','platform.duty.calendar.manage','platform.duty.period.manage','platform.duty.assignment.manage','platform.duty.replacement.manage']),
   capability('data-alignment', 'server/src/platform/data-alignment/index.ts', null, ['platform.reference_data.read','platform.reference_data.dictionary.manage','platform.reference_data.external_system.manage','platform.reference_data.mapping_profile.manage','platform.reference_data.sync.record','platform.reference_data.conflict.resolve']),
-  { ...capability('platform-mcp', 'server/src/platform/mcp/index.ts', null, ['platform.mcp.use']), contractVersion: '2.0' },
   capability('platform-sdk', null, 'src/platform/index.ts')
 ] as const satisfies readonly PlatformCapabilityDescriptor[];
 

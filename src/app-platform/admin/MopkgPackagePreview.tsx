@@ -9,7 +9,7 @@ export interface MopkgPreview {
  readme:string|null;changelog:string|null;files:{path:string;bytes:number}[];
  migrations:{id:string;file:string;bytes:number;sha256:string;statements:number}[];
  issues:{path:string;message:string}[];platform:{version:string;compatible:boolean};
- installed:{version:string;model:'v1'|'v2';enabled?:boolean}|null;
+ installed:{version:string;enabled?:boolean}|null;
  change:{kind:'install'|'upgrade'|'reinstall'|'downgrade';addedPermissions:string[];removedPermissions:string[];addedPlatformAccess:string[]}|null;
  installable:boolean;blockedReason:string|null;
 }
@@ -47,7 +47,7 @@ export function MopkgPreviewDetails({preview}:{preview:MopkgPreview}){
    <span className="mopkg-preview-tile" style={{background:manifest?(manifest.color??DEFAULT_TILE):UNKNOWN_TILE}}>{preview.icon&&manifest?<img src={preview.icon.dataUrl} alt=""/>:<span>{manifest?.name.slice(0,1)??'?'}</span>}</span>
    <div>
     <strong>{manifest?.name??'无法识别的应用'}</strong>
-    <p>{manifest?<>{manifest.id} · {preview.installed?`${preview.installed.version} → `:''}{manifest.version}{preview.change&&<> · {preview.installed?.model==='v1'&&preview.change.kind==='upgrade'?'从旧版签名包转换（数据与授权保留）':CHANGE_LABELS[preview.change.kind]}</>}</>:'app.json 未通过校验'}</p>
+    <p>{manifest?<>{manifest.id} · {preview.installed?`${preview.installed.version} → `:''}{manifest.version}{preview.change&&<> · {CHANGE_LABELS[preview.change.kind]}</>}</>:'app.json 未通过校验'}</p>
     {manifest&&<p>{manifest.description}</p>}
    </div>
   </header>

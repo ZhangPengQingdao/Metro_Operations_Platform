@@ -64,7 +64,6 @@ const requiredL1Entrypoints = [
   'server/src/core/time/index.ts',
   'server/src/core/events/index.ts',
   'server/src/core/integrations/wecom/index.ts',
-  'server/src/core/integrations/mcp/index.ts',
   'server/src/core/integrations/ai/index.ts',
   'server/src/core/observability/index.ts',
   'server/src/core/security/index.ts',
@@ -86,7 +85,6 @@ const requiredL3Entrypoints = [
   'server/src/platform/audit/index.ts',
   'server/src/platform/duty/index.ts',
   'server/src/platform/data-alignment/index.ts',
-  'server/src/platform/mcp/index.ts',
   'src/platform/context/index.tsx',
   'src/platform/index.ts',
   'packages/platform-sdk/src/index.ts'
@@ -355,7 +353,7 @@ test('L4 manifest subpath cannot leak into the L3 SDK root or lower layers', () 
 });
 
 test('L4 manifest exposes dedicated server and SDK entrypoints', async () => {
-  for (const entrypoint of ['server/src/app-platform/manifest/index.ts', 'server/src/app-platform/registry/index.ts', 'server/src/app-platform/storage/index.ts', 'packages/platform-sdk/src/app-manifest.ts']) {
+  for (const entrypoint of ['server/src/app-platform/manifest/index.ts', 'server/src/app-platform/registry/index.ts', 'server/src/app-platform/v2/runtime.ts', 'packages/platform-sdk/src/app-manifest.ts']) {
     assert.ok((await readFile(path.join(rootPath, entrypoint), 'utf8')).trim());
   }
 });

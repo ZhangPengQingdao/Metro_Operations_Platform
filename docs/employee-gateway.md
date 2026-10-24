@@ -2,7 +2,7 @@
 
 ## 初始化与边界
 
-通过 `npm --prefix server run db:init` 显式安装新增的员工账号/会话及目录权限定义迁移。连同应用 runtime 存储迁移一起安装；启动服务不会自动执行。迁移不创建员工账号、不授予角色权限，也不复制管理员身份。
+通过 `npm --prefix server run db:init` 显式安装员工账号/会话及目录权限定义迁移；启动服务不会自动执行。迁移不创建员工账号、不授予角色权限，也不复制管理员身份。
 
 员工账号绑定已有在职人员；所属组织、岗位也必须启用。管理员通过以下接口管理账号，需要平台管理员会话、写请求的同源 Origin 及 `platform.authorization.manage`：
 
@@ -25,22 +25,27 @@
 | POST | `/api/employee/auth/login` | `{username,password}`，返回公开账号字段并设置 Cookie |
 | GET | `/api/employee/auth/me` | 当前账号 |
 | POST | `/api/employee/auth/logout` | 撤销当前会话、清除 Cookie |
-| GET | `/api/employee/apps` | 当前可用的沙箱应用列表 |
-| GET | `/api/employee/apps/:appId/ui?path=/` | 已授权页面资源与宿主持有的实例绑定 |
-| POST | `/api/employee/apps/:appId/gateway` | 当前员工代表指定应用调用 Gateway |
-| POST | `/api/employee/apps/:appId/api` | 调用已装配的隔离应用 API；须声明本应用定义的权限 |
+| GET | `/api/employee/apps` | 当前员工可用的应用（名称、图标、页面、侧栏） |
+| GET | `/api/employee/apps/:appId/v2-session?path=/` | 打开页面：准入键、员工在本应用的权限、页面模块地址 |
+| GET | `/api/employee/apps/:appId/v2/:sha256/ui.js`、`ui.css` | 按版本不可变的页面文件 |
+| POST | `/api/employee/apps/:appId/api` | 调用本应用接口 `{apiId,method,path,payload}` |
+| POST | `/api/employee/apps/:appId/v2-platform` | 页面直接只读查询目录 `{operation,params}` |
+| GET/POST | `/api/employee/apps/:appId/attachments` | 附件上传、列表与下载（经应用 `authorize-attachment` 授权） |
+| GET | `/api/employee/apps/:appId/dashboard` | 工作台摘要卡片 |
 
 Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，路径 `/api/employee`，HTTPS 下启用 Secure；数据库仅保存随机令牌的 SHA-256 摘要。写请求必须提供配置的同源 Origin。登录按 IP 限制每分钟 5 次；当前限流为单进程，横向部署需另行接入共享限流。
 
-管理员 Cookie 不可用于员工入口；请求体不得携带身份或授权范围。员工入口为 `/#/employee`，包含登录、我的应用及沙箱页面。管理员入口仍为 `/#/admin`。平台 Cookie、会话令牌和实例绑定不传入沙箱；SDK 消息由平台宿主转发到 Gateway。
+管理员 Cookie 不可用于员工入口；请求体不得携带身份或授权范围。员工入口为 `/#/employee`，管理员入口为 `/#/admin`。
 
-## 默认 Gateway 操作
+## 应用调用
 
-请求示例（`id` 换成真实目录 UUID）：
+页面由平台同源加载。应用接口和目录查询请求必须携带 `X-Mop-Employee-Admission`（打开页面时取得）：它绑定员工、安装版本和授权版本，不是认证凭据，不能替代 Cookie 或实时授权。撤权、升级或切换员工后，旧页面的请求被拒绝，需要重新打开。
 
-```json
-{"version":"1.0","operation":"platform.locations.get","params":{"id":"51000000-0000-4000-8000-000000000004"}}
-```
+调用本应用接口时，平台检查员工会话、应用准入、接口声明的权限（或业务角色），再把可信员工上下文（`personId`、`organizationUnitId`、本应用权限快照与业务授权）随调用传给应用进程；业务 payload 中的同名字段不会覆盖它。应用进程在处理期间发起的平台调用以应用的服务身份执行，并绑定该员工，人员与组织范围照常生效。
+
+页面可直接调用的只读目录操作：`platform.people.members`、`platform.people.organization_context`、`platform.locations.get`、`platform.locations.list`、`platform.locations.responsible_stations`、`platform.assets.get`、`platform.assets.list`；须在 `app.json` 的 `platformAccess` 申请相应能力。写操作一律经本应用接口。
+
+## 目录与 AI 操作
 
 | 操作 | 权限 | 返回字段 |
 | --- | --- | --- |
@@ -56,47 +61,11 @@ Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，
 
 位置列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, status?}`。设备列表接受 `{organizationUnitId?, afterId?, pageSize?, search?, lifecycleState?, locationId?, typeId?, typeName?}`，`typeName` 为精确名称过滤。页大小默认 20、最多 50；search 为名称、编码和设备类型名称的字面子串（最多 100 字符），status 仅 active/inactive，lifecycleState 为 planned/active/suspended/retired。数据库按 UUID 升序有界读取，用返回的 nextCursor 续页；不返回总数。未指定组织时必须具有完整目录授权；指定组织时对该组织做授权并限制 SQL 查询范围，返回每行再次检查真实范围。组织参数是待验证资源，不是授权声明。范围不足时连空页也拒绝；逐对象授权仍用 get 查询。游标不要求记录仍存在，删除游标记录不会回到第一页。
 
-采用应用角色模式的应用由负责人在“应用管理 → 人员管理、角色配置”维护可使用人员和业务操作范围；具备生效业务角色即允许进入，不再另分配“员工使用范围”开关。只在尚未切换的旧应用中保留历史使用授权过渡能力；切换前仍需原有授权，避免升级直接扩权。安装或授予目录权限不会自动允许所有员工打开应用。
-
-应用必须声明权限且经管理员批准。员工还需具有相应角色权限；两者取交集。服务调用沿隔离后端的 Gateway 传输入口，要求独立服务凭据与服务授权，不能借用员工角色。默认组织树和责任范围解析器尚未装配，这些范围保持拒绝；可使用已实现的 all、organization 和 explicit 范围。
-
-员工 Gateway 请求必须携带平台宿主从页面资源响应取得的 `X-Mop-Employee-Admission`；它是员工、安装和授权版本的绑定值，不是认证凭据，不能替代 Cookie 或实时授权。沙箱不能选择该值。每次校验都与当前状态比较，旧页面在撤权后重新授权、升级或切换员工后必须重新打开。
-
-员工调用在执行及返回检查时重新验证会话并固定身份。应用须由当前宿主持有有效租约且正在服务；停用、失去租约或持久工作记录失败会阻断调用。发布者或版本审批记录读取后，入口再次核对身份、使用授权与安装版本；失效或无法确认则拒绝。应用列表和页面状态每 5 秒刷新，重新聚焦也检查页面；接口后续访问即时校验，已经下载的页面内容无法追溯撤回。
-
-操作使用普通 API 数据库连接，不借用存储管理连接或生命周期事务会话。
-
-## 验证范围
-
-PGlite 集成测试覆盖账号登录、真实目录读取、角色/应用授权交集、跨位置拒绝、管理员 Cookie 拒绝、注销/停用/密码重置/离职以及服务授权。定向测试还覆盖审批读取期间撤权、重新授权、升级、安装替换、宿主停用、身份切换及旧页面绑定拒绝。定向测试覆盖返回快照变化、调用途中身份撤销或替换；宿主测试覆盖停用和失去租约后的员工入口拒绝。
-
-这些测试未替代生产 PostgreSQL、真实隔离后端、员工浏览器入口或生产资源域验收。
-
-## 隔离后端员工上下文（底层通道已实现）
-
-Hosted API 在调用前重新解析平台人员上下文，将最小字段通过独立 `employee` 信封传入后端：`version`、`personId`、`organizationUnitId`、`requestId`、`traceId`、`permissions`（本应用定义且经宿主实时授权的权限快照）。不传会话 Cookie、登录标识、服务凭据或角色列表。字段来源为受信任平台上下文，业务 payload 中同名字段不会覆盖它。
-
-接入该信封的后端必须用本次更新后的 SDK 重新构建；旧 SDK 的严格协议解析不接受新增 employee 字段。SDK 的 handler 可声明 `requireEmployeeContext: true`，并通过 `execute(payload, signal, employee)` 的第三参数读取不可变上下文。缺失、格式错误或夹带额外身份字段的信封在业务处理前拒绝；未要求身份的旧处理器仍可处理无身份的底层协议帧。该信封仅可信于平台控制的标准输入通道，不能从公网 HTTP 请求体构造。
-
-Hosted API 固定调用人的员工及组织 ID，并在执行后重新核对；停用、撤权或人员/组织更换后不返回结果。已派发操作遇到这些失败时仍报告未知结果，不能自动重试，也不表示业务写入被撤销。
-
-员工 HTTP API 请求仅接受 `{apiId,method,path,payload}`，同样要求员工 Cookie、同源 Origin 和 `X-Mop-Employee-Admission`。宿主保留重新验证会话及页面授权的回调，调用前后以及嵌套的后端 Gateway 授权时重新执行；URL 和 payload 不能指定员工或覆盖这些回调。HTTP 路由已接通到宿主，管理端已装配保守的 API 权限检查：没有可信业务资源解析器时，仅员工及应用均具备不受范围限制的授权才可通过，组织/本人/显式对象范围不会被当作完整权限放行。具体业务范围仍待适配，默认安装继续拒绝自定义 API 声明。
-
-沙箱宿主根据平台返回的已验证清单 API 列表构造 `application.api.<id>` 消息方法，固定其 API ID、HTTP 方法和相对路径；沙箱参数只成为业务 payload。SDK 使用 `createAppApiClient(sandboxClient).invoke(apiId, payload)`，无需知道 HTTP 路径、Cookie 或页面绑定。调用失败不自动重试。此桥已用真实消息代理与公开 SDK 做协议测试，尚未进行浏览器或真实物料验收。
-
-SDK 自动将 handler 内的异步 Gateway 调用绑定至原始 API 帧 ID；宿主只接受当前有效的调用，不接受不存在、已结束、超时或断开的绑定。带 API 声明的宿主要求所有后端 Gateway 请求具有绑定，缺失绑定不能退回自主服务调用。不能启动未等待的后台任务延续员工授权。
-
-后端仍以自身服务授权访问托管存储，额外受原员工调用的授权回调约束。Gateway 将回调保留到操作上下文，存储在提交前调用授权方法时再次复核；原员工调用撤权不会因为服务授权仍有效而被绕过。临时 PostgreSQL 测试已验证 SQL 执行后撤权会回滚、保留原数据并记为 rolled_back。若 COMMIT 已送出而确认丢失，仍按既有原事务证据规则处理，不能宣称回滚或自动重放。
-
-完整真实应用验收仍需具体业务权限/数据范围适配、受限存储管理及物料应用。上述底层接线不能作为默认应用安装或生产验收完成的依据。
-
-
-0.3.0 宿主在调用、嵌套 Gateway 和提交前复核 permissions 快照，额外管理权限被撤销时即使基础 read 仍有效，也会拒绝原调用。应用不能通过 payload 设置权限。成员目录 `platform.people.members` 仅供已授权 Gateway 调用，接受 organizationUnitId 和可选 personId/search，返回最多 50 个有效工班成员的 ID、姓名、工号与组织 ID，不包含联系方式。查询前校验组织范围，返回时复核实际成员范围；通过服务身份调用仍须单独服务授权。
+应用由负责人在员工端“应用管理 → 人员管理、角色配置”维护可使用人员和业务操作范围；具备生效业务角色即可进入。安装应用或授予目录能力不会自动允许所有员工打开应用。
 
 ## 统一入口与员工工作区（0.5.0）
 
 `POST /api/auth/login` 按账号所属身份路由；管理员与员工会话 Cookie 仍各自隔离。同名跨身份账号拒绝登录，不以优先级选择更高权限身份。旧登录链接转向统一入口。
 
-员工 `GET /api/employee/profile` 读取本人资料，`GET /api/employee/notifications` 仅返回本人收件通知。工作区复用共享侧边栏、消息和个人资料。应用的 `platform.ui.navigation` 只筛选声明过的菜单，不授予路由或业务权限。
-
+员工 `GET /api/employee/profile` 读取本人资料，`GET /api/employee/notifications` 仅返回本人收件通知。工作区复用共享侧边栏、消息和个人资料。
 `PATCH /api/employee/profile` 只接受本人的 `phone` 和 `wecomUserId`，拒绝身份、岗位与组织字段；沿用默认租户的企业微信外部身份记录，修改 UserID 后清除核验状态。`PATCH /api/employee/auth/password` 接受 `currentPassword` 和至少 8 字符且包含上述四类字符中至少三类的新密码 `newPassword`，验证当前密码后撤销该员工的全部会话。两个写接口均校验 Origin 和有效员工会话，事务内再次核对本人身份并记录审计。

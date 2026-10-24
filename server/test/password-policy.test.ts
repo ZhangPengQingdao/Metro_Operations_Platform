@@ -127,7 +127,7 @@ for (const kind of ['admin', 'employee'] as const) {
    if (kind === 'employee') {
     await assert.rejects(f.employee.resolveIdentity(token), /EMPLOYEE_AUTH_REQUIRED/);
     await assert.rejects(f.employee.updateProfile(token, { phone: '', wecomUserId: '' }), /EMPLOYEE_PASSWORD_CHANGE_REQUIRED/);
-    for (const path of ['/apps', '/apps/test/ui', '/notifications', '/managed-apps']) assert.equal((await app.inject({ url: '/api/employee' + path, headers })).statusCode, 403);
+    for (const path of ['/apps', '/apps/test/v2-session', '/notifications', '/managed-apps']) assert.equal((await app.inject({ url: '/api/employee' + path, headers })).statusCode, 403);
    } else {
     await assert.rejects(f.admin.list(token), /ADMIN_PASSWORD_CHANGE_REQUIRED/);
     await assert.rejects(f.admin.create(token, { username: 'blocked', displayName: 'Blocked', password: 'Abcd1234' }), /ADMIN_AUTH_REQUIRED/);

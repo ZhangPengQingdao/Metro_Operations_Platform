@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
-import {compileAppMigration} from '../src/app-platform/storage/declarative-migration.ts';
+import {compileAppMigration} from '../src/app-platform/v2/declarative-migration.ts';
 import {createMaterialsService} from '../../applications/materials/src/service.mjs';
 
 test('independent materials service uses declarative schema and rolls back stock if ledger insertion fails',async()=>{
@@ -51,23 +51,6 @@ test('independent materials service uses declarative schema and rolls back stock
  }finally{await db.close();}
 });
 
-test('materials handlers interoperate with SDK channel and preserve uncertainty without killing the backend',async()=>{
- const {PassThrough}=await import('node:stream');
- const {createAppBackend}=await import('@metro/platform-sdk/app-backend');
- const {createMaterialsHandlers}=await import('../../applications/materials/src/handlers.mjs');
- const {startAppStdioGateway}=await import('../src/app-platform/runtime/stdio-gateway.ts');
- const input=new PassThrough(),output=new PassThrough();let storageCalls=0;
- const backend=createAppBackend({input,output,handlers:createMaterialsHandlers({invoke:async()=>{storageCalls++;throw Error('unknown database response');}})});
- const host=startAppStdioGateway({appId:'materials',serviceCredential:'host-only',stdout:output,stdin:input,requireApiContext:true,gateway:{invokeService:async()=>{throw Error('not expected');},drain:async()=>{}}});
- const employee={version:'1.0' as const,personId:randomUUID(),organizationUnitId:randomUUID(),requestId:'request',traceId:'trace',permissions:['app.materials.manage']};
- try{
-  const rejected:any=await host.api.invoke({handler:'create',method:'POST',path:'/create',payload:{},employee},undefined,async()=>{});
-  assert.equal(rejected.error.code,'INVALID_INPUT');assert.equal(storageCalls,0);assert.equal(backend.signal.aborted,false);
-  const uncertain:any=await host.api.invoke({handler:'create',method:'POST',path:'/create',payload:{requestId:randomUUID(),name:'Bolt',sku:'B',unit:'个'},employee},undefined,async()=>{});
-  assert.equal(uncertain.error.writeOutcome,'unknown');assert.equal(storageCalls,1);assert.equal(backend.signal.aborted,false);
- }finally{backend.close();await backend.drain();host.api.confirmContainerStopped();await host.stop();}
-});
-
 /** Builds applications/materials with the public CLI and returns its single-file package and registry projection. */
 async function buildMaterialsPackage(){
  const {execFile}=await import('node:child_process'),{promisify}=await import('node:util'),{fileURLToPath}=await import('node:url');
@@ -93,12 +76,3 @@ test('materials builds as one v2 package whose migrations equal the v1 files byt
  assert.deepEqual(projection.routes.map(route=>[route.path,route.permission]),[['/','app.materials.read-stock'],['/records','app.materials.read-records'],['/settings','app.materials.manage']]);
 });
 
-test('default composition accepts declared isolated app APIs without enabling unrelated extensions',async()=>{
- const {isAppRuntimeSupported}=await import('../src/app-platform/management/config.ts');
- const manifest=(await buildMaterialsPackage()).projection as any;
- const config:any={managedStorage:true,docker:{}};
- assert.equal(isAppRuntimeSupported(manifest,config),true);
- for(const change of [{api:[{...manifest.api[0],permission:'platform.authorization.manage'}]},{api:[{...manifest.api[0],permission:undefined}]},{tools:[{}]},{jobs:[{}]},{network:{frontendOrigins:[],backendOrigins:['https://example.com']}}])assert.equal(isAppRuntimeSupported({...manifest,...change},config),false);
- assert.equal(isAppRuntimeSupported(manifest,{...config,docker:undefined}),false);
- assert.equal(isAppRuntimeSupported(manifest,{...config,managedStorage:false}),false);
-});

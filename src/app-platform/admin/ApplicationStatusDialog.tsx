@@ -1,59 +1,30 @@
 import {applicationStatus} from './application-status';
-import {AppMigrationStatus} from './AppMigrationStatus';
 import React,{useEffect,useState} from 'react';
-import {Button,DataList,PlatformIcon,SidebarDialog} from '../../components/ui';
-import {adminRequest,AdminRequestError} from './client';
+import {Button,PlatformIcon,SidebarDialog} from '../../components/ui';
+import {adminRequest} from './client';
 import type {Installation} from './AdminApp';
-interface RuntimeStatus {installation:Installation;owned:boolean;serving:boolean;pendingWork?:{records:{id:string;startedAt:string;context?:{kind:string;requestId?:string;apiId?:string}|null}[];hasMore:boolean}}
-interface InstallStatus {state:string;revision:number;requestId:string;}
-interface VersionStatus extends InstallStatus {version:string;}
-const states:Record<string,string>={registered:'已注册',installing:'安装中',installed:'安装完成',recovery_required:'操作中断，待核对',recovering:'恢复中',recovered:'已恢复停用',prepared:'已准备',updating:'更新中',updated:'更新完成'};
+interface ProcessStatus {state:string;pid:number|null;startedAt:string|null;restarts:number;lastExit:{at:string;code:number|null;signal:string|null}|null;logs:string[]}
+interface RuntimeStatus {installation:Installation;serving:boolean;process:ProcessStatus|null}
+const processStates:Record<string,string>={starting:'启动中',running:'运行中',restarting:'异常退出，正在重启',stopped:'已停止',failed:'已停止（多次异常或启动失败）'};
 export function ApplicationStatusDialog({appId,onClose,onChange}:{appId:string;onClose:()=>void;onChange:()=>void}){
- const [runtime,setRuntime]=useState<RuntimeStatus|null>(null),[install,setInstall]=useState<InstallStatus|null>(null),[versions,setVersions]=useState<VersionStatus[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[serial,setSerial]=useState(0),[loading,setLoading]=useState(true);
- const [section,setSection]=useState<'runtime'|'versions'|'calls'|'migrations'|'writes'>('runtime');
+ const [runtime,setRuntime]=useState<RuntimeStatus|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[serial,setSerial]=useState(0);
+ const [section,setSection]=useState<'runtime'|'logs'>('runtime');
  const path=`/apps/${encodeURIComponent(appId)}`;
- useEffect(()=>{const c=new AbortController();setError('');setLoading(true);
-  async function load(){try{
-   const runtime=await adminRequest<RuntimeStatus>(`${path}/runtime-status`,{signal:c.signal});
-   const install=await adminRequest<InstallStatus>(`${path}/install-status`,{signal:c.signal}).catch(e=>{if(e instanceof AdminRequestError&&e.status===404)return null;throw e;});
-   const version=await adminRequest<{versions:VersionStatus[]}>(`${path}/version-status`,{signal:c.signal});
-   if(!c.signal.aborted){setRuntime(runtime);setInstall(install);setVersions(version.versions);}
-  }catch(e){if(!c.signal.aborted){setError(e instanceof Error?e.message:'读取失败');setRuntime(null);}}finally{if(!c.signal.aborted)setLoading(false);}}
-  void load();return()=>c.abort();
- },[path,serial,section]);
- async function recover(endpoint:string,body:unknown){if(busy)return;setBusy(true);setError('');try{await adminRequest(`${path}/${endpoint}`,{method:'POST',body});onChange();setSerial(v=>v+1);}catch(e){setError(e instanceof Error?e.message:'恢复结果未确认');setRuntime(null);}finally{setBusy(false);}}
- const blocked=!!runtime?.pendingWork?.records.length;
- const pendingVersion=versions.find(v=>!['updated','recovered'].includes(v.state));
- const pendingInstall=install&&!['installed','recovered'].includes(install.state);
- const sections=[
-  {id:'runtime' as const,label:'运行概况',icon:'cog' as const},
-  {id:'versions' as const,label:'安装与更新',icon:'clock' as const},
-  {id:'calls' as const,label:'未完成调用',icon:'clock' as const},
-  ...(runtime?.installation.manifest.storage.mode==='managed'?[{id:'migrations' as const,label:'存储迁移',icon:'database' as const},{id:'writes' as const,label:'数据写入',icon:'database' as const}]:[]),
- ];
- return <SidebarDialog open title="应用状态" onClose={()=>{if(!busy)onClose();}} sections={sections.map(item=>({...item,icon:<PlatformIcon name={item.icon} size={18}/>,disabled:busy}))} activeSection={section} onSectionChange={setSection}>
-    {error&&<p role="alert" className="afc-error">{error}</p>}
-    {!runtime&&!error&&<p role="status">正在读取状态…</p>}
-    {runtime&&<>
-     {section==='runtime'&&<>
-      <dl className="afc-details"><dt>应用</dt><dd>{runtime.installation.manifest.name}</dd><dt>当前版本</dt><dd>{runtime.installation.manifest.version}</dd><dt>运行状态</dt><dd>{applicationStatus(runtime.installation,runtime.serving,blocked)}</dd><dt>平台能力</dt><dd>{runtime.installation.grants.filter(g=>g.status==='active'&&g.permissionCode.startsWith('platform.')).length} 项已批准</dd></dl>
-      {blocked&&<p className="afc-error">存在未完成调用，请先在“未完成调用”中核对。</p>}
-      {!runtime.serving&&(runtime.installation.enabled||runtime.installation.lifecycle?.status==='failed'||runtime.installation.lifecycle?.status==='running')&&<p className="afc-muted">上次操作或运行状态尚未确认。核对后安全停用，再重新启用；不会重放业务操作。</p>}
-      <div className="admin-actions">
-       {!pendingVersion&&!pendingInstall&&!runtime.serving&&(runtime.installation.enabled||runtime.installation.lifecycle?.status==='failed'||runtime.installation.lifecycle?.status==='running')&&<Button disabled={busy||loading||blocked} onClick={()=>void recover('recover',{revision:runtime.installation.revision})}>核对并停用</Button>}
-      </div>
-     </>}
-     {section==='versions'&&<>
-      <dl className="afc-details"><dt>首次安装</dt><dd>{install?(states[install.state]??install.state):'未找到安装记录'}</dd></dl>
-      <DataList pinActions={false} emptyState={!versions.length?'暂无更新记录':undefined}><thead><tr><th>版本</th><th>状态</th></tr></thead><tbody>{versions.map(v=><tr key={v.requestId}><td>{v.version}</td><td>{states[v.state]??v.state}</td></tr>)}</tbody></DataList>
-      <div className="admin-actions">{pendingVersion?<Button disabled={busy||loading||blocked} onClick={()=>void recover('version-recover',{requestId:pendingVersion.requestId})}>核对并停用</Button>:pendingInstall&&<Button disabled={busy||loading||blocked} onClick={()=>void recover('install-recover',{revision:install!.revision})}>核对并停用</Button>}</div>
-     </>}
-     {section==='calls'&&<>
-      {blocked&&<p className="afc-error" role="alert">原调用缺少结束凭据，恢复和启用已阻断。不会自动重试或清除记录。</p>}
-      <DataList pinActions={false} emptyState={!blocked?'暂无未完成调用':undefined}><thead><tr><th>开始时间</th><th>调用</th><th>核对编号</th></tr></thead><tbody>{runtime.pendingWork?.records.map(w=><tr key={w.id}><td>{new Date(w.startedAt).toLocaleString('zh-CN')}</td><td>{w.context?.apiId??'历史调用（未记录接口）'}</td><td>{w.id}</td></tr>)}</tbody></DataList>
-      {runtime.pendingWork?.hasMore&&<p>仅显示前 100 条，仍有其他未完成调用。</p>}
-     </>}
-     {(section==='migrations'||section==='writes')&&<AppMigrationStatus key={section} kind={section} appId={appId} onBusy={setBusy} onChange={()=>{onChange();setSerial(v=>v+1);}}/>}
-    </>}
+ useEffect(()=>{const c=new AbortController();setError('');
+  adminRequest<RuntimeStatus>(`${path}/runtime-status`,{signal:c.signal}).then(value=>{if(!c.signal.aborted)setRuntime(value);}).catch(e=>{if(!c.signal.aborted){setError(e instanceof Error?e.message:'读取失败');setRuntime(null);}});
+  return()=>c.abort();
+ },[path,serial]);
+ async function restart(){if(busy||!runtime)return;setBusy(true);setError('');try{await adminRequest(`${path}/recover`,{method:'POST',body:{revision:runtime.installation.revision}});onChange();setSerial(v=>v+1);}catch(e){setError(e instanceof Error?e.message:'重新启动未成功');}finally{setBusy(false);}}
+ const process=runtime?.process;
+ return <SidebarDialog open title="应用状态" onClose={()=>{if(!busy)onClose();}} sections={[{id:'runtime' as const,label:'运行概况',icon:<PlatformIcon name="cog" size={18}/>,disabled:busy},{id:'logs' as const,label:'最近日志',icon:<PlatformIcon name="clock" size={18}/>,disabled:busy}]} activeSection={section} onSectionChange={setSection}>
+  {error&&<p role="alert" className="afc-error">{error}</p>}
+  {!runtime&&!error&&<p role="status">正在读取状态…</p>}
+  {runtime&&section==='runtime'&&<>
+   <dl className="afc-details"><dt>应用</dt><dd>{runtime.installation.manifest.name}</dd><dt>当前版本</dt><dd>{runtime.installation.manifest.version}</dd><dt>运行状态</dt><dd>{applicationStatus(runtime.installation,runtime.serving)}</dd>
+    {process&&<><dt>后端进程</dt><dd>{processStates[process.state]??process.state}{process.startedAt?` · 启动于 ${new Date(process.startedAt).toLocaleString('zh-CN')}`:''}</dd><dt>自动重启</dt><dd>{process.restarts} 次</dd>{process.lastExit&&<><dt>上次退出</dt><dd>{new Date(process.lastExit.at).toLocaleString('zh-CN')} · {process.lastExit.signal??`退出码 ${process.lastExit.code}`}</dd></>}</>}
+    <dt>平台能力</dt><dd>{runtime.installation.grants.filter(g=>g.status==='active'&&g.permissionCode.startsWith('platform.')).length} 项已批准</dd></dl>
+   {runtime.installation.enabled&&!runtime.serving&&<><p className="afc-muted">应用已启用但没有在运行。查看“最近日志”了解原因，修正后可重新启动；不会重放任何业务操作。</p><div className="admin-actions"><Button disabled={busy} onClick={()=>void restart()}>{busy?'正在启动…':'重新启动'}</Button></div></>}
+  </>}
+  {runtime&&section==='logs'&&(process?.logs.length?<pre className="app-process-logs">{process.logs.join('\n')}</pre>:<p className="afc-muted">暂无日志。</p>)}
  </SidebarDialog>;
 }

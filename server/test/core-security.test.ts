@@ -13,42 +13,12 @@ import {
   verifySecretToken
 } from '../src/core/security/index.ts';
 import { INTERNAL_API_TOKEN_HEADER } from '../src/core/identity/index.ts';
-import { sanitizeMcpToolSchema, toOpenAiTools, type McpToolDefinition } from '../src/core/integrations/mcp/index.ts';
 import {
   assertNoTrustedIdentityLeak,
   assertSecretRedaction,
   assertSecurityError,
   coreSecurityAttackFixtures
 } from './helpers/core-security-kit.ts';
-
-test('Core Security strips forged identity fields before MCP/OpenAI tool exposure', () => {
-  const sanitizedArgs = sanitizeUntrustedIdentityArgs(coreSecurityAttackFixtures.forgedIdentityArgs);
-  assert.deepEqual(sanitizedArgs, { title: '测试待办' });
-  assertNoTrustedIdentityLeak(sanitizedArgs);
-
-  const tools: McpToolDefinition[] = [{
-    name: 'afc_create_todo',
-    description: '创建待办',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        actor_token: { type: 'string' },
-        actor_wecom_userid: { type: 'string' },
-        actor_name: { type: 'string' }
-      },
-      required: ['title', 'actor_token', 'actor_wecom_userid', 'actor_name']
-    }
-  }];
-
-  const sanitizedSchema = sanitizeMcpToolSchema(tools[0].inputSchema);
-  assert.deepEqual(sanitizedSchema.required, ['title']);
-  const exposedTools = toOpenAiTools(tools, {
-    allowedToolNames: new Set(['afc_create_todo'])
-  });
-  assert.deepEqual(exposedTools[0].function.parameters.required, ['title']);
-  assertNoTrustedIdentityLeak(exposedTools);
-});
 
 test('Core Security rejects SSRF-prone external endpoints and permits verified public endpoints', async () => {
   await assert.rejects(

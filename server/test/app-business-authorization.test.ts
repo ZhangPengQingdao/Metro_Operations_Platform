@@ -7,7 +7,7 @@ import {AppBusinessAuthorization} from '../src/app-platform/business-authorizati
 import {EmployeeAppAccess} from '../src/app-platform/employee/access.ts';
 import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
 import {createPostgresAuthorizationRepository} from '../src/platform/authorization/index.ts';
-import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
+import {demoManifest} from './helpers/registry-manifest.ts';
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 

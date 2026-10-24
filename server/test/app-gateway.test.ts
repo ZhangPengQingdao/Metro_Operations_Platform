@@ -1,14 +1,8 @@
-import { PassThrough } from 'node:stream';
-import { randomUUID } from 'node:crypto';
-import { startAppStdioGateway, APP_STDIO_GATEWAY_PREFIX } from '../src/app-platform/runtime/stdio-gateway.ts';
 import assert from 'node:assert/strict';
 import { createMemoryCoreTechnicalAuditRepository } from '../src/core/observability/index.ts';
-import { createCoreEventBus } from '../src/core/events/index.ts';
-import { AppExtensionRegistry, startAppExtensionRuntime } from '../src/app-platform/extensions/index.ts';
 import test from 'node:test';
-import { createAppGatewayClient, AppGatewayClientError } from '../../packages/platform-sdk/src/app-gateway.ts';
-import { createServer } from 'node:http';
-import { AppGateway, createAppGatewayHttpHandler, GatewayError, type AppGatewayOperation } from '../src/app-platform/gateway/index.ts';
+import { AppGateway } from '../src/app-platform/gateway/gateway.ts';
+import { GatewayError, type AppGatewayOperation } from '../src/app-platform/gateway/model.ts';
 import { GatewayAdmission } from '../src/app-platform/gateway/limits.ts';
 import { AppRegistryService, MemoryAppRegistryRepository, type AppRegistryRepository } from '../src/app-platform/registry/index.ts';
 import { buildAuthorizationSeed, createAuthorizationService, createMemoryAuthorizationRepository, AUTHORIZATION_ROLE_SEEDS } from '../src/platform/authorization/index.ts';
@@ -47,10 +41,9 @@ async function setup(repository: AppRegistryRepository) {
   return {people,registry,admin,application,resolver,authorization,permission,roleId,request,setTime:(value:string)=>{time=new Date(value);}};
 }
 
-async function gatewayFixture(limits = {}, extensions = false) {
+async function gatewayFixture(limits = {}) {
   const f=await setup(new MemoryAppRegistryRepository());
   const declared=manifest();
-  if(extensions){declared.backend={mode:'external',origin:'https://example.com'};declared.jobs=[{id:'sync',handler:'sync',intervalSeconds:60}];}
   let r=await f.registry.register(f.admin,declared);
   const issued=await f.registry.issueServiceCredential(f.admin,r.appId,r.revision);r=issued.installation;
   r=await f.registry.setEnabled(f.admin,r.appId,r.revision,true);
@@ -109,22 +102,6 @@ test('service calls use the aggregate app budget while people retain their actor
  assert.throws(()=>admission.authenticated('people','person-1'),/RATE_LIMITED/);
  assert.throws(()=>admission.authenticated('files','service'),/RATE_LIMITED/);
 });
-test('HTTP POST bearer boundary rejects spoofed identities, cookies and oversized bodies',async()=>{
- const f=await gatewayFixture({requestBytes:512});const server=createServer(createAppGatewayHttpHandler(f.gateway,f.r.appId));
- await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const addr=server.address();assert.ok(addr&&typeof addr==='object');const url=`http://127.0.0.1:${addr.port}`;
- try {
- const send=(body:unknown,auth=true)=>fetch(url,{method:'POST',headers:{'content-type':'application/json',...(auth?{authorization:`Bearer ${f.issued.credential}`}:{cookie:'session=admin'})},body:JSON.stringify(body)});
- assert.equal((await send(f.request)).status,200);
- const client=createAppGatewayClient(async(request)=>{const response=await send(request);return response.json();});
- assert.deepEqual(JSON.parse(JSON.stringify(await client.invoke('assets.read',{target:org}))),{ok:true});
- await assert.rejects(client.invoke('assets.read',{target:otherOrg}),e=>e instanceof AppGatewayClientError&&e.code==='ACCESS_DENIED'&&e.writeOutcome==='not_started');
- assert.equal((await send(f.request,false)).status,401);
- assert.equal((await send({...f.request,actor:{userId:personId}})).status,400);
- assert.equal((await send({...f.request,params:{target:'x'.repeat(600)}})).status,413);
- assert.equal((await fetch(url)).status,405);
- }finally{server.closeAllConnections();await new Promise<void>((r,j)=>server.close(e=>e?j(e):r()));}
-});
-
 test('aborted calls cannot execute and expiry/default grants fail closed',async()=>{
  const f=await gatewayFixture();let calls=0;f.setExecute(async()=>{calls++;return {};});
  const controller=new AbortController();controller.abort();await assert.rejects(f.gateway.invokeService(f.r.appId,f.issued.credential,f.request,controller.signal),/ABORTED/);assert.equal(calls,0);
@@ -209,66 +186,6 @@ test('unconfirmed success audit retains admission and does not claim delivery',a
  settleAudit(undefined as never);await new Promise(resolve=>setImmediate(resolve));
 });
 
-test('extension invokes actual credential gateway and fresh scoped L3 grants',async()=>{
- const f=await gatewayFixture({},true);let calls=0;f.setExecute(async()=>{calls++;return {ok:true};});
- const actor=await f.resolver.resolve({...await f.registry.authenticateServiceCredential(f.r.appId,f.issued.credential),requestId:'extensions',traceId:'extensions'});
- const extensions=new AppExtensionRegistry({
-  getInstallation:appId=>f.registry.get(f.admin,appId),
-  authorize:async(context,permission)=>(await context.authorize(permission,{organizationUnitId:org})).allowed,
-  executeGateway:async(_context,operation,params,signal)=>(await f.gateway.invokeService(f.r.appId,f.issued.credential,{version:'1.0',operation,params},signal)).result,
- });
- const handle=extensions.activate(f.r,[{kind:'job',id:'sync',permissionCode,operation:'assets.read'}]);
- await handle.invoke(actor,'job','sync',{target:org});assert.equal(calls,1);
- await assert.rejects(handle.invoke(actor,'job','sync',{target:otherOrg}));assert.equal(calls,1);
- await f.registry.setEnabled(f.admin,f.r.appId,f.r.revision,false);
- await assert.rejects(handle.invoke(actor,'job','sync',{target:org}),/STALE_EXTENSION/);assert.equal(calls,1);
-});
-
-test('lifecycle start cuts off actual gateway and stale extension callbacks before settlement',async()=>{
- const f=await gatewayFixture({},true);let calls=0;f.setExecute(async()=>{calls++;return {ok:true};});
- const actor=await f.resolver.resolve({...await f.registry.authenticateServiceCredential(f.r.appId,f.issued.credential),requestId:'lifecycle',traceId:'lifecycle'});
- const extensions=new AppExtensionRegistry({
-  getInstallation:appId=>f.registry.get(f.admin,appId),
-  authorize:async(context,code)=>(await context.authorize(code,{organizationUnitId:org})).allowed,
-  executeGateway:async(_context,operation,params,signal)=>(await f.gateway.invokeService(f.r.appId,f.issued.credential,{version:'1.0',operation,params},signal)).result,
- });
- const handle=extensions.activate(f.r,[{kind:'job',id:'sync',permissionCode,operation:'assets.read'}]);
- await handle.invoke(actor,'job','sync',{target:org});assert.equal(calls,1);
- const pending=await f.registry.beginLifecycle(f.admin,f.r.appId,f.r.revision,'disable');
- assert.equal(pending.enabled,false);
- await assert.rejects(handle.invoke(actor,'job','sync',{target:org}),/STALE_EXTENSION/);
- await assert.rejects(f.call(),/INVALID_CREDENTIAL/);
- assert.equal((await actor.authorize(permissionCode,{organizationUnitId:org})).allowed,false);
- assert.equal(calls,1);
- const disabled=await f.registry.settleLifecycle(f.admin,pending.appId,pending.revision,pending.lifecycle!.operationId,'completed');
- await assert.rejects(f.registry.setEnabled(f.admin,disabled.appId,disabled.revision,true));
- const enabling=await f.registry.beginLifecycle(f.admin,disabled.appId,disabled.revision,'enable');
- const enabled=await f.registry.settleLifecycle(f.admin,enabling.appId,enabling.revision,enabling.lifecycle!.operationId,'completed');
- await f.call();assert.equal(calls,2);
- await assert.rejects(handle.list(actor),/STALE_EXTENSION/);
- const fresh=extensions.activate(enabled,[{kind:'job',id:'sync',permissionCode,operation:'assets.read'}]);
- await fresh.invoke(actor,'job','sync',{target:org});assert.equal(calls,3);
-});
-
-test('lifecycle teardown cannot settle a stuck gateway execution merely because ingress closed',async()=>{
- const f=await gatewayFixture({},true);
- const actor=await f.resolver.resolve({...await f.registry.authenticateServiceCredential(f.r.appId,f.issued.credential),requestId:'runtime',traceId:'runtime'});
- const extensions=new AppExtensionRegistry({getInstallation:appId=>f.registry.get(f.admin,appId),authorize:async(context,code)=>(await context.authorize(code,{organizationUnitId:org})).allowed,executeGateway:async(_ctx,operation,params,signal)=>(await f.gateway.invokeService(f.r.appId,f.issued.credential,{version:'1.0',operation,params},signal)).result});
- const handle=extensions.activate(f.r,[{kind:'job',id:'sync',permissionCode,operation:'assets.read'}]);
- const session=await startAppExtensionRuntime({handle,bus:createCoreEventBus(),resolveActor:async()=>actor,drainGateway:()=>f.gateway.drain(f.r.appId),shutdownTimeoutMs:100});
- let entered!:()=>void,release!:(value:unknown)=>void;
- const started=new Promise<void>(resolve=>{entered=resolve;});
- f.setExecute(async()=>{entered();return new Promise(resolve=>{release=resolve;});});
- const invocation=handle.invoke(actor,'job','sync',{target:org});const rejected=assert.rejects(invocation);
- await started;
- const disabled=await f.registry.beginLifecycle(f.admin,f.r.appId,f.r.revision,'disable');
- // The registry only records intent; teardown must independently prove resources drained.
- await assert.rejects(session.stop(),/EXTENSION_RUNTIME_TIMEOUT/);await rejected;
- assert.equal((await f.registry.get(f.admin,disabled.appId)).lifecycle?.status,'running');
- release({ok:true});await session.stop();
- await f.registry.settleLifecycle(f.admin,disabled.appId,disabled.revision,disabled.lifecycle!.operationId,'completed');
-});
-
 test('gateway drain retains unconfirmed audit after bounded caller failure',async()=>{
  const f=await gatewayFixture();let finish!:()=>void;
  const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[f.operation],auditRepository:{append:async input=>{await new Promise<void>(resolve=>{finish=resolve;});return createMemoryCoreTechnicalAuditRepository().append(input);}}});
@@ -278,32 +195,6 @@ test('gateway drain retains unconfirmed audit after bounded caller failure',asyn
  await gateway.drain('other-app');finish();await pending;assert.equal(drained,true);
 });
 
-
-test('host-held stdio credentials use fresh registry checks before execution and before results',async()=>{
- for(const change of ['disable','revoke','rotate','grant']) for(const during of [false,true]) {
-  const f=await gatewayFixture();
-  const stdout=new PassThrough(),stdin=new PassThrough();
-  const session=startAppStdioGateway({appId:f.r.appId,serviceCredential:f.issued.credential,gateway:f.gateway,stdout,stdin});
-  let executed=0;
-  const mutate=async()=>{
-   if(change==='disable') await f.registry.setEnabled(f.admin,f.r.appId,f.r.revision,false);
-   if(change==='revoke') await f.registry.revokeServiceCredential(f.admin,f.r.appId,f.r.revision);
-   if(change==='rotate') await f.registry.issueServiceCredential(f.admin,f.r.appId,f.r.revision);
-   if(change==='grant') await f.registry.revokeGrant(f.admin,f.r.appId,f.r.revision,f.r.grants.find(g=>g.mode==='service')!.grantId);
-  };
-  f.setExecute(async()=>{executed++;if(during)await mutate();return {secret:'hidden-result'};});
-  try {
-   if(!during)await mutate();
-   const reply=new Promise<string>(resolve=>stdin.once('data',chunk=>resolve(chunk.toString())));
-   stdout.write(APP_STDIO_GATEWAY_PREFIX+JSON.stringify({id:randomUUID(),request:f.request})+'\n');
-   const wire=await reply;
-   const body=JSON.parse(wire.slice(APP_STDIO_GATEWAY_PREFIX.length));
-   assert.equal(body.error.code,change==='grant'?'ACCESS_DENIED':'INVALID_CREDENTIAL');
-   assert.equal(executed,during?1:0);
-   assert.ok(!wire.includes(f.issued.credential));assert.ok(!wire.includes('hidden-result'));
-  } finally {await session.stop();}
- }
-});
 
 test('read checkpoints avoid duplicate admission work and still reject revocation during resource lookup',async()=>{
  const f=await gatewayFixture();let checks=0;

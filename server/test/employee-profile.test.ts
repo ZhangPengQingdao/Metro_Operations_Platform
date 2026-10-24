@@ -14,7 +14,6 @@ import {createPostgresPeopleDirectoryRepository} from '../src/platform/people/in
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 import type {AppManifest} from '../src/app-platform/manifest/index.ts';
 import type {AppManagement} from '../src/app-platform/management/service.ts';
-import {AppStdioApiError} from '../src/app-platform/runtime/stdio-api.ts';
 import {EmployeeAppAccess} from '../src/app-platform/employee/access.ts';
 
 const org='51000000-0000-4000-8000-000000000001',person='51000000-0000-4000-8000-000000000002',position='51000000-0000-4000-8000-000000000003',place='51000000-0000-4000-8000-000000000004',otherPlace='51000000-0000-4000-8000-000000000005';

@@ -20,7 +20,6 @@ import {registerHealthRoutes} from './core/health/index.js';
 import {EmployeeIdentityService} from './platform/employee-identity/index.js';
 import {registerEmployeeRoutes} from './app-platform/employee/routes.js';
 import {EmployeeAppAccess} from './app-platform/employee/access.js';
-import {AppCapabilityPublication} from './app-platform/capabilities/publication.js';
 
 export async function buildApp(){
  const config=getCoreConfig();
@@ -50,9 +49,8 @@ export async function buildApp(){
  registerAppSubmissionRoutes(app,{pool,origin,adminOrigin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
  await registerRegistrationRoutes(app,{origin,adminOrigin,pool,resolveAdmin:resolveContext});
  registerUnifiedLogin(app,{origin,adminOrigin,pool,admin:identity,employee:employeeIdentity});
- registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),publications:new AppCapabilityPublication(pool),resolveAdmin:resolveContext,management});
+ registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});
  await registerAdminConsoleRoutes(app,{origin:adminOrigin,identity,pool,management,
-  lifecycle:management?{origin:adminOrigin,resolveContext,getHost:management.getHost}:undefined,
-  install:management?{origin:adminOrigin,resolveContext,uploadRoot:management.uploadRoot,installer:management}:undefined});
+  lifecycle:management?{getHost:management.getHost}:undefined});
  return app;
 }

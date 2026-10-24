@@ -84,24 +84,20 @@ test('an invalid server export fails to start', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('a v1 createAppBackend entry runs in the v2 child over IPC, two at once', async () => {
+test('a handler-map createAppBackend entry runs in the child over IPC, two at once', async () => {
   const { build } = await import('esbuild');
-  const dir = await mkdtemp(join(tmpdir(), 'mop-v2-legacy-'));
+  const dir = await mkdtemp(join(tmpdir(), 'mop-v2-handlers-'));
   const entry = join(dir, 'entry.mjs');
-  // Shape of the existing applications' entry.mjs: stdio backend, health port 8080, gateway-based data client.
+  // Shape of the applications' server.js: handler map, gateway-based data client.
   await writeFile(entry, `
-import {createServer} from 'node:http';
 import {createAppBackend} from '@metro/platform-sdk/app-backend';
 import {createAppDataClient} from '@metro/platform-sdk/app-gateway';
-const handlers = new Map([['detail', {method: 'POST', path: '/detail', requireEmployeeContext: true, async execute(payload, signal, employee) {
+const handlers = new Map([['detail', {method: 'POST', path: '/detail', async execute(payload, signal, employee) {
   const data = createAppDataClient({invoke: (...args) => backend.gateway.invoke(...args)});
   try { return {ok: true, result: {row: await data.get('records', payload.id), person: employee.personId}}; }
   catch (error) { return {ok: false, error: {code: error.code, writeOutcome: error.writeOutcome}}; }
 }}]]);
-const backend = createAppBackend({input: process.stdin, output: process.stdout, handlers});
-const health = createServer((req, res) => { res.writeHead(200); res.end(); });
-health.listen(8080, '127.0.0.1');
-void backend.whenClosed.then(() => health.close());
+const backend = createAppBackend({handlers});
 `);
   await build({ entryPoints: [entry], outfile: join(dir, 'server.js'), bundle: true, format: 'esm', platform: 'node', target: 'node22', logLevel: 'silent',
     absWorkingDir: fileURLToPath(new URL('../..', import.meta.url)), nodePaths: [fileURLToPath(new URL('../../node_modules', import.meta.url))] });

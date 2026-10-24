@@ -6,7 +6,7 @@ const businessErrors=new Set(['INVALID_INPUT','EMPLOYEE_REQUIRED','MATERIAL_DENI
 export function createMaterialsHandlers(gateway){
  const access=createMaterialsAccess(gateway);
  const routes={recipients:'recipients',update:'update','correct-inbound':'correct','correct-outbound':'correct',create:'create',inbound:'move',outbound:'move','reverse-inbound':'reverse','reverse-outbound':'reverse',list:'list',session:'session',bootstrap:'bootstrap',members:'members','set-manager':'setManager'};
- return new Map(Object.entries(routes).map(([name,operation])=>[name,{method:'POST',path:`/${name}`,requireEmployeeContext:true,
+ return new Map(Object.entries(routes).map(([name,operation])=>[name,{method:'POST',path:`/${name}`,
   async execute(payload,signal,employee){
    try{
     if(!payload||typeof payload!=='object'||Array.isArray(payload)||'direction' in payload||'expectedKind' in payload||'ownOnly' in payload)throw Error('INVALID_INPUT');

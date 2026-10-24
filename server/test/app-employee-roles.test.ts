@@ -9,7 +9,7 @@ import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platf
 import {createPostgresAuthorizationRepository} from '../src/platform/authorization/index.ts';
 import {createPostgresPeopleDirectoryRepository} from '../src/platform/people/index.ts';
 import {createPeopleDirectoryOperation} from '../src/app-platform/gateway/people-directory.ts';
-import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
+import {demoManifest} from './helpers/registry-manifest.ts';
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 test('administrator configures only declared app role permissions, assigns employee roles with CAS and leaves an audit',async()=>{
  const pg=new PGlite(),db={query:async(sql:string,args?:readonly unknown[])=>args?pg.query(sql,[...args]):(await pg.exec(sql)).at(-1)!,release(){}};

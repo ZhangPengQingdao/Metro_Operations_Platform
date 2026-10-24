@@ -27,21 +27,15 @@ try:
    r=subprocess.run(['docker','exec','-i',db,'psql','-U','postgres','-v','ON_ERROR_STOP=1'],input=statement.encode(),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    assert r.returncode==0
  settings={'DATABASE_URL':f'postgresql://metro_api:{password}@127.0.0.1/metro_operations_platform','SESSION_SECRET':secrets.token_hex(32),'AI_PROVIDER_ENCRYPTION_KEY':secrets.token_hex(32),'PUBLIC_BASE_URL':'https://ops.example.com','CORS_ORIGIN':'https://ops.example.com','HOST':'0.0.0.0','MOP_ADMIN_USERNAME':'smokeadmin','MOP_ADMIN_DISPLAY_NAME':'Smoke','MOP_ADMIN_PASSWORD':admin_password}
- # Exercise the same shared database network and managed-storage startup as the trial installer.
+ # Exercise the same shared database network and application management startup as the installer.
  subprocess.run(['docker','exec','-i',db,'psql','-U','postgres','-d','metro_operations_platform','-v','ON_ERROR_STOP=1'],input=b'REVOKE CREATE,TEMPORARY ON DATABASE metro_operations_platform FROM PUBLIC; REVOKE CREATE ON SCHEMA public FROM PUBLIC;',check=True,stdout=subprocess.DEVNULL)
- import sys
- sys.path.insert(0,str(pathlib.Path('deploy').resolve()))
- from updater import RUNTIME_IMAGE
- run('docker','pull',RUNTIME_IMAGE)
- image=json.loads(run('docker','image','inspect',RUNTIME_IMAGE).stdout)[0]
  apps=root/'apps';apps.mkdir();apps.chmod(0o777)
- for name in ['packages','runtime','uploads']:
+ for name in ['packages','uploads']:
   (apps/name).mkdir();(apps/name).chmod(0o777)
- policy=apps/'publishers.json';policy.write_text(json.dumps({'policyVersion':'1.0','revision':1,'keys':[]}));policy.chmod(0o444)
  management=root/'app-management.json'
- management.write_text(json.dumps({'version':1,'artifactRoot':str(apps/'packages'),'runtimeRoot':str(apps/'runtime'),'uploadRoot':str(apps/'uploads'),'publisherPolicyFile':str(policy),'approvedManifestDigests':[],'managedStorage':True,'docker':{'socketPath':'/var/run/docker.sock','runtimeImage':RUNTIME_IMAGE,'approval':{'imageId':image['Id'],'config':image['Config']}}}));management.chmod(0o444)
- settings.update({'MOP_APP_MANAGEMENT_CONFIG':'/run/secrets/app-management.json','MOP_APP_STORAGE_ADMIN_DATABASE_URL':f'postgresql://postgres:{password}@127.0.0.1/metro_operations_platform','MOP_APP_RESOURCE_ORIGIN':'https://resources.example.net'})
- mounts=['--group-add',str(os.stat('/var/run/docker.sock').st_gid),'-v','/var/run/docker.sock:/var/run/docker.sock','-v',str(apps)+':'+str(apps),'-v',str(management)+':/run/secrets/app-management.json:ro']
+ management.write_text(json.dumps({'version':1,'artifactRoot':str(apps/'packages'),'uploadRoot':str(apps/'uploads')}))
+ settings.update({'MOP_APP_MANAGEMENT_CONFIG':'/run/secrets/app-management.json'})
+ mounts=['-v',str(apps)+':'+str(apps),'-v',str(management)+':/run/secrets/app-management.json:ro']
  uploads=root/'uploads';uploads.mkdir();uploads.chmod(0o777)
  settings['UPLOAD_DIR']='/var/lib/mop/uploads';mounts+=['-v',str(uploads)+':/var/lib/mop/uploads']
  maintenance=root/'maintenance';maintenance.mkdir();maintenance.chmod(0o777)
@@ -91,7 +85,7 @@ try:
 
  # Validate the installer's actual generated Caddy configuration, not a test-only proxy.
  import updater as installer
- installer.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':os.stat('/var/run/docker.sock').st_gid,'proxyMode':'external','httpPort':18080,'applications':True,'resourcePort':18081,'resourceDomain':'resources.example.net'})
+ installer.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':0,'proxyMode':'external','httpPort':18080,'applications':True})
  release=root/'release';release.mkdir()
  images={name:json.loads(run('docker','image','inspect',ref).stdout)[0]['Id'] for name,ref in [('api','mop-api:test'),('web','mop-web:test'),('database',postgres)]}
  archive=release/'images.tar'
@@ -100,7 +94,7 @@ try:
  installer.Deployment(root).prepare(release,{'images':images,'artifact':{'bytes':archive.stat().st_size,'sha256':installer.file_hash(archive)}})
  caddy=release/'Caddyfile'
  web='mop-web-'+suffix;containers.append(web)
- run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-p','127.0.0.1::8081','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')
+ run('docker','run','-d','--name',web,'--network',network,'-p','127.0.0.1::80','-e','MOP_DOMAIN=http://localhost','-v',str(caddy)+':/etc/caddy/Caddyfile:ro','mop-web:test')
  webport=json.loads(run('docker','inspect',web).stdout)[0]['NetworkSettings']['Ports']['80/tcp'][0]['HostPort']
  for _ in range(30):
   try:
@@ -109,14 +103,6 @@ try:
    break
   except Exception:time.sleep(1)
  else:raise RuntimeError('Web image not ready')
- resourceport=json.loads(run('docker','inspect',web).stdout)[0]['NetworkSettings']['Ports']['8081/tcp'][0]['HostPort']
- resourcebase='http://127.0.0.1:'+resourceport
- with urllib.request.urlopen(urllib.request.Request(resourcebase+'/health/live',headers={'Host':'resources.example.net','Cookie':'platform-session=ignored'})) as response:
-  assert response.status==204 and response.headers.get('X-Mop-Resource')=='1' and not response.headers.get('Set-Cookie')
- try:
-  urllib.request.urlopen(urllib.request.Request(resourcebase+'/api/health/ready',headers={'Host':'resources.example.net'}))
-  raise AssertionError('Platform API exposed on resource domain')
- except urllib.error.HTTPError as error:assert error.code==404
  print('Linux images: fresh DB, repeated migrations, bootstrap, non-root API login and frontend passed.')
 finally:
  for name in reversed(containers):run('docker','rm','-f','-v',name,check=False)

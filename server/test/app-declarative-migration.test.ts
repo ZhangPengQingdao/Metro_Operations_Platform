@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
-import { compileAppMigration, APP_MIGRATION_FILE_MAX_BYTES } from '../src/app-platform/storage/index.ts';
+import { compileAppMigration, APP_MIGRATION_FILE_MAX_BYTES } from '../src/app-platform/v2/declarative-migration.ts';
 import type { AppDeclarativeMigration, AppMigrationOperation } from '@metro/platform-sdk/app-manifest';
 
 const schema = 'app_' + 'a'.repeat(32);
@@ -40,7 +40,7 @@ test('strict migration shape rejects SQL knobs, prototypes, wrong versions and m
     JSON.stringify({ ...value, operations: [{ kind: 'addColumn', table: 'records', column: { name: 'a', type: 'text', nullable: false } }] }),
     JSON.stringify({ ...value, operations: [{ kind: 'createIndex', table: 'records', name: 'idx', columns: ['title'], where: 'true' }] }),
     JSON.stringify({ ...value, operations: [{ kind: 'dropTable', table: 'records' }] }),
-  ]) assert.throws(() => compileAppMigration(invalid, schema), /^AppStorageError: MIGRATION_INVALID_DECLARATION$/);
+  ]) assert.throws(() => compileAppMigration(invalid, schema), /^AppMigrationDeclarationError: MIGRATION_INVALID_DECLARATION$/);
   assert.equal(Object.prototype.hasOwnProperty.call(Object.prototype, 'polluted'), false);
 });
 

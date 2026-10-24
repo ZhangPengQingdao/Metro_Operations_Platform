@@ -43,7 +43,7 @@ export function createNotificationGatewayOperations(pool:ConnectablePool&Queryab
      const created=await service(client).createNotification(context,{id:p.id,source:{appId,entityType:'signature',entityId:p.entityId},
       notificationKey:`signature:${p.entityId}:${p.personId}`,idempotencyKey:p.id,category:'signature',readBehavior:'state_bound',
       display:{title:p.title,body:p.body,severity:'normal',sourceLabel:'在线签字'},
-      navigation:{href:`/employee/app/${appId}/sign?task=${p.entityId}`,routeName:null,params:{}},recipients:[{recipientType:'person',recipientId:p.personId}],channels:['in_app']});
+      navigation:{href:`/employee/app/${appId}/sign/${p.entityId}`,routeName:null,params:{}},recipients:[{recipientType:'person',recipientId:p.personId}],channels:['in_app']});
      if(signal.aborted)throw new GatewayError('ABORTED');return {id:created.id};
     });}finally{client.release();}
    },validateResult:value=>!!value&&typeof value==='object'&&uuid.safeParse((value as {id?:unknown}).id).success},

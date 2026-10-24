@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
-import {runtimeCountInput,runtimeCountQuery,runtimeListInput,runtimeListQuery,runtimeListSelection,runtimeDailyCountInput,runtimeDailyCountQuery} from '../src/app-platform/storage/runtime-list.ts';
+import {runtimeCountInput,runtimeCountQuery,runtimeListInput,runtimeListQuery,runtimeListSelection,runtimeDailyCountInput,runtimeDailyCountQuery} from '../src/app-platform/v2/data-query.ts';
 import {isAppDashboardSnapshot,readAppDashboard} from '../../packages/platform-sdk/src/app-dashboard.ts';
-import {AppRuntimeDataService} from '../src/app-platform/storage/runtime-data.ts';
+import {AppDataServiceV2} from '../src/app-platform/v2/data.ts';
 import {createFaultService} from '../../applications/faults/src/service.mjs';
 import {createMaintenanceService} from '../../applications/maintenance/src/service.mjs';
 import {createHuicetongService} from '../../applications/huicetong/src/service.mjs';
@@ -35,7 +35,7 @@ test('count and projection apply the same scoped predicates without reading larg
  }finally{await db.close();}
 });
 test('read batch admits count but rejects mutations and excessive work',()=>{
- const service=new AppRuntimeDataService({endpoint:{host:'127.0.0.1',port:5432,database:'test',ssl:false},connectAdmin:async()=>{throw Error('unused');},findInstallation:async()=>null});
+ const service=new AppDataServiceV2({pool:{connect:async()=>{throw Error('unused');}} as never,findInstallation:async()=>null});
  const batch=service.operations().find(op=>op.name==='platform.app_data.read_batch')!;
  assert.ok(batch.validateParams({operations:[{kind:'count',table:'records'},{table:'records',columns:['title'],pageSize:1}]}));
  assert.equal(batch.validateParams({operations:[{kind:'count',table:'records',action:'delete'}]}),false);

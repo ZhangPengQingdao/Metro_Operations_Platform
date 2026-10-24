@@ -10,15 +10,13 @@
 
 ## 应用接入
 
-应用在签名 manifest 中声明：
+应用在 `app.json` 中把一个接口标为工作台摘要（最多一个，必须声明权限）：
 
 ```json
-{
-  "dashboard": { "apiId": "dashboard-summary", "routeId": "records" }
-}
+{"api": [{"id": "dashboard-summary", "permission": "read", "dashboard": true}]}
 ```
 
-`apiId` 必须引用 `expose.mode=read` 的 GET/POST API；该 API 同时需要应用自己的 `businessPermission` 和相同的 `permission`。`routeId` 必须引用 sandbox 应用已声明的页面。平台不猜测接口，也不自动把其他接口放到首页。旧应用未声明时保留应用入口，页面不显示虚构的零值统计。
+平台把它挂到应用侧栏的第一个页面上。平台不猜测接口，也不自动把其他接口放到首页；未声明时保留应用入口，页面不显示虚构的零值统计。
 
 应用 handler 接受空对象，使用宿主绑定的员工身份，返回 `{ok:true,result:AppDashboardSnapshot}`。错误沿用现有 `{ok:false,error:{code,writeOutcome}}`。公开类型与校验来自 `@metro/platform-sdk/app-dashboard`：
 
@@ -49,15 +47,10 @@ interface AppDashboardSnapshot {
 
 各应用预览最新一条记录，首页汇合排序；该区不是完整审计日志。
 
-平台和四个应用需分别更新：先发布平台 0.25.0，再重新构建、签名并更新应用包；新应用的最低平台版本是 0.25.0。修改仓库源码不会自动改变已安装的应用。
+修改仓库源码不会自动改变已安装的应用，需重新构建并上传 `.mopkg`。
 
-## 性能改动
+## 读取方式
 
-1. 管理员与员工工作区按路由加载，登录与员工访问无需下载完整管理端。
-2. 不声明 `clientRouting` 的应用，在保留的同一路径重新显示时也复用 iframe；路径或安装/授权版本变化仍重新准入。
-3. 可见应用准入轮询由 5 秒改为 30 秒，聚焦和标签恢复时检查；后台标签不轮询。所有业务请求仍走服务端权限校验。无业务请求的界面撤权展示可能等待一次轮询；服务端原有 30 秒准入缓存边界没有放宽。
-4. `platform.app_data.read_batch` 支持 `{kind:'count',table,filters?,anyOf?,range?,search?}`。与普通读取一样，仅服务身份可用，计数范围由应用组织权限构造，表和列按绑定 schema 验证，值全部参数化；不允许任意 SQL、groupBy 或跨 schema。
-5. 同一批次还支持 `{kind:'daily_count',table,column,from,days,filters?,anyOf?}`。column 必须是声明的 timestamptz 列，from 为 YYYY-MM-DD，days 为 1–31；以 Asia/Shanghai 自然日计数，返回 `{days:[{day,count}]}`，无数据日由应用在成功返回后补零，失败不补零。仍最多四项读取，故障/检修摘要的趋势占用第四项。
-6. 列表支持 `columns`（1–32 个不重复字段）；自动保留 `id` 和排序游标列。故障/检修的计数、精简预览和每日趋势合并为一次批次、一次受限连接租约及一个 SQL 语句。待办/慧策通因排除删除/取消记录已用满四项，趋势再使用一个顺序单项批次；两批次不承诺同一数据库快照。所有批次继续限定现有组织范围，避免逐页传输大 JSON 子项。
-
-保留双应用上限、独立资源域、sandbox 和服务端权限检查。受限数据库连接租约、冷启动资源获取、跨进程协议仍有成本；本轮没有宣称已达到原生集成速度。后续应按真实部署的 `observeTiming` 数据区分连接、SQL、准入和容器开销，再评估连接复用等涉及隔离模型的优化。
+- `platform.app_data.read_batch` 支持 `{kind:'count',table,filters?,anyOf?,range?,search?}`；计数范围由应用按组织权限构造，表和列按本应用 schema 校验，值全部参数化，不允许任意 SQL、groupBy 或跨 schema。
+- 同一批次还支持 `{kind:'daily_count',table,column,from,days,filters?,anyOf?}`：column 必须是 timestamptz 列，from 为 YYYY-MM-DD，days 为 1–31，以 Asia/Shanghai 自然日计数，返回 `{days:[{day,count}]}`；无数据日由应用在成功返回后补零，失败不补零。每批最多四项读取。
+- 列表支持 `columns`（1–32 个不重复字段），自动保留 `id` 和排序游标列，避免传输大 JSON 字段。

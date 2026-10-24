@@ -25,11 +25,13 @@ try{
  await writeFile(join(staging,'developer-docs/platform-sdk.md'),sdkReference);
  await writeFile(join(staging,'developer-docs/platform-sdk.json'),JSON.stringify({version,operations:PLATFORM_APP_OPERATIONS,modules:PLATFORM_SDK_MODULES,errors:APP_INTEGRATION_ERRORS},null,2)+'\n');
  await writeFile(join(staging,'developer-docs/VERSION'),version+'\n');
- await cp(join(root,'developer/metro-app-development'),join(staging,'metro-app-development'),{recursive:true});
+ // Skill: the same SKILL.md that `mop-app init` writes into new projects, plus the offline references.
+ await mkdir(join(staging,'metro-app-development'));
+ await cp(join(root,'packages/platform-cli/templates/v2/skill/SKILL.md'),join(staging,'metro-app-development/SKILL.md'));
  await cp(join(staging,'developer-docs'),join(staging,'metro-app-development/references'),{recursive:true});
- await mkdir(join(staging,'standard-app'));
- for(const file of ['app.json','package.json','build.mjs','handlers.mjs','entry.mjs','ui.jsx','test.mjs','.gitignore'])await cp(join(root,'examples/standard-app',file),join(staging,'standard-app',file));
- for(const [id,title,folder] of [['docs','离线开发文档','developer-docs'],['skill','应用开发 Agent Skill','metro-app-development'],['example','标准应用示例','standard-app']]){
+ // Example: a fresh project from the CLI template (app.json, icon, page, API, migration, tests).
+ run(process.execPath,[join(root,'packages/platform-cli/dist/cli.mjs'),'init','example-app','--id','example-app','--name','示例应用'],staging);
+ for(const [id,title,folder] of [['docs','离线开发文档','developer-docs'],['skill','应用开发 Agent Skill','metro-app-development'],['example','应用项目示例','example-app']]){
   const fileName=`metro-${id}-${version}.tar.gz`;
   run('tar',['-czf',join(output,fileName),'-C',staging,folder]);
   await record(id,title,fileName);

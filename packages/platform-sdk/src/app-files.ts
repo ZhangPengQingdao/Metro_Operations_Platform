@@ -1,13 +1,13 @@
-/** Browser-side file helpers for signed sandbox apps. Attachment Blobs use a separate host channel. */
+/** Browser-side file helpers for app pages: bounded local file reads and photos stored through the app's own API. Attachments use `useApp().files`. */
 import type {AppGatewayJson} from './app-gateway.js';
 export class AppFileError extends Error {
-  constructor(readonly code: 'INVALID_FILE' | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE' | 'INVALID_TEXT' | 'INVALID_DOWNLOAD' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE') {
+  constructor(readonly code: 'INVALID_FILE' | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE' | 'INVALID_TEXT' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE') {
     super(code);
     this.name = 'AppFileError';
   }
 }
 
-export interface SandboxFileOptions {
+export interface LocalFileOptions {
   /** Maximum bytes to read; the SDK hard limit is 50 MiB. */
   maxBytes: number;
   /** File extension checks are a UI guard, not proof of the file format. */
@@ -15,7 +15,6 @@ export interface SandboxFileOptions {
 }
 
 const MAX_READ_BYTES = 50 * 1024 * 1024;
-const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 export const APP_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 export const APP_ATTACHMENT_EXTENSIONS = Object.freeze(['.doc','.docx','.xls','.xlsx','.pdf','.zip'] as const);
 export const APP_IMAGE_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
@@ -26,7 +25,7 @@ export const APP_IMAGE_MAX_PARTS = Math.ceil(APP_IMAGE_MAX_BYTES / APP_IMAGE_PAR
 const safeName = (name: string) => typeof name === 'string' && name.length > 0 && name.length <= 180
   && name.trim() === name && !/[\\/\u0000-\u001f\u007f<>:"|?*]/.test(name) && name !== '.' && name !== '..';
 
-function validateFile(file: Blob & {name: string}, options: SandboxFileOptions) {
+function validateFile(file: Blob & {name: string}, options: LocalFileOptions) {
   if (!file || !options || typeof file.arrayBuffer !== 'function' || !safeName(file.name)
     || !Number.isSafeInteger(options.maxBytes) || options.maxBytes < 1 || options.maxBytes > MAX_READ_BYTES
     || !Number.isSafeInteger(file.size) || file.size < 0) throw new AppFileError('INVALID_FILE');
@@ -38,7 +37,7 @@ function validateFile(file: Blob & {name: string}, options: SandboxFileOptions) 
 }
 
 /** Read a user-selected File locally, with explicit size and extension bounds. */
-export async function readSandboxFile(file: Blob & {name: string}, options: SandboxFileOptions): Promise<Uint8Array> {
+export async function readLocalFile(file: Blob & {name: string}, options: LocalFileOptions): Promise<Uint8Array> {
   validateFile(file, options);
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength > options.maxBytes) throw new AppFileError('FILE_TOO_LARGE');
@@ -46,35 +45,15 @@ export async function readSandboxFile(file: Blob & {name: string}, options: Sand
 }
 
 /** Decode text strictly so malformed bytes cannot silently alter imported records. */
-export async function readSandboxTextFile(file: Blob & {name: string}, options: SandboxFileOptions): Promise<string> {
-  const bytes = await readSandboxFile(file, options);
+export async function readLocalTextFile(file: Blob & {name: string}, options: LocalFileOptions): Promise<string> {
+  const bytes = await readLocalFile(file, options);
   try { return new TextDecoder('utf-8', {fatal: true}).decode(bytes).replace(/^\ufeff/, ''); }
   catch { throw new AppFileError('INVALID_TEXT'); }
 }
 
-/** Trigger an authorized sandbox download. The signed manifest must declare ui.downloads. */
-export function downloadSandboxFile(name: string, contents: Blob | Uint8Array | ArrayBuffer, contentType = 'application/octet-stream'): void {
-  if (!safeName(name) || !/^[-\w.+]+\/[-\w.+]+$/.test(contentType)) throw new AppFileError('INVALID_DOWNLOAD');
-  const blob = contents instanceof Blob ? contents : new Blob([contents], {type: contentType});
-  if (!Number.isSafeInteger(blob.size) || blob.size < 1 || blob.size > MAX_DOWNLOAD_BYTES) throw new AppFileError('INVALID_DOWNLOAD');
-  if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') throw new AppFileError('INVALID_DOWNLOAD');
-  const url = URL.createObjectURL(blob);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    link.style.display = 'none';
-    document.body.append(link);
-    try { link.click(); } finally { link.remove(); }
-  } finally {
-    // Revoking in the same task can cancel a browser download.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }
-}
-
 /** Turn a user-selected JPEG, PNG or WebP into a bounded JPEG without retaining the source file. */
-export async function prepareSandboxImage(file: Blob & {name: string}): Promise<Uint8Array> {
-  await readSandboxFile(file, {maxBytes: APP_IMAGE_SOURCE_MAX_BYTES, extensions: ['.jpg','.jpeg','.png','.webp']});
+export async function prepareImageUpload(file: Blob & {name: string}): Promise<Uint8Array> {
+  await readLocalFile(file, {maxBytes: APP_IMAGE_SOURCE_MAX_BYTES, extensions: ['.jpg','.jpeg','.png','.webp']});
   if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') throw new AppFileError('INVALID_IMAGE');
   let bitmap: ImageBitmap;
   try { bitmap = await createImageBitmap(file); } catch { throw new AppFileError('INVALID_IMAGE'); }
@@ -97,8 +76,8 @@ export async function prepareSandboxImage(file: Blob & {name: string}): Promise<
   } finally { bitmap.close(); }
 }
 
-export interface SandboxImageOperations {begin: string; part: string; finish: string; read: string}
-export type SandboxImageInvoke = (operation: string, payload: AppGatewayJson, write: boolean) => Promise<unknown>;
+export interface AppImageOperations {begin: string; part: string; finish: string; read: string}
+export type AppImageInvoke = (operation: string, payload: AppGatewayJson, write: boolean) => Promise<unknown>;
 const imageId = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const encodeBase64 = (bytes: Uint8Array) => { let value = ''; for (const byte of bytes) value += String.fromCharCode(byte); return btoa(value); };
 const decodeBase64 = (value: unknown) => {
@@ -111,7 +90,7 @@ const decodeBase64 = (value: unknown) => {
 const sha256 = async (bytes: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(byte => byte.toString(16).padStart(2, '0')).join('');
 
 /** Uses app-defined API handlers; each write has a fresh intent ID and is never retried after an unknown result. */
-export function createSandboxImageClient(invoke: SandboxImageInvoke, operations: SandboxImageOperations) {
+export function createAppImageClient(invoke: AppImageInvoke, operations: AppImageOperations) {
   if (typeof invoke !== 'function' || !operations || Object.values(operations).some(value => typeof value !== 'string' || !value)) throw new AppFileError('INVALID_IMAGE');
   async function uploadPrepared(bytes: Uint8Array, input: {organizationId: string; kind: string}): Promise<string> {
     if (!(bytes instanceof Uint8Array) || bytes.length < 5 || bytes.length > APP_IMAGE_MAX_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes.at(-2) !== 0xff || bytes.at(-1) !== 0xd9
@@ -123,7 +102,7 @@ export function createSandboxImageClient(invoke: SandboxImageInvoke, operations:
     return id;
   }
   return Object.freeze({
-    async upload(file: Blob & {name: string}, input: {organizationId: string; kind: string}) { return uploadPrepared(await prepareSandboxImage(file), input); },
+    async upload(file: Blob & {name: string}, input: {organizationId: string; kind: string}) { return uploadPrepared(await prepareImageUpload(file), input); },
     uploadPrepared,
     async read(input: {recordId: string; photoId: string}): Promise<Blob> {
       if (!imageId(input?.recordId) || !imageId(input?.photoId)) throw new AppFileError('INVALID_IMAGE');
@@ -139,46 +118,6 @@ export function createSandboxImageClient(invoke: SandboxImageInvoke, operations:
       let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
       if (bytes.length !== first.bytes || await sha256(bytes) !== first.sha256) throw new AppFileError('INVALID_IMAGE');
       return new Blob([bytes], {type: first.mime});
-    }
-  });
-}
-
-export interface SandboxAttachmentTransport {
-  uploadAttachment(blob:Blob,params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
-  readAttachment(params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
-  listAttachments(params:AppGatewayJson,signal?:AbortSignal):Promise<unknown>;
-}
-
-/** A signed app supplies its own record authorization API; the host transports the Blob outside the JSON Bridge. */
-export function createSandboxAttachmentClient(transport:SandboxAttachmentTransport){
-  if(!transport||typeof transport.uploadAttachment!=='function'||typeof transport.readAttachment!=='function'||typeof transport.listAttachments!=='function')throw new AppFileError('INVALID_FILE');
-  return Object.freeze({
-    async upload(file:Blob&{name:string},input:{entityType:string;entityId:string;intentId:string},signal?:AbortSignal){
-      if(!file||typeof file.size!=='number'||!safeName(file.name)||!APP_ATTACHMENT_EXTENSIONS.some(extension=>file.name.toLowerCase().endsWith(extension)))throw new AppFileError('UNSUPPORTED_FILE');
-      if(!Number.isSafeInteger(file.size)||file.size<1)throw new AppFileError('INVALID_FILE');
-      if(file.size>APP_ATTACHMENT_MAX_BYTES)throw new AppFileError('FILE_TOO_LARGE');
-      if(!input||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||!imageId(input.entityId)||!imageId(input.intentId))throw new AppFileError('INVALID_FILE');
-      const result=await transport.uploadAttachment(file,{entityType:input.entityType,entityId:input.entityId,intentId:input.intentId,fileName:file.name},signal) as {attachmentId?:unknown;fileName?:unknown;sizeBytes?:unknown;contentType?:unknown};
-      if(!imageId(result?.attachmentId)||result.fileName!==file.name||result.sizeBytes!==file.size||typeof result.contentType!=='string')throw new AppFileError('INVALID_FILE');
-      return result as {attachmentId:string;fileName:string;sizeBytes:number;contentType:string};
-    },
-    async read(attachmentId:string,signal?:AbortSignal){
-      if(!imageId(attachmentId))throw new AppFileError('INVALID_FILE');
-      const result=await transport.readAttachment({attachmentId},signal) as {blob?:unknown;fileName?:unknown};
-      const blob=result?.blob,fileName=result?.fileName;
-      if(!(blob instanceof Blob)||typeof fileName!=='string'||!safeName(fileName)||blob.size<1||blob.size>APP_ATTACHMENT_MAX_BYTES||!APP_ATTACHMENT_EXTENSIONS.some(extension=>fileName.toLowerCase().endsWith(extension)))throw new AppFileError('INVALID_FILE');
-      return {blob,fileName};
-    },
-    async list(input:{entityType:string;entityId:string;afterId?:string},signal?:AbortSignal){
-      if(!input||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||!imageId(input.entityId)||input.afterId!==undefined&&!imageId(input.afterId))throw new AppFileError('INVALID_FILE');
-      const result=await transport.listAttachments({entityType:input.entityType,entityId:input.entityId,...(input.afterId?{afterId:input.afterId}:{})},signal) as {attachments?:unknown;nextCursor?:unknown};
-      if(!Array.isArray(result?.attachments)||result.attachments.length>50||result.nextCursor!==null&&!(typeof result.nextCursor==='string'&&imageId(result.nextCursor))
-        ||result.attachments.some(row=>!row||typeof row!=='object'||!imageId(row.attachmentId)||!imageId(row.intentId)||!safeName(row.fileName)||!Number.isSafeInteger(row.sizeBytes)||row.sizeBytes<1||row.sizeBytes>APP_ATTACHMENT_MAX_BYTES||typeof row.contentType!=='string'||typeof row.createdAt!=='string'))throw new AppFileError('INVALID_FILE');
-      return result as {attachments:{attachmentId:string;intentId:string;fileName:string;contentType:string;sizeBytes:number;createdAt:string}[];nextCursor:string|null};
-    },
-    async download(attachmentId:string,signal?:AbortSignal){
-      const {blob,fileName}=await this.read(attachmentId,signal);
-      downloadSandboxFile(fileName,blob,blob.type||'application/octet-stream');
     }
   });
 }

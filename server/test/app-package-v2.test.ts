@@ -11,13 +11,13 @@ import { PGlite } from '@electric-sql/pglite';
 import { satisfiesPlatformRange, validateAppManifestV2, validateAppMigration } from '@metro/platform-sdk/manifest';
 import { createMopkg, inspectMopkg, readMopkg } from '@metro/platform-sdk/mopkg';
 import { createAppServerContext, defineServer } from '@metro/platform-sdk/server';
-import { previewAppPackageV2, summarizeV1Installation } from '../src/app-platform/install/package-v2.ts';
+import { previewAppPackageV2, summarizeInstallation } from '../src/app-platform/v2/preview.ts';
 import { ADMIN_PASSWORD_SESSION_SQL } from '../src/setup/password-policy-migration.ts';
 import { ADMIN_IDENTITY_MIGRATION, AdminIdentityService, registerAdminIdentityRoutes } from '../src/core/admin-identity/index.ts';
 import { registerAdminConsoleRoutes } from '../src/app-platform/admin/routes.ts';
 import { APP_REGISTRY_SQL, AppRegistryService, PostgresAppRegistryRepository } from '../src/app-platform/registry/index.ts';
 import type { PlatformAdministratorContext } from '../src/platform/context/index.ts';
-import { demoManifest } from '../../src/app-platform/samples/host-demo/manifest.ts';
+import { demoManifest } from './helpers/registry-manifest.ts';
 
 const encoder = new TextEncoder();
 const manifest = (overrides: Record<string, unknown> = {}) => ({
@@ -124,7 +124,7 @@ test('mopkg layout issues are reported, not thrown', () => {
   assert.ok(paths(createMopkg(entries({ 'migrations/001-initial.json': '{"migrationVersion":"1.0","operations":[]}' }))).includes('migrations/001-initial.json'));
 });
 
-test('preview compiles migrations, checks platform version and compares with the v1 installation', async () => {
+test('preview compiles migrations, checks platform version and compares with the installed version', async () => {
   const none = async () => null;
   const fresh = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.26.0', findInstalled: none });
   assert.deepEqual(fresh.issues, []);
@@ -137,17 +137,13 @@ test('preview compiles migrations, checks platform version and compares with the
   assert.equal(old.platform.compatible, false);
   assert.ok(old.issues.some(issue => issue.path === 'app.json#platform'));
 
-  const installed = { version: '1.2.0', model: 'v1' as const, permissions: ['app.fire-check.read', 'app.fire-check.manage'], platformAccess: [] };
+  const installed = { version: '1.2.0', permissions: ['app.fire-check.read', 'app.fire-check.manage'], platformAccess: [] };
   const downgrade = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.26.0', findInstalled: async () => installed });
   assert.equal(downgrade.change?.kind, 'downgrade');
   assert.deepEqual(downgrade.change?.addedPermissions, ['app.fire-check.inspect']);
   assert.deepEqual(downgrade.change?.removedPermissions, ['app.fire-check.manage']);
   assert.deepEqual(downgrade.change?.addedPlatformAccess, ['locations.read']);
   assert.ok(downgrade.issues.some(issue => issue.path === 'app.json#version'));
-
-  const summary = summarizeV1Installation(demoManifest);
-  assert.equal(summary.version, demoManifest.version);
-  assert.ok(summary.platformAccess.every(code => !code.startsWith('platform.') && !code.startsWith('app_data.')));
 });
 
 test('defineServer context enforces business scope with short permission codes', async () => {
@@ -170,11 +166,15 @@ test('admin preview route returns a read-only preview for administrators only', 
   const account = await identity.bootstrap({ username: 'package.admin', displayName: 'Admin', password: 'Administrator-test-123' });
   const app = Fastify(); await app.register(cookie);
   registerAdminIdentityRoutes(app, { origin: 'https://platform.example', service: identity });
-  await registerAdminConsoleRoutes(app, { origin: 'https://platform.example', identity, pool });
+  const registry = new AppRegistryService(new PostgresAppRegistryRepository(client), { host: () => ({ platformVersion: '0.26.0', capabilities: [], applications: [] }), authorization: { listPermissions: async () => [] } });
+  // The route decodes and authorizes; the preview itself is the management service's (same code path as production).
+  const management = { previewPackage: (ctx: PlatformAdministratorContext, bytes: Uint8Array) => previewAppPackageV2(bytes, { platformVersion: '0.26.0', installAvailable: true,
+    findInstalled: async (appId: string) => { const record = await new PostgresAppRegistryRepository(client).findByAppId(appId); return record ? summarizeInstallation(record) : null; } }) };
+  await registerAdminConsoleRoutes(app, { origin: 'https://platform.example', identity, pool, management: management as never });
   try {
     const context = { actorType: 'administrator', administrator: account, execution: { type: 'platform' }, request: { requestId: 't', traceId: 't', startedAt: new Date().toISOString() },
       authorize: async (permissionCode: string) => ({ id: 'd', allowed: true, reasonCode: 'allowed', permissionCode, subjectType: 'administrator', effectiveScopes: [], decidedAt: new Date().toISOString() }) } as unknown as PlatformAdministratorContext;
-    await new AppRegistryService(new PostgresAppRegistryRepository(client), { host: () => ({ platformVersion: '0.26.0', capabilities: [], applications: [] }), authorization: { listPermissions: async () => [] } }).register(context, demoManifest);
+    await registry.register(context, demoManifest);
     const login = await app.inject({ method: 'POST', url: '/api/admin/auth/login', headers: { origin: 'https://platform.example' }, payload: { username: 'package.admin', password: 'Administrator-test-123' } });
     const headers = { cookie: String(login.headers['set-cookie']).split(';')[0]!, origin: 'https://platform.example' };
     const url = '/api/admin/app-packages/preview';
@@ -186,7 +186,7 @@ test('admin preview route returns a read-only preview for administrators only', 
     const preview = response.json();
     assert.equal(preview.installed.version, demoManifest.version);
     assert.equal(preview.change.kind, 'upgrade');
-    assert.equal(preview.installable, false);
+    assert.equal(preview.installable, true);
     assert.equal((await app.inject({ method: 'POST', url, headers, payload: { package: 'not base64!' } })).json().error, 'MOPKG_INVALID');
     assert.equal((await app.inject({ method: 'POST', url, headers, payload: { package: Buffer.from('plain text file').toString('base64') } })).json().error, 'MOPKG_INVALID');
     assert.equal((await app.inject({ method: 'POST', url, headers, payload: { package: 'AAAA', extra: true } })).statusCode, 400);

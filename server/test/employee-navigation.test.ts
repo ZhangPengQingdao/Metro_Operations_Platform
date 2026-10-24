@@ -8,7 +8,7 @@ import {AppBusinessAuthorization} from '../src/app-platform/business-authorizati
 import {createManagementApiAuthorization} from '../src/app-platform/management/gateway.ts';
 import {AppRegistryService,PostgresAppRegistryRepository} from '../src/app-platform/registry/index.ts';
 import {createPostgresAuthorizationRepository} from '../src/platform/authorization/index.ts';
-import {demoManifest} from '../../src/app-platform/samples/host-demo/manifest.ts';
+import {demoManifest} from './helpers/registry-manifest.ts';
 import type {PlatformAdministratorContext} from '../src/platform/context/index.ts';
 
 const manifest={routes:[{id:'items',path:'/',permission:'app.huicetong.read'},{id:'bindings',path:'/bindings',permission:'app.huicetong.manage'}],navigation:[{id:'items',routeId:'items',label:'计划提报',order:0},{id:'bindings',routeId:'bindings',label:'基础配置',order:1}]};

@@ -18,7 +18,6 @@ import { ATTACHMENT_PERMISSION_CODES } from '../src/platform/attachments/index.t
 import { BUSINESS_AUDIT_PERMISSION_CODES } from '../src/platform/audit/index.ts';
 import { DUTY_PERMISSION_CODES } from '../src/platform/duty/index.ts';
 import { DATA_ALIGNMENT_PERMISSION_CODES } from '../src/platform/data-alignment/index.ts';
-import { PLATFORM_MCP_CONTRACT_VERSION, PLATFORM_MCP_PERMISSION_CODES } from '../src/platform/mcp/index.ts';
 import { AUTHORIZATION_PERMISSION_SEEDS } from '../src/platform/authorization/index.ts';
 import { PlatformActorProvider, type PlatformActorSnapshot } from '../../src/platform/context/index.tsx';
 import { PermissionGuard, ReferencePicker, WorkItemLink } from '../../src/platform/ui/index.ts';
@@ -72,8 +71,8 @@ test('Platform event validator accepts current envelopes and rejects drift or se
 });
 
 test('Capability catalog covers all L3 capabilities and preserves current public permission strings', () => {
-  assert.equal(PLATFORM_CAPABILITY_CATALOG.length, 16);
-  assert.equal(new Set(PLATFORM_CAPABILITY_CATALOG.map((item) => item.id)).size, 16);
+  assert.equal(PLATFORM_CAPABILITY_CATALOG.length, 15);
+  assert.equal(new Set(PLATFORM_CAPABILITY_CATALOG.map((item) => item.id)).size, 15);
   assert.deepEqual(getPlatformCapability('work-items')?.permissions, Object.values(WORK_ITEM_PERMISSION_CODES));
   assert.deepEqual(getPlatformCapability('authorization')?.permissions, AUTHORIZATION_PERMISSION_SEEDS.map((item) => item.code));
   assert.deepEqual(getPlatformCapability('notifications')?.permissions, Object.values(NOTIFICATION_PERMISSION_CODES));
@@ -82,9 +81,8 @@ test('Capability catalog covers all L3 capabilities and preserves current public
   assert.deepEqual(getPlatformCapability('business-audit')?.permissions, Object.values(BUSINESS_AUDIT_PERMISSION_CODES));
   assert.deepEqual(getPlatformCapability('duty')?.permissions, Object.values(DUTY_PERMISSION_CODES));
   assert.deepEqual(getPlatformCapability('data-alignment')?.permissions, Object.values(DATA_ALIGNMENT_PERMISSION_CODES));
-  assert.deepEqual(getPlatformCapability('platform-mcp')?.permissions, Object.values(PLATFORM_MCP_PERMISSION_CODES));
   for (const capability of PLATFORM_CAPABILITY_CATALOG) {
-    assert.equal(capability.contractVersion, capability.id === 'platform-mcp' ? PLATFORM_MCP_CONTRACT_VERSION : '1.0');
+    assert.equal(capability.contractVersion, '1.0');
     assert.equal(capability.availability, 'available');
     assert.equal(capability.backendEntrypoint?.includes('/repository') ?? false, false);
   }

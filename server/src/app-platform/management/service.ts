@@ -1,142 +1,61 @@
 import {readEmployeeDashboard} from '../employee/dashboard.js';
-import {createHash,randomUUID} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
+import {join} from 'node:path';
 import {PlatformMaintenance} from '../updates/maintenance.js';
-import {approveInstalledPlatformGrants,requestedPlatformCapabilities} from './platform-grants.js';
-import {previewVerifiedPackage} from './preview.js';
-import {AppApprovalStore} from './approvals.js';
-import {AppMigrationLedger} from '../storage/migration-ledger.js';
-import {AppStorageError} from '../storage/binding.js';
-import {Client} from 'pg';
 import {getDatabasePool} from '../../core/database/index.js';
 import {PLATFORM_CAPABILITY_CATALOG} from '@metro/platform-sdk';
 import {getCoreConfig} from '../../core/config/index.js';
-import {AppRegistryService,PostgresAppRegistryRepository,frontendRunMode} from '../registry/index.js';
-import {AppInstaller} from '../install/service.js';
-import {PostgresInstallJournal} from '../install/journal.js';
-import {AppVersionService,PostgresAppVersionJournal,createVersionedArtifactReader} from '../install/version-service.js';
-import {createAppRuntimeComposition} from '../runtime/composition.js';
+import {AppRegistryError,AppRegistryService,PostgresAppRegistryRepository} from '../registry/index.js';
 import {type PlatformManagementContext} from '../../platform/context/index.js';
 import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
 import {createAuthorizationService,createPostgresAuthorizationRepository} from '../../platform/authorization/index.js';
-import {loadPublisherPolicy} from '../developer/publisher-policy.js';
-import {loadAppManagementConfig,manifestApprovalDigest,isAppRuntimeSupported} from './config.js';
+import {loadAppManagementConfig,AppManagementError} from './config.js';
 import {createManagementQueue} from './queue.js';
-import {readInstalledAdminUi,AppManagementError} from './ui.js';
-import {createManagedStorageComposition,createStorageArtifactReader} from './storage.js';
 import {createManagementGateway,createManagementApiAuthorization} from './gateway.js';
-import {createAppCapabilityOperation} from '../gateway/app-capabilities.js';
 import {GatewayError} from '../gateway/model.js';
 import {EmployeeIdentityError} from '../../platform/employee-identity/index.js';
 import {EmployeeAppAccess} from '../employee/access.js';
-import {AppCapabilityPublication} from '../capabilities/publication.js';
 import {EmployeeAppSessions} from '../employee/app-session.js';
 import {readEmployeeNavigation} from '../employee/navigation.js';
 import {admitEmployeeApplication,employeeAdmissionKey,assertEmployeeAdmissionKey} from '../employee/admission.js';
-import {createSandboxResourceServer} from '../sandbox/resource-server.js';
-import {buildSandboxDocument} from '../sandbox/document.js';
 import {bindEmployeeAttachmentActor} from '../employee/attachment-service.js';
-import {join} from 'node:path';
 import {AppDataServiceV2} from '../v2/data.js';
 import {createAppRuntimeV2} from '../v2/runtime.js';
-import {pageRouteId} from '../v2/projection.js';
+import {previewAppPackageV2,summarizeInstallation} from '../v2/preview.js';
 import {devAdministratorContext,startDevAppsWatcher} from '../v2/dev.js';
-/** Opt-in application management composition; does not run schema migrations on startup. */
+
+type ResolveIdentity=Parameters<ReturnType<typeof createManagementGateway>['invokeDelegatedFromSession']>[1];
+
+/** Application management: `.mopkg` installation, one child process per enabled app, and employee access to app pages and APIs. */
 export async function createAppManagement(configFile:string,origin:string){
  const config=await loadAppManagementConfig(configFile);
- const connectionString=getCoreConfig().database.url.reveal();
- if(!connectionString)throw new AppManagementError('ADMIN_DATABASE_UNAVAILABLE');
- const connect=async()=>{const client=new Client({connectionString});await client.connect();return client;};
- const db=await getDatabasePool()!.connect();const managementQueue=createManagementQueue();
+ const pool=getDatabasePool();
+ if(!pool)throw new AppManagementError('ADMIN_DATABASE_UNAVAILABLE');
+ const db=await pool.connect();const managementQueue=createManagementQueue();
  let maintenanceBlocked=false;
  const assertOpen=()=>{if(maintenanceBlocked)throw new AppManagementError('PLATFORM_MAINTENANCE');};
  const queue={run:<T>(work:()=>Promise<T>)=>managementQueue.run(()=>{assertOpen();return work();}),close:managementQueue.close};
- let resources:Awaited<ReturnType<typeof createSandboxResourceServer>>|undefined;
- let storage:Awaited<ReturnType<typeof createManagedStorageComposition>>|undefined;
  try{
- const required=await db.query("SELECT to_regclass('platform_app_install_requests') AS installs,to_regclass('platform_app_runtime_work') AS work,to_regclass('platform_app_docker_dispatches') AS docker,to_regclass('platform_app_versions') AS versions");
- if(!required.rows[0].installs||!required.rows[0].work||!required.rows[0].versions||(config.docker&&!required.rows[0].docker))throw new AppManagementError('APP_MANAGEMENT_MIGRATIONS_REQUIRED');
- if(config.docker){
-  const migration=await db.query("SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('platform_app_docker_dispatches') AND conname='platform_app_docker_rejected_create_check' AND convalidated");
-  if(!migration.rowCount)throw new AppManagementError('APP_MANAGEMENT_MIGRATIONS_REQUIRED');
- }
+ const required=await db.query("SELECT to_regclass('platform_app_installations') AS installations,to_regclass('platform_app_v2_requests') AS requests");
+ if(!required.rows[0].installations||!required.rows[0].requests)throw new AppManagementError('APP_MANAGEMENT_MIGRATIONS_REQUIRED');
  const repository=new PostgresAppRegistryRepository(db);
  const people=createPostgresPeopleDirectoryRepository(db);
  const authorization=createAuthorizationService(createPostgresAuthorizationRepository(db),{findPerson:id=>people.findPersonById(id)});
- const approvals=new AppApprovalStore(getDatabasePool()!);
- await approvals.initialize(()=>loadPublisherPolicy(config.publisherPolicyFile),config.approvedManifestDigests);
  const registry=new AppRegistryService(repository,{authorization,host:async()=>({platformVersion:getCoreConfig().runtime.releaseVersion.value,capabilities:PLATFORM_CAPABILITY_CATALOG.map(({id,contractVersion})=>({id,contractVersion})),applications:(await repository.list(500)).filter(record=>record.enabled).map(record=>({id:record.appId,version:record.manifest.version}))})});
- const installJournal=new PostgresInstallJournal(db);
- const versionJournal=new PostgresAppVersionJournal(db);
- const readArtifact=createVersionedArtifactReader(installJournal,versionJournal);
- storage=config.managedStorage?await createManagedStorageComposition({apiDatabaseUrl:connectionString,
-  adminDatabaseUrl:process.env.MOP_APP_STORAGE_ADMIN_DATABASE_URL,apiClient:db,
-  registry:client=>new AppRegistryService(new PostgresAppRegistryRepository(client),{authorization,host:()=>{throw new Error('STORAGE_REGISTRY_READ_ONLY');}}),
-  reader:createStorageArtifactReader({getInstallation:appId=>repository.findByAppId(appId),readArtifact})}):undefined;
- const employeeAccess=new EmployeeAppAccess(getDatabasePool()!);
- const publications=new AppCapabilityPublication(getDatabasePool()!);
+ const employeeAccess=new EmployeeAppAccess(pool);
  const employeeAppSessions=new EmployeeAppSessions();
- const apiAuthorization=createManagementApiAuthorization(getDatabasePool()!);
- let runtime:ReturnType<typeof createAppRuntimeComposition>;
- const capabilityOperation=createAppCapabilityOperation({
-  getInstallation:id=>repository.findByAppId(id),
-  assertEmployeeAccess:async(id,personId)=>{await assertRuntimeApproval(undefined,id);await employeeAccess.assert(id,personId);},
-  isPublished:(installation,apiId)=>publications.isPublished(installation,apiId),
-  resolveEmployee:(identity,appId,requestId,traceId)=>apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId},requestId,traceId}),
-  invokeTarget:async(appId,actor,request,signal,assertAdmission)=>{
-   const host=runtime?.findHost(appId);if(!host)throw new GatewayError('OPERATION_DENIED',403);
-   return host.invokeApi(actor,request,signal,assertAdmission);
-  },
- });
- // v2 installations are looked up per call on the pool, so runtime reads never queue behind lifecycle work on `db`.
- const lookups=new PostgresAppRegistryRepository(getDatabasePool()!);
+ const apiAuthorization=createManagementApiAuthorization(pool);
+ // Runtime lookups use the pool, so app calls never queue behind lifecycle work on `db`.
+ const lookups=new PostgresAppRegistryRepository(pool);
  const findInstallation=(appId:string)=>lookups.findByAppId(appId);
- const v2Data=new AppDataServiceV2({pool:getDatabasePool()!,findInstallation});
- const gateway=createManagementGateway(getDatabasePool()!,[...v2Data.operations(storage?.runtimeData),capabilityOperation]);
+ const data=new AppDataServiceV2({pool,findInstallation});
+ const gateway=createManagementGateway(pool,data.operations());
  const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
- runtime=createAppRuntimeComposition({maintenanceBlocked:()=>maintenanceBlocked,registry,gateway,api:apiAuthorization,connectLease:connect,artifactRoot:config.runtimeRoot,readArtifact,...(storage?{storage}:{}),...(config.docker?{docker:{...config.docker,client:db}}:{})});
- const v2=createAppRuntimeV2({root:join(config.artifactRoot,'v2'),registry,pool:getDatabasePool()!,gateway,api:apiAuthorization,findInstallation,
+ const apps=createAppRuntimeV2({root:join(config.artifactRoot,'v2'),registry,pool,gateway,api:apiAuthorization,findInstallation,
   listInstallations:()=>lookups.list(1000),platformVersion:()=>getCoreConfig().runtime.releaseVersion.value,maintenanceBlocked:()=>maintenanceBlocked});
- // Hosts for both models; v2 apps never get a Docker lifecycle host.
- const hosts={
-  findHost:(appId:string)=>v2.findHost(appId)??runtime.findHost(appId),
-  async getHost(appId:string){return await v2.isV2(appId)?v2.host(appId):runtime.getHost(appId);},
- };
- const approve=async(_context:PlatformManagementContext,manifest:Parameters<typeof manifestApprovalDigest>[0])=>{
-  const fresh=await loadAppManagementConfig(configFile);
-  return isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,fresh)&&(await approvals.current()).approvedManifestDigests.includes(manifestApprovalDigest(manifest));
- };
- const loadPolicy=async()=>(await approvals.current()).policy;
- async function applyApprovedCapabilities(context:PlatformManagementContext,appId:string){
-  const record=await registry.get(context,appId),digest=manifestApprovalDigest(record.manifest);
-  const approval=await approvals.current();
-  // Older approvals never acquire new grants implicitly. This runs only once per install/update attempt.
-  if(!approval.approvedManifestDigests.includes(digest)||!approval.capabilityApprovalDigests?.includes(digest))return;
-  if(!requestedPlatformCapabilities(record.manifest).length)return;
-  if(record.manifest.backend.mode!=='none'&&!record.serviceIdentityId)await (await runtime.getHost(appId)).prepareCredential(context,record.revision);
-  const fresh=await approvals.current();
-  if(fresh.revision!==approval.revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
-  await approveInstalledPlatformGrants(registry,context,appId);
- }
- const trustedConfigured=!!process.env.MOP_APP_RESOURCE_ORIGIN&&process.env.MOP_APP_TRUSTED_ORIGINS_ENABLED==='true';
- const installer=new AppInstaller({supportsTrusted:trustedConfigured,beforeInstall:(context,record)=>applyApprovedCapabilities(context,record.appId),registry,journal:installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:record=>runtime.getHost(record.appId)});
- const versions=new AppVersionService({afterUpdate:applyApprovedCapabilities,registry,journal:versionJournal,installJournal,artifactRoot:config.artifactRoot,loadPublisherPolicy:loadPolicy,approve,getHost:appId=>runtime.getHost(appId)});
- async function assertRuntimeApproval(context:PlatformManagementContext|undefined,appId:string){
-  const installed=context?await registry.get(context,appId):await registry.runtimeSnapshot(appId);
-  // v2 packages are approved by the administrator who installed them; there is no publisher key policy.
-  if(installed.runtime?.model==='v2'){if(!installed.enabled)throw new AppManagementError('APP_RUNTIME_APPROVAL_REQUIRED');return;}
-  const current=installed,binding=await installJournal.get(appId);
-  if(!binding||!['installed','recovered'].includes(binding.state))throw new AppManagementError('INSTALL_RECOVERY_REQUIRED');
-  const digest=manifestApprovalDigest(current.manifest);
-  const prepared=manifestApprovalDigest(binding.prepared.manifest)===digest?binding.prepared:(await versionJournal.list(appId)).find(record=>manifestApprovalDigest(record.prepared.manifest)===digest)?.prepared;
-  const policyState=await approvals.current(),policy=policyState.policy,now=Date.now();
-  const key=policy.keys.find(key=>key.keyId===prepared?.publisherKeyId&&key.publisherId===current.manifest.publisherId);
-  const fresh=await loadAppManagementConfig(configFile);
-  if(!prepared||!key||key.revoked||!key.appIds.includes(appId)||now<Date.parse(key.validFrom)||now>=Date.parse(key.validUntil)||!isAppRuntimeSupported(current.manifest,config)||!isAppRuntimeSupported(current.manifest,fresh)||!policyState.approvedManifestDigests.includes(digest))throw new AppManagementError('APP_RUNTIME_APPROVAL_REQUIRED');
-  if((await approvals.current()).revision!==policyState.revision)throw new AppManagementError('APP_RUNTIME_APPROVAL_REQUIRED');
- }
 
- async function admitEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
-  const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+ async function admitEmployee(appId:string,resolveIdentity:ResolveIdentity){
+  const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
   const identity=await resolveIdentity();
   if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
   return employeeAppSessions.get(identity,appId,()=>{
@@ -144,7 +63,7 @@ export async function createAppManagement(configFile:string,origin:string){
    return admitEmployeeApplication({resolveIdentity:()=>{
     if(first){first=false;return Promise.resolve(identity);}
     return resolveIdentity();
-   },assertAccess:personId=>employeeAccess.assert(appId,personId),snapshot:()=>host.admittedSnapshot(),assertApproval:()=>assertRuntimeApproval(undefined,appId)});
+   },assertAccess:personId=>employeeAccess.assert(appId,personId),snapshot:()=>host.admittedSnapshot(),assertApproval:async()=>{}});
   });
  }
 
@@ -155,76 +74,44 @@ export async function createAppManagement(configFile:string,origin:string){
   const context=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId:manifest.id},requestId,traceId:requestId});
   return readEmployeeNavigation(manifest,permission=>apiAuthorization.authorize(context,permission));
  }
-
- if(process.env.MOP_APP_RESOURCE_ORIGIN)resources=await createSandboxResourceServer(origin,process.env.MOP_APP_RESOURCE_ORIGIN,3103,'0.0.0.0',async(appId,hash)=>{
-  const current=await registry.runtimeSnapshot(appId);
-  if(!current.enabled||frontendRunMode(current)!=='trusted')return null;
-  await assertRuntimeApproval(undefined,appId);
-  const manifest=current.manifest,artifact=manifest.artifacts.find(a=>manifest.ui.mode==='sandbox'&&a.id===manifest.ui.entryArtifactId);
-  if(!artifact||artifact.kind!=='frontend'||artifact.sha256!==hash)return null;
-  const bytes=await readArtifact(manifest,artifact.id,artifact.bytes);
-  if(bytes.length!==artifact.bytes||createHash('sha256').update(bytes).digest('hex')!==hash)return null;
-  const fresh=await registry.runtimeSnapshot(appId);
-  if(fresh.id!==current.id||fresh.revision!==current.revision||!fresh.enabled||frontendRunMode(fresh)!=='trusted')return null;
-  await assertRuntimeApproval(undefined,appId);
-  return bytes;
- });
- const preview=(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>previewVerifiedPackage(context,input,{
-  state:()=>approvals.get(context),installed:id=>repository.findByAppId(id),
-  supported:async manifest=>isAppRuntimeSupported(manifest,config)&&isAppRuntimeSupported(manifest,await loadAppManagementConfig(configFile)),
- });
+ const employeeApi=(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string)=>async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;};
 
  let maintenanceContext:PlatformManagementContext|undefined;
  const maintenance=process.env.MOP_MAINTENANCE_STATE?new PlatformMaintenance({
   list:async()=>{const records=await repository.list(1001);if(records.length>1000)throw Error('MAINTENANCE_APPLICATION_LIMIT');return records;},
   gate:closed=>{maintenanceBlocked=closed;},
-  status:async appId=>{const record=await repository.findByAppId(appId);if(!record)throw Error('MAINTENANCE_INSTALLATION_MISSING');const host=hosts.findHost(appId);return host&&maintenanceContext?host.status(maintenanceContext):{installation:record,serving:false};},
-  drain:async appId=>{const host=hosts.findHost(appId);if(!host)throw Error('MAINTENANCE_HOST_MISSING');await host.drainForMaintenance();},
+  status:async appId=>{const record=await repository.findByAppId(appId);if(!record)throw Error('MAINTENANCE_INSTALLATION_MISSING');const host=apps.findHost(appId);return host&&maintenanceContext?host.status(maintenanceContext):{installation:record,serving:false};},
+  drain:async appId=>{const host=apps.findHost(appId);if(!host)throw Error('MAINTENANCE_HOST_MISSING');await host.drainForMaintenance();},
   change:async(appId,revision,action)=>{
    if(!maintenanceContext)throw Error('MAINTENANCE_CONTEXT_REQUIRED');
-   if(action==='enable'){await versions.assertActivationAllowed(maintenanceContext,appId);await assertRuntimeApproval(maintenanceContext,appId);}
-   const result=await (await hosts.getHost(appId)).execute(maintenanceContext,{revision,action});
+   const result=await apps.host(appId).execute(maintenanceContext,{revision,action});
    invalidateAppSessions();
    return result;
   },
  },process.env.MOP_MAINTENANCE_STATE):undefined;
  await maintenance?.initialize();
- await v2.boot();
+ await apps.boot();
  // Local development only: `mop-app dev` drops packages here and they are installed automatically.
  const stopDevWatcher=process.env.MOP_DEV_APPS_DIR?await startDevAppsWatcher({directory:process.env.MOP_DEV_APPS_DIR,log:line=>console.log(line),
-  install:bytes=>queue.run(async()=>{try{const result=await v2.installer.install(devAdministratorContext(),bytes,{dev:true});return `${result.appId} ${result.version} ${result.state}`;}finally{invalidateAppSessions();}})}):undefined;
+  install:bytes=>queue.run(async()=>{try{const result=await apps.installer.install(devAdministratorContext(),bytes,{dev:true});return `${result.appId} ${result.version} ${result.state}`;}finally{invalidateAppSessions();}})}):undefined;
  return {
-  trustedAvailable:()=>!!resources&&trustedConfigured,
   invalidateEmployeeSessions:invalidateAppSessions,
   maintenanceActive:()=>maintenanceBlocked,
   maintenanceStatus:()=>maintenance?.status()??null,
   prepareMaintenance:(context:PlatformManagementContext,taskId:string)=>managementQueue.run(async()=>{if(!maintenance)throw Error('MAINTENANCE_NOT_CONFIGURED');maintenanceContext=context;return maintenance.prepare(taskId,context.actorType==='administrator'?context.administrator.id:'');}),
   restoreMaintenance:(context:PlatformManagementContext,taskId:string)=>managementQueue.run(async()=>{if(!maintenance)throw Error('MAINTENANCE_NOT_CONFIGURED');maintenanceContext=context;return maintenance.restore(taskId);}),
-  approvalPolicy:(context:PlatformManagementContext)=>approvals.get(context),
-  savePublisherPolicy:(context:PlatformManagementContext,revision:number,keys:Parameters<AppApprovalStore['save']>[2]['keys'])=>queue.run(async()=>{const result=await approvals.save(context,revision,{keys});invalidateAppSessions();return result;}),
-  previewPackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string})=>queue.run(async()=>({...await preview(context,input),trustedAvailable:trustedConfigured})),
-  approvePackage:(context:PlatformManagementContext,input:{directory:string;signatureFile:string},revision:number,digest:string,platformCapabilities=false)=>queue.run(async()=>{
-   const result=await preview(context,input);
-   if(result.digest!==digest||result.policyRevision!==revision)throw new AppManagementError('APPROVAL_STALE_REVISION');
-   if(!result.supported||!result.compatible)throw new AppManagementError('APP_CAPABILITIES_NOT_SUPPORTED');
-   if(platformCapabilities)requestedPlatformCapabilities(result.manifest);
-   const approval=await approvals.save(context,revision,{approval:{digest,approved:true,platformCapabilities}});invalidateAppSessions();return approval;
-  }),
-  revokeApproval:(context:PlatformManagementContext,revision:number,digest:string)=>queue.run(async()=>{const result=await approvals.save(context,revision,{approval:{digest,approved:false}});invalidateAppSessions();return result;}),
-  async employeeApps(resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+  async employeeApps(resolveIdentity:ResolveIdentity){
    const identity=await resolveIdentity();if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    const candidates=await employeeAccess.candidates(identity.userId);const applications=[];
    for(let index=0;index<candidates.length;index+=4){
     const group=await Promise.all(candidates.slice(index,index+4).map(async({appId})=>{
      try{const admitted=await admitEmployee(appId,async()=>identity);if(admitted.identity.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);const m=admitted.installation.manifest;
       const navigation=await employeeNavigation(admitted);
-      if(!navigation.routes.length)return null;
-      const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);
-      const v2Package=admitted.installation.runtime;
-      if(v2Package?.model==='v2'&&m.ui.mode==='sandbox')return {appId,name:m.name,description:m.description,version:m.version,...navigation,model:'v2' as const,
-       v2:{sha256:v2Package.sha256,color:v2Package.manifest.color??null,pages:v2Package.manifest.pages.map(({path,title,permission})=>({path,title,...(permission?{permission}:{})}))},
+      const appPackage=admitted.installation.runtime;
+      if(!navigation.routes.length||appPackage?.model!=='v2')return null;
+      return {appId,name:m.name,description:m.description,version:m.version,...navigation,
+       v2:{sha256:appPackage.sha256,color:appPackage.manifest.color??null,pages:appPackage.manifest.pages.map(({path,title,permission})=>({path,title,...(permission?{permission}:{})}))},
        ...(m.dashboard&&navigation.routes.some(route=>route.id===m.dashboard!.routeId)?{dashboard:{routeId:m.dashboard.routeId}}:{}),runtimeRevision:admitted.installation.revision};
-      return m.ui.mode==='sandbox'?{appId,name:m.name,...(m.icon?{icon:m.icon}:{}),description:m.description,version:m.version,...navigation,...(m.dashboard&&navigation.routes.some(route=>route.id===m.dashboard!.routeId)?{dashboard:{routeId:m.dashboard.routeId}}:{}),runtimeRevision:admitted.installation.revision,frontendRunMode:frontendRunMode(admitted.installation),...(frontendRunMode(admitted.installation)==='trusted'&&artifact&&resources&&trustedConfigured?{bundleUrl:resources.assetUrl(appId,artifact.sha256)}:{})}:null;
      }catch(e){if(e instanceof GatewayError||e instanceof AppManagementError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))return null;throw e;}
     }));
     for(const app of group)if(app)applications.push(app);
@@ -232,49 +119,24 @@ export async function createAppManagement(configFile:string,origin:string){
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
   },
-  async employeeDashboard(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+  async employeeDashboard(appId:string,resolveIdentity:ResolveIdentity){
    assertOpen();
-   const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
     invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{}})});
   },
-  async employeeUi(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
-   assertOpen();const first=await admitEmployee(appId,resolveIdentity),m=first.installation.manifest;
-   if(first.installation.runtime?.model==='v2')throw new AppManagementError('APP_V2_SESSION_REQUIRED');
-   if(m.ui.mode!=='sandbox'||!(await employeeNavigation(first)).routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
-   const canonical=new URL(origin);if(!resources&&(canonical.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(canonical.hostname)))throw new AppManagementError('APP_RESOURCE_ORIGIN_NOT_CONFIGURED');
-   const artifact=m.artifacts.find(a=>m.ui.mode==='sandbox'&&a.id===m.ui.entryArtifactId);if(!artifact)throw new AppManagementError('APP_UI_ARTIFACT_MISSING');
-   const bytes=await readArtifact(m,artifact.id,artifact.bytes);
-   const trusted=frontendRunMode(first.installation)==='trusted';
-   if(trusted&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');
-   const document=buildSandboxDocument({platformOrigin:origin,route:path,allowDownloads:m.ui.downloads===true,script:{text:Buffer.from(bytes).toString('utf8'),bytes:artifact.bytes,sha256:artifact.sha256},...(trusted?{trusted:{appId}}:{})});
-   const fresh=await admitEmployee(appId,resolveIdentity);
-   if(fresh.identity.userId!==first.identity.userId||fresh.access.revision!==first.access.revision||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
-   return {appId,name:m.name,...(m.ui.downloads?{downloads:true as const}:{}),api:m.api.map(({id,method,path})=>({id,method,path})),clientRouting:m.ui.clientRouting===true,admissionKey:employeeAdmissionKey(first),instanceKey:`${employeeAdmissionKey(first)}:${path}`,resource:resources?resources.publish(document,async()=>{assertEmployeeAdmissionKey(await admitEmployee(appId,resolveIdentity),employeeAdmissionKey(first));},trusted?appId:undefined):{mode:'local-demo' as const,html:document.html,platformOrigin:origin}};
+  async invokeEmployeeApi(appId:string,resolveIdentity:ResolveIdentity,request:{apiId:string;method:string;path:string;payload:unknown},admissionKey:string){
+   assertOpen();const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   return host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),request);
   },
-  async employeeUiAdmission(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
-   assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
-   if(admission.installation.manifest.ui.mode!=='sandbox'||!(await employeeNavigation(admission)).routes.some(r=>r.path===path))throw new GatewayError('ACCESS_DENIED',403);
-   return {admissionKey:employeeAdmissionKey(admission)};
-  },
-  async invokeEmployee(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:unknown,admissionKey:string){
-   const host=hosts.findHost(appId);
-   if(!host)throw new GatewayError('ACCESS_DENIED',403);
-   return host.invokeDelegated(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},request);
-  },
-  async invokeEmployeeApi(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:Parameters<Awaited<ReturnType<typeof runtime.getHost>>['invokeEmployeeApi']>[1],admissionKey:string){
-   assertOpen();const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
-   return host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},request);
-  },
-  async authorizeEmployeeAttachment(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],admissionKey:string,
+  async authorizeEmployeeAttachment(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string,
    request:{action:'upload'|'read';entityType:string;entityId:string;attachmentId?:string;requestId:string}){
    assertOpen();
    const first=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(first,admissionKey);
    const route=first.installation.manifest.api.find(api=>api.id==='authorize-attachment'&&api.method==='POST'&&api.businessPermission);
    if(!route)throw new GatewayError('ACCESS_DENIED',403);
-   const host=hosts.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
-   const result=await host.invokeEmployeeApi(async()=>{const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);return admission.identity;},
-    {apiId:route.id,method:'POST',path:route.path,payload:request});
+   const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
+   const result=await host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),{apiId:route.id,method:'POST',path:route.path,payload:request});
    if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).sort().join(',')!=='organizationId')throw new GatewayError('ACCESS_DENIED',403);
    const authorization=result as Record<string,unknown>;
    if(typeof authorization.organizationId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorization.organizationId))throw new GatewayError('ACCESS_DENIED',403);
@@ -285,102 +147,75 @@ export async function createAppManagement(configFile:string,origin:string){
    const person=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:fresh.identity,execution:{type:'application',appId},requestId:request.requestId,traceId:request.requestId});
    const service=await apiAuthorization.contextResolver.resolve({actorType:'service',trustedIdentity:{source:'service'},execution:{type:'service',appId,serviceIdentityId},requestId:request.requestId,traceId:request.requestId});
    if(person.actorType!=='person'||service.actorType!=='service')throw new GatewayError('ACCESS_DENIED',403);
-   // The app's approved service grant bounds storage access; the employee remains
-   // the recorded uploader after its signed business API authorizes this record.
+   // The app's service grant bounds storage access; the employee remains the recorded uploader
+   // after the app's `authorize-attachment` API has authorized this record.
    const context=bindEmployeeAttachmentActor(person,service);
    return {context,organizationId:authorization.organizationId};
   },
-  /** v2 page session: admission key, the employee's granted permissions and the module address. */
-  async employeeV2Session(appId:string,path:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
-   assertOpen();const admission=await admitEmployee(appId,resolveIdentity),installation=admission.installation,v2Package=installation.runtime;
-   if(v2Package?.model!=='v2')throw new GatewayError('ACCESS_DENIED',403);
-   const page=matchPage(v2Package.manifest.pages,path);if(!page)throw new GatewayError('ACCESS_DENIED',403);
+  /** Page session: admission key, the employee's granted permissions and the module address. */
+  async employeeV2Session(appId:string,path:string,resolveIdentity:ResolveIdentity){
+   assertOpen();const admission=await admitEmployee(appId,resolveIdentity),installation=admission.installation,appPackage=installation.runtime;
+   if(appPackage?.model!=='v2')throw new GatewayError('ACCESS_DENIED',403);
+   const page=matchPage(appPackage.manifest.pages,path);if(!page)throw new GatewayError('ACCESS_DENIED',403);
    const requestId=randomUUID();
    const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId},requestId,traceId:requestId});
    if(actor.actorType!=='person')throw new GatewayError('ACCESS_DENIED',403);
    const granted:string[]=[];
-   for(const permission of v2Package.manifest.permissions)if(await apiAuthorization.authorize(actor,`app.${appId}.${permission.code}`))granted.push(permission.code);
+   for(const permission of appPackage.manifest.permissions)if(await apiAuthorization.authorize(actor,`app.${appId}.${permission.code}`))granted.push(permission.code);
    if(page.page.permission&&!granted.includes(page.page.permission))throw new GatewayError('ACCESS_DENIED',403);
-   const assets=await v2.store.read(appId,v2Package.sha256,'ui.css');
-   return {appId,name:installation.manifest.name,admissionKey:employeeAdmissionKey(admission),sha256:v2Package.sha256,
-    moduleUrl:`/api/employee/apps/${appId}/v2/${v2Package.sha256}/ui.js`,...(assets?{cssUrl:`/api/employee/apps/${appId}/v2/${v2Package.sha256}/ui.css`}:{}),
+   const css=await apps.store.read(appId,appPackage.sha256,'ui.css');
+   return {appId,name:installation.manifest.name,admissionKey:employeeAdmissionKey(admission),sha256:appPackage.sha256,
+    moduleUrl:`/api/employee/apps/${appId}/v2/${appPackage.sha256}/ui.js`,...(css?{cssUrl:`/api/employee/apps/${appId}/v2/${appPackage.sha256}/ui.css`}:{}),
     route:{path,pattern:page.page.path,params:page.params,title:page.page.title},
     user:{personId:actor.person.id,name:actor.person.name,organizationUnitId:actor.person.organization?.id??null,permissions:granted}};
   },
   /** Immutable page bundle for an admitted employee; the hash pins the installed version. */
-  async employeeV2Asset(appId:string,sha256:string,file:'ui.js'|'ui.css',resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1]){
+  async employeeV2Asset(appId:string,sha256:string,file:'ui.js'|'ui.css',resolveIdentity:ResolveIdentity){
    assertOpen();const admission=await admitEmployee(appId,resolveIdentity);
    if(admission.installation.runtime?.model!=='v2'||admission.installation.runtime.sha256!==sha256)throw new GatewayError('ACCESS_DENIED',403);
-   const bytes=await v2.store.read(appId,sha256,file);if(!bytes)throw new GatewayError('ACCESS_DENIED',403);
+   const bytes=await apps.store.read(appId,sha256,file);if(!bytes)throw new GatewayError('ACCESS_DENIED',403);
    return bytes;
   },
-  /** App icon file of an installed v2 app (null for v1 apps, which keep their manifest icon paths). */
+  /** Icon file of an installed app. */
   async appIcon(appId:string){
    const record=await findInstallation(appId);
    if(record?.runtime?.model!=='v2')return null;
-   const svg=await v2.store.read(appId,record.runtime.sha256,'icon.svg');
+   const svg=await apps.store.read(appId,record.runtime.sha256,'icon.svg');
    if(svg)return {contentType:'image/svg+xml',bytes:svg,color:record.runtime.manifest.color??null};
-   const png=await v2.store.read(appId,record.runtime.sha256,'icon.png');
+   const png=await apps.store.read(appId,record.runtime.sha256,'icon.png');
    return png?{contentType:'image/png',bytes:png,color:record.runtime.manifest.color??null}:null;
   },
-  /** Read-only directory call from a v2 page, bound to the page's admission. */
-  async invokeEmployeeV2Platform(appId:string,resolveIdentity:Parameters<typeof gateway.invokeDelegatedFromSession>[1],request:{operation:string;params:unknown},admissionKey:string){
+  /** Read-only directory call from a page, bound to the page's admission. */
+  async invokeEmployeeV2Platform(appId:string,resolveIdentity:ResolveIdentity,request:{operation:string;params:unknown},admissionKey:string){
    assertOpen();const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);
-   const host=v2.findHost(appId);if(admission.installation.runtime?.model!=='v2'||!host)throw new GatewayError('ACCESS_DENIED',403);
+   const host=apps.findHost(appId);if(admission.installation.runtime?.model!=='v2'||!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeEmployeePlatform(admission.identity,request);
   },
-  installV2:(context:PlatformManagementContext,bytes:Uint8Array)=>queue.run(async()=>{try{return await v2.installer.install(context,bytes);}finally{invalidateAppSessions();}}),
-  migrationHistory:(context:PlatformManagementContext,appId:string,afterSequence:number)=>queue.run(async()=>{
-   const installation=await registry.get(context,appId);
-   const attempts=await new AppMigrationLedger(registry,db).listHistory(context,appId,afterSequence,100);
-   if(!(await context.authorize('platform.authorization.read',{})).allowed)throw new AppStorageError('STORAGE_ACCESS_DENIED');
-   return {revision:installation.revision,enabled:installation.enabled,attempts,nextSequence:attempts.length===100?attempts[attempts.length-1].sequence:null};
+  /** Read-only `.mopkg` preview against the current installation. */
+  previewPackage:(context:PlatformManagementContext,bytes:Uint8Array)=>previewAppPackageV2(bytes,{
+   platformVersion:getCoreConfig().runtime.releaseVersion.value,installAvailable:true,
+   findInstalled:async appId=>{
+    try{return summarizeInstallation(await registry.get(context,appId));}
+    catch(error){if(error instanceof AppRegistryError&&error.code==='APP_NOT_FOUND')return null;throw error;}
+   },
   }),
-  writeHistory:(context:PlatformManagementContext,appId:string,after:string|null)=>queue.run(async()=>{
-   const installation=await registry.get(context,appId);
-   if(!(await context.authorize('platform.authorization.read',{})).allowed)throw new AppStorageError('STORAGE_ACCESS_DENIED');
-   const result=await db.query(`SELECT request_id AS "requestId",status,created_at AS "createdAt",completed_at AS "completedAt" FROM public.platform_app_runtime_storage_writes
-    WHERE installation_id=$1 AND ($2::uuid IS NULL OR request_id>$2::uuid) ORDER BY request_id LIMIT 100`,[installation.id,after]);
-   if(!(await context.authorize('platform.authorization.read',{})).allowed)throw new AppStorageError('STORAGE_ACCESS_DENIED');
-   return {revision:installation.revision,enabled:installation.enabled,writes:result.rows,nextCursor:result.rows.length===100?result.rows[99].requestId:null};
-  }),
-  reconcileWrite:(context:PlatformManagementContext,appId:string,revision:number,requestId:string)=>queue.run(()=>{
-   if(!storage)throw new AppStorageError('STORAGE_NOT_CONFIGURED');
-   return storage.reconcileWrite(context,appId,revision,requestId);
-  }),
-  reconcileMigration:(context:PlatformManagementContext,appId:string,revision:number,attemptId:string)=>queue.run(()=>{
-   if(!storage)throw new AppStorageError('STORAGE_NOT_CONFIGURED');
-   return storage.reconcile(context,appId,revision,attemptId);
-  }),
+  installPackage:(context:PlatformManagementContext,bytes:Uint8Array)=>queue.run(async()=>{try{return await apps.installer.install(context,bytes);}finally{invalidateAppSessions();}}),
   uploadRoot:config.uploadRoot,
-  install:(context:PlatformManagementContext,input:Parameters<AppInstaller['install']>[1])=>queue.run(async()=>{const result=await installer.install(context,input);invalidateAppSessions();return result;}),
-  status:(context:PlatformManagementContext,appId:string)=>queue.run(()=>installer.status(context,appId)),
-  recover:(context:PlatformManagementContext,appId:string,revision:number)=>queue.run(async()=>{const result=await installer.recover(context,appId,revision);invalidateAppSessions();return result;}),
-  versionUpdate:(context:PlatformManagementContext,input:Parameters<AppVersionService['update']>[1])=>queue.run(async()=>{const result=await versions.update(context,input);invalidateAppSessions();return result;}),
-  versionStatus:(context:PlatformManagementContext,appId:string)=>queue.run(()=>versions.status(context,appId)),
-  versionRecover:(context:PlatformManagementContext,appId:string,requestId:string)=>queue.run(async()=>{const result=await versions.recover(context,appId,requestId);invalidateAppSessions();return result;}),
   async getHost(appId:string){
-   const host=await hosts.getHost(appId);
+   if(!await findInstallation(appId))return null;
+   const host=apps.host(appId);
    return {status:(context:PlatformManagementContext)=>queue.run(()=>host.status(context)),
-    execute:(context:PlatformManagementContext,input:Parameters<typeof host.execute>[1])=>queue.run(async()=>{
-     assertOpen();
-     if(['upgrade','rollback'].includes(input.action))throw new AppManagementError('SIGNED_PACKAGE_REQUIRED');
-     if(input.action==='install')throw new AppManagementError('SIGNED_PACKAGE_REQUIRED');
-     if(input.action==='enable'){await versions.assertActivationAllowed(context,appId);await assertRuntimeApproval(context,appId);}
-     const result=await host.execute(context,input);invalidateAppSessions();return result;
-    }),
+    execute:(context:PlatformManagementContext,input:Parameters<typeof host.execute>[1])=>queue.run(async()=>{const result=await host.execute(context,input);invalidateAppSessions();return result;}),
     recover:(context:PlatformManagementContext,revision:number)=>queue.run(async()=>{const result=await host.recover(context,revision);invalidateAppSessions();return result;}),
-    prepareCredential:(context:PlatformManagementContext,revision:number)=>queue.run(()=>host.prepareCredential(context,revision)),
    };
   },
-  ui:(context:PlatformManagementContext,appId:string,path:string)=>queue.run(async()=>{if((await registry.get(context,appId)).runtime?.model==='v2')throw new AppManagementError('APP_V2_EMPLOYEE_ONLY');await assertRuntimeApproval(context,appId);if(frontendRunMode(await registry.get(context,appId))==='trusted'&&!trustedConfigured)throw new AppManagementError('APP_TRUSTED_ORIGIN_NOT_CONFIGURED');return readInstalledAdminUi({context,appId,path,origin,host:await runtime.getHost(appId),readArtifact,publish:resources?(document,authorize,trustedAppId)=>resources!.publish(document,async()=>{await assertRuntimeApproval(context,appId);await authorize();},trustedAppId):undefined});}),
-  close:()=>queue.close(async()=>{stopDevWatcher?.();await resources?.close();await v2.close();await runtime.close();await storage?.closeRuntimeConnections();db.release();}),
+  close:()=>queue.close(async()=>{stopDevWatcher?.();await apps.close();db.release();}),
  };
- }catch(error){await resources?.close();await storage?.closeRuntimeConnections();db.release();throw error;}
+ }catch(error){db.release();throw error;}
 }
 export type AppManagement=Awaited<ReturnType<typeof createAppManagement>>;
 
-/** Matches a v2 page path pattern (`/records/:id`) against a concrete path. */
+/** Matches a page path pattern (`/records/:id`) against a concrete path. */
 function matchPage(pages:readonly {path:string;title:string;permission?:string}[],path:string){
  if(typeof path!=='string'||path.length>512||!path.startsWith('/'))return null;
  const parts=path==='/'?[]:path.slice(1).split('/');

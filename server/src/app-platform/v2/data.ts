@@ -4,9 +4,8 @@ import type { ConnectablePool, QueryableClient } from '../../core/database/index
 import type { PlatformActorContext } from '../../platform/context/index.js';
 import type { AppInstallation } from '../registry/index.js';
 import { GatewayError, jsonSnapshot, type AppGatewayOperation, type GatewayJson } from '../gateway/model.js';
-import type { AppRuntimeDataService } from '../storage/runtime-data.js';
-import { readBatchInput, readInput, transactionInput, transactionItem, validValue, writeInput } from '../storage/runtime-data.js';
-import { runtimeCountQuery, runtimeDailyCountQuery, runtimeListInput, runtimeListQuery, runtimeListSelection } from '../storage/runtime-list.js';
+import { readBatchInput, readInput, transactionInput, transactionItem, validValue, writeInput } from './data-input.js';
+import { runtimeCountQuery, runtimeDailyCountQuery, runtimeListInput, runtimeListQuery, runtimeListSelection } from './data-query.js';
 import { appSchemaName } from './migration.js';
 
 type Mode = 'get' | 'write' | 'list' | 'read_batch' | 'transaction';
@@ -38,9 +37,8 @@ export class AppDataServiceV2 {
   private writesSincePrune = 0;
   constructor(private readonly options: AppDataV2Options) {}
 
-  /** Gateway operations. When the app is not a v2 installation the call goes to the v1 service, if configured. */
-  operations(fallback?: Pick<AppRuntimeDataService, 'execute'>): AppGatewayOperation[] {
-    const legacy: Record<Mode, boolean | 'list' | 'transaction' | 'read_batch'> = { get: false, write: true, list: 'list', read_batch: 'read_batch', transaction: 'transaction' };
+  /** Gateway operations (`platform.app_data.*`) for the calling application. */
+  operations(): AppGatewayOperation[] {
     return OPERATIONS.map(op => ({
       name: op.name, permissionCode: op.write ? 'platform.app_data.write' : 'platform.app_data.read', mode: op.write ? 'write' : 'read',
       validateParams: value => op.schema.safeParse(value).success && Buffer.byteLength(JSON.stringify(value)) <= 16384,
@@ -49,9 +47,8 @@ export class AppDataServiceV2 {
       execute: async (context, params, signal) => {
         requireService(context);
         const installation = await this.options.findInstallation(context.execution.appId!);
-        if (installation?.runtime?.model === 'v2') return this.execute(context, installation, op.mode, params, signal);
-        if (!fallback) throw new GatewayError('ACCESS_DENIED', 403);
-        return fallback.execute(context, params, legacy[op.mode], signal);
+        if (installation?.runtime?.model !== 'v2') throw new GatewayError('ACCESS_DENIED', 403);
+        return this.execute(context, installation, op.mode, params, signal);
       },
     }));
   }

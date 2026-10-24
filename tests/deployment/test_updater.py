@@ -123,21 +123,20 @@ class ProxyDeployment(unittest.TestCase):
  def test_external_hosting_binds_only_loopback_and_preserves_database_isolation(self):
   with tempfile.TemporaryDirectory() as temp:
    root=pathlib.Path(temp);release=root/'release';release.mkdir()
-   u.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':42,'proxyMode':'external','httpPort':18080,'applications':True,'resourcePort':18081,'resourceDomain':'apps.example.net'})
+   u.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':42,'proxyMode':'external','httpPort':18080,'applications':True})
    def command(args,*a,**kw):
     if args[:3]==['docker','image','inspect']:return json.dumps([{'Id':args[3],'Architecture':'amd64','Os':'linux'}]).encode()
     return b''
    manifest={'images':{name:'sha256:'+'a'*64 for name in ['api','web','database']}}
-   real_stat=u.os.stat
-   def stat(path,*a,**kw):return type('Stat',(),{'st_gid':100})() if str(path)=='/var/run/docker.sock' else real_stat(path,*a,**kw)
-   with patch.object(u.os,'chown'),patch.object(u,'load_images',return_value=manifest['images']),patch.object(u,'verify_archive'),patch.object(u.os,'stat',side_effect=stat):
+   with patch.object(u.os,'chown'),patch.object(u,'load_images',return_value=manifest['images']),patch.object(u,'verify_archive'):
     u.Deployment(root).prepare(release,manifest)
    services=u.read(release/'compose.json')['services']
-   self.assertEqual(services['web']['ports'],['127.0.0.1:18080:80','127.0.0.1:18081:8081'])
+   self.assertEqual(services['web']['ports'],['127.0.0.1:18080:80'])
    self.assertNotIn('ports',services['database']);self.assertNotIn('ports',services['api'])
    self.assertEqual(services['api']['network_mode'],'service:database')
-   self.assertIn('header_up -Cookie',(release/'Caddyfile').read_text())
-   self.assertIn('reverse_proxy database:3103',(release/'Caddyfile').read_text())
+   self.assertFalse(any('docker.sock' in v for v in services['api']['volumes']),'applications run in the API process; no Docker socket')
+   self.assertIn(str(root)+'/secrets/app-management.json:/run/secrets/app-management.json:ro',services['api']['volumes'])
+   self.assertNotIn('3103',(release/'Caddyfile').read_text())
 
 class ImageIdentity(unittest.TestCase):
  def archive(self,root):

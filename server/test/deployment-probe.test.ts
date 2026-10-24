@@ -8,7 +8,7 @@ test('deployment preflight queries match the actual platform database schema',as
   await initializePlatformDatabase({query:async(sql,args)=>args?pg.query(sql,[...args]):(await pg.exec(sql)).at(-1)!});
   const source=await readFile(new URL('../../deploy/probe.mjs',import.meta.url),'utf8');
   const queries=[...source.matchAll(/"(SELECT 1 FROM [^"\n]+)"/g)].map(m=>m[1]);
-  assert.equal(queries.length,7);
+  assert.equal(queries.length,1);
   for(const sql of queries)assert.equal((await pg.query(sql)).rows.length,0);
  }finally{await pg.close();}
 });

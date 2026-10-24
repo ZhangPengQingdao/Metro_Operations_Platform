@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {useApp} from '@metro/platform-sdk/app';
 import {Button,Dialog,Field} from '@metro/platform-sdk/ui';
-import {createSandboxImageClient,prepareSandboxImage} from '@metro/platform-sdk/app-files';
+import {createAppImageClient,prepareImageUpload} from '@metro/platform-sdk/app-files';
 
 const imageDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('照片读取失败'));reader.readAsDataURL(blob);});
 const kinds={progress:'更新进度',submitted:'提报完成',completed:'确认办结',returned:'退回补充',cancelled:'取消计划'};
@@ -12,7 +12,7 @@ export function ProgressDialog({row,call,blocked,onBusy,onClose,onSaved,markUnce
  const photoInput=useRef(null),fileInput=useRef(null);
  const running=useRef(false),alive=useRef(true),pendingUpload=useRef(null);
  const attachments=useApp().files;
- const images=createSandboxImageClient(call,{begin:'photo-begin',part:'photo-part',finish:'photo-finish',read:'photo-read'});
+ const images=createAppImageClient(call,{begin:'photo-begin',part:'photo-part',finish:'photo-finish',read:'photo-read'});
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
  useEffect(()=>{let current=true;(async()=>{try{const value=await call('item-workflow',{id:row.id});if(current){setDetail(value);setRecords(value.rows);setNext(value.nextCursor??null);}const page=await attachments.list({entityType:'plan_item',entityId:row.id});if(current){setFiles(page.attachments);setFilesNext(page.nextCursor);}}catch(failure){if(current)setError(failure.message);}finally{if(current)setLoading(false);}})();return()=>{current=false;};},[row.id]);
  async function perform(action){if(running.current)return;running.current=true;setBusy(true);onBusy(true);setError('');try{await action();}catch(failure){if(alive.current)setError(fileMessages[failure.code??failure.message]??failure.message);}finally{running.current=false;if(alive.current)setBusy(false);onBusy(false);}}
@@ -27,7 +27,7 @@ export function ProgressDialog({row,call,blocked,onBusy,onClose,onSaved,markUnce
    markUncertain(intentId);throw Error(`材料“${file.name}”上传结果待核对，请勿重复上传。请求编号：${intentId}`);
   }
  });}
- async function uploadPhoto(file){if(!file||blocked)return;await perform(async()=>{const bytes=await prepareSandboxImage(file);const id=await images.uploadPrepared(bytes,{organizationId:row.organization_id,kind:'progress'});setPhotoIds(old=>[...old,id]);});}
+ async function uploadPhoto(file){if(!file||blocked)return;await perform(async()=>{const bytes=await prepareImageUpload(file);const id=await images.uploadPrepared(bytes,{organizationId:row.organization_id,kind:'progress'});setPhotoIds(old=>[...old,id]);});}
  const disabled=busy||blocked||loading,current=detail?.item??row;
  return <Dialog open onClose={()=>{if(!busy)onClose();}} title={detail?.canClose?'办理计划':'计划跟进'} size="lg" className="hct-progress" footer={<div className="hct-footer">{!detail?.canClose&&<Button variant="secondary" disabled={busy} onClick={onClose}>关闭</Button>}{detail?.canUpdate&&<Button loading={busy} disabled={disabled||!summary.trim()} onClick={()=>void save()}>{status==='pending_confirm'?'提交办结':status==='cancelled'?'取消计划':'保存进度'}</Button>}{detail?.canClose&&<><Button variant="secondary" disabled={disabled||!comment.trim()} onClick={()=>void review('return')}>退回补充</Button><Button loading={busy} disabled={disabled} onClick={()=>void review('confirm')}>确认办结</Button></>}</div>}>
   {error&&<p role="alert" className="hct-alert">{error}</p>}{loading&&<p role="status">正在读取…</p>}

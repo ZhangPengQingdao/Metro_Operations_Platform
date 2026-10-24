@@ -66,6 +66,6 @@ test('distributed spreadsheet module parses and generates files without reposito
   assert.deepEqual(workbook.sheetNames,['记录']);
   assert.deepEqual(workbook.sheets['记录'].headers,['标题','数量']);
   assert.equal(workbook.sheets['记录'].rowCount,3);
-  assert.throws(()=>sdk.exportToExcel({data:[{x:1}],filename:'../unsafe.xlsx'}),/INVALID_DOWNLOAD/);
+  assert.throws(()=>sdk.exportToExcel({data:[{x:1}],filename:'../unsafe.xlsx'}),/INVALID_FILE_NAME/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });

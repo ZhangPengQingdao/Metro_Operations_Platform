@@ -13,6 +13,3 @@ export const appAiPermissionMigration:MigrationDefinition={id:'app-gateway-ai-pe
  await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000006','platform.ai.complete','调用平台配置的模型','应用使用受限文本补全，模型凭据不进入沙箱','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
 }};
 
-export const appCapabilityInvokePermissionMigration:MigrationDefinition={id:'app-gateway-capability-invoke-permission',title:'Application capability invocation permission',ownerTaskId:'PLATFORM-L4-018',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-076'],sourceTables:[],targetTables:['platform_permissions'],dependsOn:['platform-authorization-expand'],recoveryNotes:'Adds only the permission definition; existing installations receive no grant.',async run({client}){
- await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000007','platform.apps.invoke','调用其他应用开放能力','只允许已声明依赖和目标权限的员工绑定调用','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
-}};

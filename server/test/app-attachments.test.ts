@@ -9,9 +9,7 @@ import {createMemoryAttachmentRepository} from '../src/platform/attachments/inde
 import type {PlatformActorContext} from '../src/platform/context/index.ts';
 import {createAppAttachmentTransfer,bindEmployeeAttachmentActor,inspectAppAttachment,APP_ATTACHMENT_MAX_BYTES,AppAttachmentError} from '../src/app-platform/employee/attachment-service.ts';
 import {createAppAttachmentAuthorizationHandler} from '../../packages/platform-sdk/src/app-files-backend.ts';
-import {createSandboxAttachmentClient,APP_ATTACHMENT_MAX_BYTES as SDK_ATTACHMENT_MAX_BYTES} from '../../packages/platform-sdk/src/app-files.ts';
-import {createAppSandboxClient,type AppSandboxPort} from '../../packages/platform-sdk/src/app-sandbox.ts';
-import {SandboxBridgeBroker} from '../../src/app-platform/host/sandbox/bridge.ts';
+import {APP_ATTACHMENT_MAX_BYTES as SDK_ATTACHMENT_MAX_BYTES} from '../../packages/platform-sdk/src/app-files.ts';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import {registerEmployeeRoutes} from '../src/app-platform/employee/routes.ts';
@@ -143,27 +141,6 @@ test('unknown registration outcome retains bytes for a possibly committed attach
   assert.ok(record);
   assert.equal(await storage.exists(record.storageKind,record.storageFileName),true);
  }finally{await rm(root,{recursive:true,force:true});}
-});
-
-test('sandbox file client sends Blob outside JSON Bridge and keeps intent ID for reconciliation',async()=>{
- const parent={},child={},session='a'.repeat(32),origin='https://platform.example';let listener:Parameters<AppSandboxPort['listen']>[0]=()=>{};
- const bytes=Uint8Array.from([0x25,0x50,0x44,0x46,0x2d,0x78]);const intentId=randomUUID(),attachmentId=randomUUID();
- let uploads=0;
- const broker=new SandboxBridgeBroker({appId:'sample',session,source:child,operations:new Map(),files:{
-  upload:async(params,blob)=>{uploads++;assert.equal(blob.size,bytes.length);assert.equal((params as {intentId:string}).intentId,intentId);return {attachmentId,fileName:'plan.pdf',sizeBytes:blob.size,contentType:'application/pdf'};},
-  read:async()=>({blob:new Blob([bytes],{type:'application/pdf'}),fileName:'plan.pdf'}),
-  list:async()=>({attachments:[{attachmentId,intentId,fileName:'plan.pdf',contentType:'application/pdf',sizeBytes:bytes.length,createdAt:new Date().toISOString()}],nextCursor:null})
- },send:data=>listener({source:parent,origin,data})});
- const sandbox=createAppSandboxClient({appId:'sample',platformOrigin:origin,port:{parent,listen:fn=>{listener=fn;return()=>{};},send:data=>{void broker.receive({source:child,origin:'null',data});}}});
- listener({source:parent,origin,data:{version:'1.0',type:'init',appId:'sample',session}});
- const files=createSandboxAttachmentClient(sandbox),file=selected('plan.pdf',bytes);
- await broker.receive({source:{},origin:'null',data:{version:'1.0',type:'file-request',appId:'sample',session,id:99,method:'upload',params:{},blob:file}});
- assert.equal(uploads,0);
- assert.equal((await files.upload(file,{entityType:'plan_item',entityId:entity,intentId})).attachmentId,attachmentId);
- assert.equal(uploads,1);
- assert.equal((await files.list({entityType:'plan_item',entityId:entity})).attachments[0]?.intentId,intentId);
- assert.deepEqual(new Uint8Array(await (await files.read(attachmentId)).blob.arrayBuffer()),bytes);
- sandbox.close();broker.close();
 });
 
 test('employee binary route enforces origin, business authorization and attachment binding',async()=>{

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { MigrationDefinition } from '../../core/migrations/index.js';
 import type { QueryableClient } from '../../core/database/index.js';
-import { compileAppMigration } from '../storage/declarative-migration.js';
+import { compileAppMigration } from './declarative-migration.js';
 
 /** Application model v2 bookkeeping: applied declarative migrations and write idempotency keys. */
 export const APP_V2_SQL = `
