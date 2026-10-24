@@ -2,6 +2,7 @@
 import { build as esbuild, transform, type Metafile, type Plugin } from 'esbuild';
 import { watch } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -153,10 +154,8 @@ export async function buildProject(target: string): Promise<BuildResult> {
         throw new CliError('接口构建失败', (error.errors ?? []).map(item => ({ path: item.location ? `${item.location.file}:${item.location.line}` : checked.server!, message: item.text })));
       });
       if (!exportsDefault(result.metafile, 'server.js')) throw new CliError('接口缺少默认导出', [{ path: checked.server, message: '应 export default defineServer({...})' }]);
-      // Loading the bundle runs its top-level code, the same as the platform will; handlers are not invoked.
-      const loaded: unknown = (await import(`${pathToFileURL(join(work, 'server.js')).href}?build=${Date.now()}`)).default;
-      if (!isAppServerDefinition(loaded)) throw new CliError('接口默认导出不是 defineServer(...) 的结果', [{ path: checked.server, message: '应 export default defineServer({...})' }]);
-      const handlers = Object.keys(loaded.handlers);
+      const handlers = await serverHandlerNames(join(work, 'server.js'));
+      if (!handlers) throw new CliError('接口默认导出不是 defineServer(...) 的结果', [{ path: checked.server, message: '应 export default defineServer({...})，或调用 createAppBackend({handlers})' }]);
       const missing = manifest.api.filter(api => !handlers.includes(api.id)).map(api => api.id);
       if (missing.length) throw new CliError('接口与 app.json 不一致', missing.map(id => ({ path: checked.server!, message: `缺少接口函数 ${id}` })));
       for (const name of handlers) if (!manifest.api.some(api => api.id === name)) checked.warnings.push(`接口函数 ${name} 未在 app.json 的 api 中声明，平台不会开放`);
@@ -201,4 +200,35 @@ export async function devProject(target: string, options: { out: string; onEvent
     timer = setTimeout(() => { timer = null; void run(); }, 200);
   });
   return () => { if (timer) clearTimeout(timer); watcher.close(); };
+}
+
+/**
+ * Loads a built server.js the way the platform child does (handlers are not invoked) and returns its API names.
+ * Accepts `export default defineServer(...)` and existing `createAppBackend({handlers})` entries.
+ */
+async function serverHandlerNames(file: string): Promise<string[] | null> {
+  let registered: string[] | null = null;
+  const lifetime = new AbortController();
+  const target = globalThis as { __MOP_V2_CHILD__?: unknown };
+  target.__MOP_V2_CHILD__ = {
+    register(handlers: ReadonlyMap<string, unknown>) { registered = [...handlers.keys()]; },
+    platform: async () => { throw Object.assign(new Error('BUILD_TIME'), { code: 'BUILD_TIME', writeOutcome: 'not_started' }); },
+    signal: lifetime.signal,
+  };
+  // Existing entries open a health port at load; it is not needed (or bound) while building.
+  const listen = net.Server.prototype.listen;
+  net.Server.prototype.listen = function (this: net.Server, ...args: unknown[]) {
+    const callback = args.find(arg => typeof arg === 'function') as (() => void) | undefined;
+    queueMicrotask(() => callback?.());
+    return this;
+  } as typeof net.Server.prototype.listen;
+  try {
+    const loaded: unknown = (await import(`${pathToFileURL(file).href}?build=${Date.now()}`)).default;
+    if (isAppServerDefinition(loaded)) return Object.keys(loaded.handlers);
+    return registered;
+  } finally {
+    lifetime.abort();
+    net.Server.prototype.listen = listen;
+    delete target.__MOP_V2_CHILD__;
+  }
 }

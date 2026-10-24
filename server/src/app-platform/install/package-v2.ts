@@ -6,17 +6,17 @@ import { compileAppMigration } from '../storage/declarative-migration.js';
 
 /** Application model v2 packages can be previewed now; installation and runtime arrive with the v2 runtime (0.27.0). */
 export const MOPKG_INSTALL_BLOCKED_REASON = '应用模型 v2 的安装需要在平台配置中启用应用管理。';
-const V1_UPGRADE_REASON = '该应用目前以旧版签名包运行，转换为单文件包的迁移将在后续版本提供。';
+const V1_ENABLED_REASON = '该应用目前以旧版签名包运行。请先在应用列表中停用，再上传此包转换为新版运行方式（数据与授权保留）。';
 
 function installability(hasIssues: boolean, installed: InstalledAppSummary | null, change: AppPackageV2Preview['change'], available: boolean): Pick<AppPackageV2Preview, 'installable' | 'blockedReason'> {
   if (hasIssues || !change || change.kind === 'downgrade') return { installable: false, blockedReason: null };
-  if (installed?.model === 'v1') return { installable: false, blockedReason: V1_UPGRADE_REASON };
+  if (installed?.model === 'v1' && (installed.enabled || change.kind !== 'upgrade')) return { installable: false, blockedReason: installed.enabled ? V1_ENABLED_REASON : '转换为新版运行方式时，版本号需高于当前旧版版本。' };
   if (!available) return { installable: false, blockedReason: MOPKG_INSTALL_BLOCKED_REASON };
   return { installable: true, blockedReason: null };
 }
 const PREVIEW_SCHEMA = `app_${'0'.repeat(32)}`;
 
-export interface InstalledAppSummary { version: string; model: 'v1' | 'v2'; permissions: string[]; platformAccess: string[] }
+export interface InstalledAppSummary { version: string; model: 'v1' | 'v2'; permissions: string[]; platformAccess: string[]; enabled?: boolean }
 export interface AppPackageV2Preview {
   format: 'mopkg';
   sha256: string;
@@ -29,7 +29,7 @@ export interface AppPackageV2Preview {
   migrations: { id: string; file: string; bytes: number; sha256: string; statements: number }[];
   issues: AppManifestIssueV2[];
   platform: { version: string; compatible: boolean };
-  installed: { version: string; model: 'v1' | 'v2' } | null;
+  installed: { version: string; model: 'v1' | 'v2'; enabled?: boolean } | null;
   change: { kind: 'install' | 'upgrade' | 'reinstall' | 'downgrade'; addedPermissions: string[]; removedPermissions: string[]; addedPlatformAccess: string[] } | null;
   installable: boolean;
   /** Why installation is unavailable when the package itself is valid; null when installable or when `issues` explain it. */
@@ -47,7 +47,7 @@ export function summarizeV1Installation(manifest: AppManifest): InstalledAppSumm
 
 /** Comparison view of any installation: v2 records use their stored app.json, v1 records their manifest. */
 export function summarizeInstallation(record: AppInstallation): InstalledAppSummary {
-  if (record.runtime?.model !== 'v2') return summarizeV1Installation(record.manifest);
+  if (record.runtime?.model !== 'v2') return { ...summarizeV1Installation(record.manifest), enabled: record.enabled };
   const manifest = record.runtime.manifest;
   return { version: manifest.version, model: 'v2', permissions: manifest.permissions.map(permission => appPermissionCode(manifest.id, permission.code)), platformAccess: [...manifest.platformAccess] };
 }
@@ -85,7 +85,7 @@ export async function previewAppPackageV2(bytes: Uint8Array, options: { platform
     icon: inspection.icon ? { contentType: inspection.icon.contentType, dataUrl: `data:${inspection.icon.contentType};base64,${inspection.icon.data.toString('base64')}` } : null,
     readme: inspection.readme, changelog: inspection.changelog, files: inspection.files, migrations, issues,
     platform: { version: options.platformVersion, compatible },
-    installed: installedSummary ? { version: installedSummary.version, model: installedSummary.model } : null,
+    installed: installedSummary ? { version: installedSummary.version, model: installedSummary.model, ...(installedSummary.enabled !== undefined ? { enabled: installedSummary.enabled } : {}) } : null,
     change, ...installability(issues.length > 0, installedSummary, change, options.installAvailable === true),
   };
 }

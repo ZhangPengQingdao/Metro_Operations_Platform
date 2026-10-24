@@ -27,8 +27,8 @@ export function InstallPackageReview({target,onDone,onBusy,onClose}:{onClose:()=
   setFrontendRunMode(value.installed?.frontendRunMode??'standard');setBundle(payload);setPreview(value);
  }catch(e){setError(e instanceof SyntaxError?'文件格式不正确，请上传应用安装包。':e instanceof Error&&e.message.includes('INVALID_INSTALL_PACKAGE')?'安装包格式不正确，请重新上传。':e instanceof Error?e.message:'解析失败，请重新上传。');}finally{processing(false);}}
  async function installV2(){if(!packageV2||busy)return;processing(true);setError('');try{
-  const outcome=await adminRequest<{state:'installed'|'updated'|'repaired';enabled:boolean}>('/app-packages/install',{method:'POST',body:{package:packageV2.encoded}});
-  onDone(outcome.state==='installed'?'应用已安装并启用。请在“设置”中指定应用负责人，由负责人配置角色和使用人员后，员工即可看到此应用。':outcome.state==='updated'?`应用已更新${outcome.enabled?'并重新启用':'，保持停用'}。`:'应用已修复并重新启用。');
+  const outcome=await adminRequest<{state:'installed'|'updated'|'repaired'|'converted';enabled:boolean}>('/app-packages/install',{method:'POST',body:{package:packageV2.encoded}});
+  onDone(outcome.state==='installed'?'应用已安装并启用。请在“设置”中指定应用负责人，由负责人配置角色和使用人员后，员工即可看到此应用。':outcome.state==='converted'?'应用已转换为新版运行方式并启用，原有数据、负责人、角色和使用人员保持不变。':outcome.state==='updated'?`应用已更新${outcome.enabled?'并重新启用':'，保持停用'}。`:'应用已修复并重新启用。');
  }catch(e){setError(e instanceof Error?e.message:'安装结果未确认，请刷新应用列表核对。');}finally{processing(false);}}
  async function install(){if(!preview||!bundle||busy)return;processing(true);setError('');try{
   // Approval binds the verified manifest, which includes every artifact digest. Platform ceilings are approved explicitly; no employee business role is implied.

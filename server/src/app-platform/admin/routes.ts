@@ -26,6 +26,7 @@ import {previewAppPackageV2,summarizeInstallation} from '../install/package-v2.j
 import {AppInstallV2Error} from '../v2/installer.js';
 import {AppProjectionError} from '../v2/projection.js';
 import {AppMigrationV2Error} from '../v2/migration.js';
+import {AppConversionError} from '../v2/conversion.js';
 import {AppV2CallError} from '../v2/host.js';
 import {MOPKG_LIMITS,MopkgError} from '@metro/platform-sdk/mopkg';
 import {LocationDirectoryError} from '../../platform/locations/index.js';
@@ -82,9 +83,10 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(error instanceof InstallError){const status=error.code==='INSTALL_NOT_FOUND'?404:error.code==='INSTALL_ACCESS_DENIED'?403:error.code.startsWith('INVALID_')?400:409;return reply.code(status).send({error:error.code});}
    if(error instanceof AppPackageError)return reply.code(400).send({error:error.code});
    if(error instanceof MopkgError)return reply.code(400).send({error:error.code});
-   if(error instanceof AppInstallV2Error)return reply.code(error.code==='PACKAGE_INVALID'?400:409).send({error:error.code,issues:error.issues});
+   if(error instanceof AppInstallV2Error)return reply.code(error.code==='PACKAGE_INVALID'?400:409).send({error:error.code,issues:error.issues,...(error.issues.length?{message:error.issues.map(issue=>issue.message).join('\n')}:{})});
    if(error instanceof AppProjectionError)return reply.code(400).send({error:'PACKAGE_INVALID'});
    if(error instanceof AppMigrationV2Error)return reply.code(409).send({error:error.code});
+   if(error instanceof AppConversionError)return reply.code(409).send({error:error.code,issues:error.issues,message:error.issues.map(issue=>`${issue.path}：${issue.message}`).join('\n')});
    if(error instanceof AppV2CallError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'ADMIN_INVALID_INPUT'});
    const code=error instanceof Error&&'code' in error&&typeof error.code==='string'?error.code:'';
