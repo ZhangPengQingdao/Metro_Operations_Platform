@@ -4,7 +4,7 @@ import {createTodosService} from './src/service.mjs';
 import {createTodosHandlers} from './src/handlers.mjs';
 import {dueAt,occurrence} from './src/schedule.mjs';
 
-const ids={orgA:'11111111-1111-4111-8111-111111111111',orgB:'22222222-2222-4222-8222-222222222222',station:'33333333-3333-4333-8333-333333333333',alice:'44444444-4444-4444-8444-444444444444',bob:'55555555-5555-4555-8555-555555555555',carol:'66666666-6666-4666-8666-666666666666'};
+const ids={orgA:'11111111-1111-4111-8111-111111111111',orgB:'22222222-2222-4222-8222-222222222222',station:'33333333-3333-4333-8333-333333333333',line:'77777777-7777-4777-8777-777777777777',line2:'88888888-8888-4888-8888-888888888888',alice:'44444444-4444-4444-8444-444444444444',bob:'55555555-5555-4555-8555-555555555555',carol:'66666666-6666-4666-8666-666666666666'};
 let counter=100;const id=()=>`00000000-0000-4000-8000-${String(++counter).padStart(12,'0')}`;
 const grant=(permission,orgs)=>({permission:`app.todos.${permission}`,all:false,self:false,organizationIds:orgs});
 const employee=(person,grants)=>({personId:person,organizationUnitId:person===ids.carol?ids.orgB:ids.orgA,businessAuthorization:{revision:id(),grants,organizations:[{id:ids.orgA,name:'甲工班'},{id:ids.orgB,name:'乙工班'}]}});
@@ -18,8 +18,8 @@ function memoryGateway(){
  const clone=value=>structuredClone(value);
  return {tables,async invoke(op,p){
   if(op==='platform.people.members')return {organizationUnitId:p.organizationUnitId,rows:[...people.values()].filter(x=>x.organizationUnitId===p.organizationUnitId&&(!p.personIds||p.personIds.includes(x.id))&&(!p.search||x.name.includes(p.search)))};
-  if(op==='platform.locations.get')return {id:p.id,name:'西站',locationType:'station',status:'active',organizationUnitId:null};
-  if(op==='platform.locations.list')return {rows:[{id:ids.station,name:'西站',locationType:'station',status:'active'}],nextCursor:null};
+  // Workgroup A is responsible for every station it asks about; workgroup B for none.
+  if(op==='platform.locations.responsible_stations')return {organizationUnitId:p.organizationUnitId,lines:[],stations:p.organizationUnitId!==ids.orgA?[]:p.stationId?[{id:p.stationId,name:'西站',lineId:ids.line,lineName:'1号线'}]:[{id:ids.station,name:'西站',lineId:ids.line,lineName:'1号线'},{id:ids.station,name:'西站',lineId:ids.line2,lineName:'2号线'}]};
   if(op==='platform.app_data.get')return {row:clone(tables[p.table].get(p.id)??null)};
   if(op==='platform.app_data.list'){
    let rows=[...tables[p.table].values()].filter(row=>(p.filters??[]).every(f=>row[f.column]===f.value)&&(p.anyOf??[[]]).some(group=>group.every(f=>row[f.column]===f.value))&&(!p.search||row[p.search.column].toLowerCase().includes(p.search.text.toLowerCase()))).sort(p.order?(a,b)=>b[p.order.column].localeCompare(a[p.order.column])||b.id.localeCompare(a.id):(a,b)=>a.id.localeCompare(b.id));
@@ -169,16 +169,15 @@ test('并发办理使用任务版本校验，计分修改须单独授权',async(
 test('列表按创建时间倒序分页并限制在授权工班',async()=>{
  const gateway=memoryGateway();let minute=0;
  const service=createTodosService(gateway,{clock:()=>new Date(Date.UTC(2026,8,24,minute++))});
- const first=await service.createTask(taskInput(),worker);
- const second=await service.createTask(taskInput(),worker);
- const third=await service.createTask(taskInput(),worker);
+ const created=[];for(let index=0;index<21;index++)created.push((await service.createTask(taskInput(),worker)).id);
  await service.createTask(taskInput(ids.orgB,'person',[ids.carol]),department);
+ const newest=[...created].reverse();
  const page=await service.list({kind:'tasks'},worker);
- assert.deepEqual(page.rows.map(x=>x.id),[third.id,second.id]);
+ assert.deepEqual(page.rows.map(x=>x.id),newest.slice(0,20));
  assert.ok(page.nextCursor);
  const last=await service.list({kind:'tasks',after:page.nextCursor},worker);
- assert.deepEqual(last.rows.map(x=>x.id),[first.id]);
- assert.deepEqual((await service.list({kind:'tasks',search:'巡查'},worker)).rows.map(x=>x.id),[third.id,second.id]);
+ assert.deepEqual(last.rows.map(x=>x.id),[created[0]]);
+ assert.deepEqual((await service.list({kind:'tasks',search:'巡查'},worker)).rows.map(x=>x.id),newest.slice(0,20));
  assert.deepEqual((await service.list({kind:'tasks',search:'不存在'},worker)).rows,[]);
 });
 
@@ -197,9 +196,25 @@ test('API 错误区分拒绝与未知写结果',async()=>{
  const unknown=await broken.get('create-task').execute(taskInput(),new AbortController().signal,worker);
  assert.equal(unknown.error.writeOutcome,'unknown');
  const conflicted=createTodosHandlers({invoke:async(op,params)=>{
-  if(op==='platform.locations.get')return gateway.invoke(op,params);
+  if(op==='platform.locations.responsible_stations')return gateway.invoke(op,params);
   throw Object.assign(Error('STORAGE_CONFLICT'),{code:'STORAGE_CONFLICT',writeOutcome:'unknown'});
  }});
  const conflict=await conflicted.get('create-task').execute(taskInput(),new AbortController().signal,worker);
  assert.deepEqual(conflict.error,{code:'CONFLICT',writeOutcome:'unknown'});
+});
+
+test('车站只能选择本工班负责的车站',async()=>{
+ const service=createTodosService(memoryGateway());
+ assert.deepEqual((await service.directory({kind:'station',organizationId:ids.orgA},worker)).rows,[{id:ids.station,name:'西站'}]);
+ await assert.rejects(()=>service.directory({kind:'station',organizationId:ids.orgB},worker),/ACCESS_DENIED/);
+ assert.deepEqual((await service.directory({kind:'station',organizationId:ids.orgB},department)).rows,[]);
+ await assert.rejects(()=>service.createTask(taskInput(ids.orgB),department),/INVALID_TARGET/);
+});
+
+test('任务列表不读取子项明细，单项任务最多五十个对象',async()=>{
+ const gateway=memoryGateway(),seen=[];const service=createTodosService({invoke:(op,p,s)=>{if(op==='platform.app_data.list')seen.push(p);return gateway.invoke(op,p,s);}});
+ await service.createTask(taskInput(),worker);
+ await service.list({kind:'tasks'},worker);
+ const query=seen.at(-1);assert.ok(query.pageSize>=20);assert.ok(!query.columns.includes('items'));
+ await assert.rejects(()=>service.createTask(taskInput(ids.orgA,'station',Array.from({length:51},()=>id())),worker),/INVALID_INPUT/);
 });

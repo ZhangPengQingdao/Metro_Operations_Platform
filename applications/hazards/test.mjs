@@ -144,3 +144,10 @@ test('AI retrieval checks older cases beyond 100 rows and reduces oversized page
  const blocked=fixture({maxCasePageSize:0});
  await assert.rejects(blocked.service.suggest({organizationId:org,rawText:query},a),/STORAGE_RESULT_LIMIT/);
 });
+
+test('migrations create every table the service and photo store write',async()=>{
+ const {readdir,readFile}=await import('node:fs/promises');
+ const created=new Set();
+ for(const file of (await readdir(new URL('./migrations/',import.meta.url))).sort())for(const op of JSON.parse(await readFile(new URL('./migrations/'+file,import.meta.url),'utf8')).operations)if(op.kind==='createTable')created.add(op.table);
+ for(const table of ['records','cases','photos','photo_parts'])assert.ok(created.has(table),`missing table ${table}`);
+});

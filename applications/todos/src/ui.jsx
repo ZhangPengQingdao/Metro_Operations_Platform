@@ -115,6 +115,7 @@ function App(){
  useEffect(()=>{if(!session)return;requestSequence.current++;setRows([]);setAfter(null);setHistory([]);setNext(null);setDetail(null);const timer=setTimeout(()=>void refresh(null,recurring?'templates':'tasks',org,status,search),search?250:0);return()=>{clearTimeout(timer);requestSequence.current++;};},[session,route,org,status,search]);
  const scoped=useMemo(()=>session?.organizations?.filter(o=>has(session,recurring?'recurring':'read',o.id))??[],[session,recurring]);
  const filterGroups=[...(scoped.length?[{id:'org',title:'所属工班',isMulti:false,options:scoped.map(o=>({id:o.id,label:o.name}))}]:[]),...(!recurring?[{id:'status',title:'任务状态',isMulti:false,options:[{id:'active',label:'待完成'},{id:'completed',label:'已完成'}]}]:[])];
+ async function openEdit(id){try{setDialog({type:'task',row:await call('detail',{taskId:id})});}catch(error){setMessage(error.message);}}
  async function openDetail(id){setDetail(null);setDialog({type:'detail',taskId:id});try{setDetail(await call('detail',{taskId:id}));}catch(error){setMessage(error.message);}}
  async function write(id,payload,success){if(busy||uncertain)return false;setBusy(true);setMessage('');try{await call(id,{requestId:fresh(),...payload});if(success)await success();else await refresh();return true;}catch(error){if(error.unknown)setUncertain(true);setMessage(error.message);return false;}finally{setBusy(false);}}
  async function saveItem(item,changes){if(!detail)return;await write('handle-item',{taskId:detail.id,itemId:item.id,revision:detail.revision,...changes},async()=>{await refresh();});}
@@ -144,7 +145,7 @@ function App(){
       <TableActionButton icon={<Trash size={16}/>} disabled={busy||uncertain} onClick={()=>{if(window.confirm('确定删除该模板？已生成的任务仍保留。'))void write('template-state',{templateId:row.id,revision:row.revision,action:'delete'});}}>删除</TableActionButton>
      </>:<>
       <TableActionButton icon={<Eye size={16}/>} onClick={event=>{event.stopPropagation();void openDetail(row.id);}}>查看详情</TableActionButton>
-      {row.can_manage&&<><TableActionButton icon={<PencilSimpleLine size={16}/>} disabled={uncertain} onClick={event=>{event.stopPropagation();setDialog({type:'task',row});}}>编辑</TableActionButton><TableActionButton icon={<Trash size={16}/>} disabled={busy||uncertain} onClick={event=>{event.stopPropagation();if(window.confirm('确定删除该任务？'))void write('delete-task',{taskId:row.id,revision:row.revision});}}>删除</TableActionButton></>}
+      {row.can_manage&&<><TableActionButton icon={<PencilSimpleLine size={16}/>} disabled={uncertain} onClick={event=>{event.stopPropagation();void openEdit(row.id);}}>编辑</TableActionButton><TableActionButton icon={<Trash size={16}/>} disabled={busy||uncertain} onClick={event=>{event.stopPropagation();if(window.confirm('确定删除该任务？'))void write('delete-task',{taskId:row.id,revision:row.revision});}}>删除</TableActionButton></>}
      </>}</TableActions></TableCell>
     </TableRow>
 

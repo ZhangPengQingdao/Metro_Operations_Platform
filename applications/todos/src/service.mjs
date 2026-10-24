@@ -15,6 +15,10 @@ const guard=employee=>{if(!employee||!uuid(employee.personId)||!employee.busines
 const can=(employee,action,organizationId,owner)=>permit(employee,action,{organization_id:organizationId,created_by:owner});
 const requireAction=(employee,action,organizationId,owner)=>{guard(employee);if(!uuid(organizationId)||!can(employee,action,organizationId,owner))fail('ACCESS_DENIED');};
 const stamp=clock=>clock().toISOString();
+// A workgroup is responsible for at most 50 stations; the same cap keeps task and template rows small enough to page.
+const MAX_TARGETS=50;
+// Task lists leave out the per-target items; detail and edit read them from the full row.
+const TASK_LIST_COLUMNS=['id','organization_id','title','description','scope_type','status','total_items','completed_items','due_at','is_scored','score_value','template_id','occurrence_key','created_by','created_at','updated_at','revision'];
 const scoreFields=(input,employee,org)=>{
  const scored=input.isScored===true;
  if(input.isScored!==undefined&&typeof input.isScored!=='boolean'||input.scoreValue!==undefined&&(!Number.isInteger(input.scoreValue)||input.scoreValue<0||input.scoreValue>10000))fail('INVALID_INPUT');
@@ -56,7 +60,7 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
   if(!row||row.deleted||!permit(employee,'recurring',row))fail('ACCESS_DENIED');return row;
  };
  async function targets(input,org,signal){
-  if(!['station','person'].includes(input.scopeType)||!Array.isArray(input.targetIds)||input.targetIds.length<1||input.targetIds.some(id=>!uuid(id))||new Set(input.targetIds).size!==input.targetIds.length)fail('INVALID_INPUT');
+  if(!['station','person'].includes(input.scopeType)||!Array.isArray(input.targetIds)||input.targetIds.length<1||input.targetIds.length>MAX_TARGETS||input.targetIds.some(id=>!uuid(id))||new Set(input.targetIds).size!==input.targetIds.length)fail('INVALID_INPUT');
   if(input.scopeType==='person'){
    const rows=[];
    for(let start=0;start<input.targetIds.length;start+=50){
@@ -66,10 +70,11 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
    if(rows.length!==input.targetIds.length)fail('INVALID_TARGET');const byId=new Map(rows.map(row=>[row.id,row]));
    return input.targetIds.map(id=>({id,name:byId.get(id).name.slice(0,50),type:'person'}));
   }
+  // Station items must be stations the task's workgroup is responsible for (same rule as the station picker).
   const resolved=[];
   for(let start=0;start<input.targetIds.length;start+=8){
-   const rows=await Promise.all(input.targetIds.slice(start,start+8).map(id=>gateway.invoke('platform.locations.get',{id},signal)));
-   resolved.push(...rows.map(row=>{if(row.locationType!=='station'||row.status!=='active')fail('INVALID_TARGET');return {id:row.id,name:row.name.slice(0,50),type:'station'};}));
+   const rows=await Promise.all(input.targetIds.slice(start,start+8).map(async id=>(await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:org,stationId:id},signal)).stations.find(row=>row.id===id)));
+   resolved.push(...rows.map(row=>{if(!row)fail('INVALID_TARGET');return {id:row.id,name:row.name.slice(0,50),type:'station'};}));
   }
   return resolved;
  }
@@ -191,9 +196,10 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
    if(!uuid(input.organizationId)||!['create','recurring','handle','manage'].some(action=>can(employee,action,input.organizationId,input.organizationId===employee.organizationUnitId?employee.personId:undefined)))fail('ACCESS_DENIED');
     return gateway.invoke('platform.people.members',{organizationUnitId:input.organizationId,...(input.search?{search:input.search}:{})},signal);
    }
-   if(!employee.businessAuthorization.grants.some(grant=>['app.todos.create','app.todos.recurring'].includes(grant.permission)))fail('ACCESS_DENIED');
-   const page=await gateway.invoke('platform.locations.list',{pageSize:50,status:'active',...(input.search?{search:input.search}:{}),...(input.afterId?{afterId:input.afterId}:{})},signal);
-   return {...page,rows:page.rows.filter(row=>row.locationType==='station')};
+   if(!uuid(input.organizationId)||!['create','recurring'].some(action=>can(employee,action,input.organizationId)))fail('ACCESS_DENIED');
+   // Stations belong to a workgroup through its responsibility scope; a station on several lines is listed once.
+   const result=await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:input.organizationId,...(input.search?{search:input.search}:{})},signal);
+   return {rows:[...new Map(result.stations.map(row=>[row.id,{id:row.id,name:row.name}])).values()],nextCursor:null};
   },
   async list(input,employee,signal){guard(employee);shape(input,['kind'],['organizationId','after','status','search']);
    if(!['tasks','templates'].includes(input.kind)||input.organizationId!==undefined&&!uuid(input.organizationId)||input.after!==undefined&&(!input.after||typeof input.after!=='object'||Array.isArray(input.after)||Object.keys(input.after).sort().join(',')!=='id,value'||!uuid(input.after.id)||typeof input.after.value!=='string'||Number.isNaN(Date.parse(input.after.value)))||input.status!==undefined&&!['active','completed'].includes(input.status)||input.search!==undefined&&(!label(input.search,100)))fail('INVALID_INPUT');
@@ -201,7 +207,7 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
    if(input.organizationId){requireAction(employee,action,input.organizationId,employee.personId);filters.push({column:'organization_id',value:input.organizationId});}
    if(input.kind==='tasks'&&input.status)filters.push({column:'status',value:input.status});
    if(input.kind==='templates')filters.push({column:'deleted',value:false});
-   const page=await data.list(input.kind,{...scope(employee,action),filters,pageSize:2,order:{column:'created_at',direction:'desc'},...(input.search?{search:{column:'title',text:input.search.trim()}}:{}),...(input.after?{after:input.after}:{})},signal);
+   const page=await data.list(input.kind,{...scope(employee,action),filters,...(input.kind==='tasks'?{columns:TASK_LIST_COLUMNS,pageSize:20}:{pageSize:10}),order:{column:'created_at',direction:'desc'},...(input.search?{search:{column:'title',text:input.search.trim()}}:{}),...(input.after?{after:input.after}:{})},signal);
    return {...page,rows:page.rows.filter(row=>row.status!=='deleted').map(row=>({...row,can_manage:input.kind==='tasks'&&permit(employee,'manage',row),can_score:permit(employee,'score',row)}))};
   },
   async detail(input,employee,signal){guard(employee);shape(input,['taskId']);const row=await getTask(input.taskId,employee,'read',signal);const manage=permit(employee,'manage',row);return {...row,items:row.items.map(item=>({...item,can_handle:manage||(row.scope_type!=='person'||item.target_id===employee.personId)&&can(employee,'handle',row.organization_id,item.target_id)})),can_manage:manage,can_score:permit(employee,'score',row)};},

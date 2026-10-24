@@ -32,8 +32,7 @@ function fixture(){
  const rows=new Map(),writes=[];
  const gateway={async invoke(operation,payload){
   if(operation==='platform.people.members')return {rows:[{id:person,name:'张三',employeeNo:'1'},{id:colleague,name:'李四',employeeNo:'2'}].filter(row=>!payload.personIds||payload.personIds.includes(row.id))};
-  if(operation==='platform.locations.get')return {id:station,name:'测试站',status:'active',locationType:'station'};
-  if(operation==='platform.locations.list')return {rows:[{id:station,name:'测试站',status:'active',locationType:'station'}]};
+  if(operation==='platform.locations.responsible_stations')return {lines:[],stations:payload.organizationUnitId===org&&(!payload.stationId||payload.stationId===station)?[{id:station,name:'测试站',lineId:randomUUID(),lineName:'1号线'}]:[]};
   if(operation==='platform.assets.list')return {rows:[{id:randomUUID(),assetCode:'TVM-01',typeName:'TVM',locationId:station}]};
   if(operation==='platform.app_data.get')return {row:structuredClone(rows.get(payload.id)??null)};
   if(operation==='platform.app_data.list'){
@@ -69,6 +68,8 @@ test('authorization and directory identity are checked before writes',async()=>{
  const f=fixture(),id=randomUUID();
  await assert.rejects(f.service.create({requestId:randomUUID(),id,plan:{...f.plan,organizationId:f.otherOrg}},f.employee),/ACCESS_DENIED/);
  await assert.rejects(f.service.create({requestId:randomUUID(),id,plan:{...f.plan,items:[{deviceNumber:'01',operatorId:randomUUID(),status:'completed'}]}},f.employee),/INVALID_PERSON/);
+ // Only stations the workgroup is responsible for.
+ await assert.rejects(f.service.create({requestId:randomUUID(),id,plan:{...f.plan,stationId:randomUUID()}},f.employee),/INVALID_STATION/);
  assert.equal(f.writes.length,0);
  await f.service.create({requestId:randomUUID(),id,plan:f.plan},f.employee);
  f.rows.set(randomUUID(),{...f.rows.get(id),id:randomUUID(),organization_id:f.otherOrg});

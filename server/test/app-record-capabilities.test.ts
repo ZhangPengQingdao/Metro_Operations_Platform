@@ -10,14 +10,20 @@ import {PLATFORM_PEOPLE_DIRECTORY_MIGRATIONS} from '../src/platform/people/index
 import {PLATFORM_AUTHORIZATION_MIGRATIONS} from '../src/platform/authorization/index.ts';
 import {PLATFORM_SIGNATURE_MIGRATIONS} from '../src/platform/signatures/index.ts';
 import {createLocalStorageAdapter} from '../src/core/storage/index.ts';
+import {runDatabaseTransaction,runOutsideTransaction} from '../src/core/database/index.ts';
 import {createSignatureGatewayOperations} from '../src/app-platform/gateway/signatures.ts';
 import {createWebhookOperation} from '../src/app-platform/gateway/webhook.ts';
 import type {GatewayActorContext} from '../src/app-platform/gateway/model.ts';
 const id=(n:number)=>`62000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const allow=async()=>({allowed:true,permission:'test',reason:'allowed'});
-function context(person=id(3),appId='shifts'):GatewayActorContext{return {actorType:'service',execution:{type:'service',appId,serviceIdentityId:id(6)},request:{requestId:randomUUID(),traceId:randomUUID(),startedAt:new Date().toISOString()},authorize:allow,authorizeApplication:allow,employeeActor:{request:{requestId:randomUUID(),traceId:randomUUID(),startedAt:new Date().toISOString()},actorType:'person',person:{id:person,name:'测试人员',organization:{id:id(1)}},execution:{type:'application',appId},authorize:allow,authorizeApplication:allow}} as unknown as GatewayActorContext;}
+// The platform authorizes on its own pooled connection and transaction, detached from the operation's transaction.
+const authorizationClient={query:async()=>({rows:[]}),release(){}};
+// node-postgres returns BIGINT (int8) columns as strings; PGlite returns numbers.
+const asNodePostgres=(result:{rows:Record<string,unknown>[]})=>({...result,rows:result.rows.map(row=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key,key==='size_bytes'&&typeof value==='number'?String(value):value])))});
+const allowOnOwnConnection=()=>runOutsideTransaction(()=>runDatabaseTransaction(authorizationClient as never,allow));
+function context(person=id(3),appId='shifts'):GatewayActorContext{return {actorType:'service',execution:{type:'service',appId,serviceIdentityId:id(6)},request:{requestId:randomUUID(),traceId:randomUUID(),startedAt:new Date().toISOString()},authorize:allowOnOwnConnection,authorizeApplication:allowOnOwnConnection,employeeActor:{request:{requestId:randomUUID(),traceId:randomUUID(),startedAt:new Date().toISOString()},actorType:'person',person:{id:person,name:'测试人员',organization:{id:id(1)}},execution:{type:'application',appId},authorize:allow,authorizeApplication:allow}} as unknown as GatewayActorContext;}
 test('record signature Gateway uses host employee, isolates source apps and retains evidence through re-sign',async()=>{
- const root=await mkdtemp(join(tmpdir(),'shifts-signature-')),db=new PGlite(),client={query:async(sql:string,args?:readonly unknown[])=>!args&&sql.includes(';')?db.exec(sql):db.query(sql,args?[...args]:undefined),release(){}};
+ const root=await mkdtemp(join(tmpdir(),'shifts-signature-')),db=new PGlite(),client={query:async(sql:string,args?:readonly unknown[])=>!args&&sql.includes(';')?db.exec(sql):asNodePostgres(await db.query(sql,args?[...args]:undefined)),release(){}};
  try{
  for(const migration of [...CORE_EVENTS_MIGRATIONS,...PLATFORM_PEOPLE_DIRECTORY_MIGRATIONS,...PLATFORM_AUTHORIZATION_MIGRATIONS,...PLATFORM_SIGNATURE_MIGRATIONS])await migration.run({client} as never);
  await db.query(`INSERT INTO platform_organization_units VALUES($1,NULL,'team','测试工班',NULL,'workgroup','active',0,NOW(),NOW())`,[id(1)]);
@@ -44,4 +50,12 @@ test('webhook validates trusted exact endpoints and carries cancellation without
  for(const url of ['https://example.com/robot/send?access_token=x','http://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x','https://qyapi.weixin.qq.com/not-webhook?key=x','https://qyapi.weixin.qq.com/cgi-bin/webhook/send','https://oapi.dingtalk.com/robot/send?access_token=x#fragment'])await assert.rejects(op.execute(context(),{url,message:'test'},signal));
  assert.equal(calls.length,0);await op.execute(context(),{url:'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test',message:'测试',messageType:'text'},signal);assert.equal(calls.length,1);assert.equal(calls[0][2].signal,signal);
  const failed=createWebhookOperation(async()=>{throw Error('timeout');});await assert.rejects(failed.execute(context(),{url:'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test',message:'test'},signal),/timeout/);
+});
+
+test('work on its own connection runs outside an open transaction instead of being rejected',async()=>{
+ const a={query:async()=>({rows:[]}),release(){}},b={query:async()=>({rows:[]}),release(){}};
+ await runDatabaseTransaction(a as never,async()=>{
+  await assert.rejects(runDatabaseTransaction(b as never,async()=>1),/ATOMIC_CONNECTION_MISMATCH/);
+  assert.equal(await runOutsideTransaction(()=>runDatabaseTransaction(b as never,async()=>2)),2);
+ });
 });

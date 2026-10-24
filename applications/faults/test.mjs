@@ -82,7 +82,10 @@ test('catalog exposes searchable stations, people and assets in the authorized o
  const f=fixture();const result=await f.service.catalog({organizationId:f.org,stationSearch:'测试',personSearch:'张',assetSearch:'TVM',stationId:f.locationId,assetTypeName:'自动售票机'},f.employee);
  assert.equal(result.people[0].name,'张三');assert.equal(result.stations[0].name,'测试站');assert.equal(result.assets[0].assetCode,'TVM-01');
  assert.equal(result.assets[0].typeName,'自动售票机');assert.equal(result.assetLookupAvailable,true);
- assert.equal(f.assetQueries[0].organizationUnitId,f.org);assert.equal(f.assetQueries[0].locationId,f.locationId);assert.equal(f.assetQueries[0].typeName,'自动售票机');
+ assert.equal(f.assetQueries[0].organizationUnitId,undefined);assert.equal(f.assetQueries[0].locationId,f.locationId);assert.equal(f.assetQueries[0].typeName,'自动售票机');
+ // Equipment is listed per station, and only for stations this workgroup is responsible for.
+ assert.deepEqual((await f.service.catalog({organizationId:f.org,stationId:randomUUID()},f.employee)).assets,[]);
+ assert.deepEqual((await f.service.catalog({organizationId:f.org},f.employee)).assets,[]);assert.equal(f.assetQueries.length,1);
  await assert.rejects(f.service.catalog({organizationId:f.otherOrg},f.employee),/ACCESS_DENIED/);
 });
 test('record write rejects stations outside the workgroup responsibility scope',async()=>{

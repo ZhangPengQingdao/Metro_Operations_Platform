@@ -3,7 +3,7 @@ import {createWebhookOperation} from '../gateway/webhook.js';
 import {createSignatureGatewayOperations} from '../gateway/signatures.js';
 import {createNotificationGatewayOperations} from '../gateway/notifications.js';
 import {AppBusinessAuthorization} from '../business-authorization/service.js';
-import type {ConnectablePool,QueryableClient} from '../../core/database/index.js';
+import {runOutsideTransaction,type ConnectablePool,type QueryableClient} from '../../core/database/index.js';
 import {createPostgresCoreTechnicalAuditRepository} from '../../core/observability/index.js';
 import {createPlatformActorContextResolver,type PlatformActorContextResolver} from '../../platform/context/index.js';
 import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
@@ -20,10 +20,10 @@ import {createAssetListReader} from '../gateway/asset-list.js';
 import {createDirectoryGatewayOperations} from '../gateway/directory.js';
 import {createAiCompletionOperation} from '../gateway/ai.js';
 
-/** Runtime requests never borrow the lifecycle manager's transaction session. */
+/** Runtime requests never borrow the lifecycle manager's transaction session, nor the operation's own transaction. */
 function createManagementContexts(pool:ConnectablePool&QueryableClient){
- async function withContext<T>(work:(value:ReturnType<typeof services>)=>Promise<T>):Promise<T>{
-  const client=await pool.connect();try{return await work(services(client));}finally{client.release();}
+ function withContext<T>(work:(value:ReturnType<typeof services>)=>Promise<T>):Promise<T>{
+  return runOutsideTransaction(async()=>{const client=await pool.connect();try{return await work(services(client));}finally{client.release();}});
  }
  function services(client:QueryableClient){
   const people=createPostgresPeopleDirectoryRepository(client);

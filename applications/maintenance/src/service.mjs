@@ -56,7 +56,8 @@ export function createMaintenanceService(gateway,{clock=()=>new Date(),newId=ran
   if(previous&&previous.revision!==input.revision)fail('CONFLICT');
   const now=clock().toISOString(),value=validatePlan(input.plan,previous,now,newId);
   if(previous){if(value.organization_id!==previous.organization_id)fail('ACCESS_DENIED');}else target(employee,'create',value.organization_id);
-  if(value.station_id){const station=await gateway.invoke('platform.locations.get',{id:value.station_id},signal);if(station.status!=='active'||station.locationType!=='station'||station.name!==value.station_name)fail('INVALID_STATION');}
+  // A plan's station must be one the plan's workgroup is responsible for (same rule as the station picker).
+  if(value.station_id){const result=await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:value.organization_id,stationId:value.station_id},signal);if(!result.stations.some(row=>row.id===value.station_id&&row.name===value.station_name))fail('INVALID_STATION');}
   const personIds=[...new Set(value.items.flatMap(item=>[item.operatorId&&!item.operatorName?item.operatorId:null,item.secondaryOperatorId&&!item.secondaryOperatorName?item.secondaryOperatorId:null]).filter(Boolean))];
   const people=[];
   for(let start=0;start<personIds.length;start+=50){const page=await gateway.invoke('platform.people.members',{organizationUnitId:value.organization_id,personIds:personIds.slice(start,start+50)},signal);people.push(...page.rows);}
@@ -78,9 +79,12 @@ export function createMaintenanceService(gateway,{clock=()=>new Date(),newId=ran
   async catalog(input,employee,signal){identity(employee);if(!object(input)||input.organizationId!=null&&!uuid(input.organizationId)||input.stationSearch!=null&&!text(input.stationSearch,100)||input.personSearch!=null&&!text(input.personSearch,100)||input.assetSearch!=null&&!text(input.assetSearch,100)||input.stationId!=null&&!uuid(input.stationId)||input.assetTypeName!=null&&!text(input.assetTypeName,100))fail('INVALID_INPUT');const org=input.organizationId??employee.organizationUnitId;
    if(!['read','create','update'].some(name=>canTarget(employee,name,org)))fail('ACCESS_DENIED');
    const people=await gateway.invoke('platform.people.members',{organizationUnitId:org,...(input.personSearch?{search:input.personSearch}:{})},signal);
-   const locations=await gateway.invoke('platform.locations.list',{pageSize:50,status:'active',...(input.stationSearch?{search:input.stationSearch}:{})},signal).catch(()=>null);
-   const assets=await gateway.invoke('platform.assets.list',{pageSize:50,organizationUnitId:org,lifecycleState:'active',...(input.assetSearch?{search:input.assetSearch}:{}),...(input.stationId?{locationId:input.stationId}:{}),...(input.assetTypeName?{typeName:input.assetTypeName}:{})},signal).catch(()=>null);
-   return {people:people.rows,stations:locations?.rows.filter(row=>row.locationType==='station')??[],assets:assets?.rows??[],stationLookupAvailable:!!locations,assetLookupAvailable:!!assets};
+   const locations=await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:org,...(input.stationSearch?{search:input.stationSearch}:{})},signal).catch(()=>null);
+   // Stations belong to a workgroup through its responsibility scope, not through an organization on the asset;
+   // equipment is therefore listed per station, and only for a station this workgroup is responsible for.
+   const ownStation=input.stationId?(await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:org,stationId:input.stationId},signal)).stations.some(row=>row.id===input.stationId):false;
+   const assets=ownStation?await gateway.invoke('platform.assets.list',{pageSize:50,locationId:input.stationId,lifecycleState:'active',...(input.assetSearch?{search:input.assetSearch}:{}),...(input.assetTypeName?{typeName:input.assetTypeName}:{})},signal).catch(()=>null):{rows:[]};
+   return {people:people.rows,stations:locations?[...new Map(locations.stations.map(row=>[row.id,row])).values()]:[],assets:assets?.rows??[],stationLookupAvailable:!!locations,assetLookupAvailable:!!assets};
   },
   list,
   async export(input,employee,signal){return list(input,employee,signal,'export');},

@@ -36,6 +36,14 @@ export function hasActiveDatabaseTransaction(client: QueryableClient): boolean {
   return transactionContext.getStore()?.get(client)?.active === true;
 }
 
+/**
+ * Runs work that owns its own connection (for example an authorization lookup) outside the caller's transaction,
+ * so it neither joins nor is rejected by the transaction the caller happens to have open.
+ */
+export function runOutsideTransaction<T>(work: () => Promise<T>): Promise<T> {
+  return transactionContext.exit(() => atomicContext.exit(work));
+}
+
 /** One command, one dedicated database connection, or rollback-capable memory participants. */
 export async function runAtomicOperation<T>(participants: readonly AtomicParticipant[], operation: () => Promise<T>): Promise<T> {
   const boundaries = [...new Set(participants.map((participant) => {

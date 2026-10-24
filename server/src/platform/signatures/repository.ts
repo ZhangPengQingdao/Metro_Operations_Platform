@@ -489,7 +489,8 @@ function nullableInstant(row: Record<string, unknown>, key: string) {
 function integer(row: Record<string, unknown>, key: string) {
   const value = row[key];
   if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
-  if (typeof value === 'bigint') {
+  // node-postgres returns BIGINT columns (size_bytes) as decimal strings.
+  if (typeof value === 'bigint' || typeof value === 'string' && /^-?\d+$/.test(value)) {
     const numeric = Number(value);
     if (Number.isSafeInteger(numeric)) return numeric;
   }

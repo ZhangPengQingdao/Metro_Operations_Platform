@@ -15,6 +15,8 @@ export interface AppGatewayOptions {
   operations: readonly AppGatewayOperation[];
   limits?: Partial<GatewayLimits>;
   auditRepository?: Pick<CoreTechnicalAuditRepository,'append'>;
+  /** Receives errors that are not GatewayErrors; the app only ever sees GATEWAY_FAILED, so this is where the cause is kept. */
+  reportUnexpected?: (operation: string | undefined, error: unknown) => void;
 }
 export class AppGateway {
   readonly admission: GatewayAdmission;
@@ -159,6 +161,7 @@ export class AppGateway {
     };
     // Keep the slot until actual work settles, even if a noncooperative adapter ignores abort.
     const work=run().catch(async(error:unknown)=>{
+      if(!(error instanceof GatewayError))(this.options.reportUnexpected??((operation,cause)=>console.error('App gateway operation failed',operation??'unknown',cause)))(trace.operation,error);
       const safe=error instanceof GatewayError?error:new GatewayError('GATEWAY_FAILED',500);
       await boundedAudit(recordTerminal('failed',safe.code));
       throw new GatewayError(safe.code,safe.statusCode,writeStarted?'unknown':safe.writeOutcome);

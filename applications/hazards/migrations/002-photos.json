@@ -1,0 +1,118 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "photos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "mime",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "bytes",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "sha256",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "parts",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "ready",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "record_id",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "photo_parts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "photo_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "part_index",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "data",
+          "type": "text",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "photo_parts",
+      "name": "photo_parts_photo_idx",
+      "columns": [
+        "photo_id",
+        "part_index"
+      ],
+      "unique": true
+    }
+  ]
+}
