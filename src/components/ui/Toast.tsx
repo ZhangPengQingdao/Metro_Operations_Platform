@@ -60,7 +60,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             <span className="flex-1">{t.message}</span>
             <button
               type="button"
-              className="text-gray-400 hover:text-white ml-2 transition-colors"
+              className="text-muted hover:text-white ml-2 transition-colors"
               onClick={() => removeToast(t.id)}
               aria-label="关闭"
             >

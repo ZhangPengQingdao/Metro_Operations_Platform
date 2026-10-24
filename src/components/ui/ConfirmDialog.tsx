@@ -38,7 +38,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <>
           <Button
             variant="ghost"
-            className="bg-[#f1f5f3] text-[#2d3b33] hover:bg-[#e4ebe7] font-semibold px-5"
+            className="bg-soft text-ink hover:bg-hover font-semibold px-5"
             onClick={onClose}
             disabled={loading}
           >
@@ -54,7 +54,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         </>
       }
     >
-      <div className="text-sm text-[#526159] leading-relaxed">
+      <div className="text-sm text-muted leading-relaxed">
         {message}
       </div>
     </Dialog>

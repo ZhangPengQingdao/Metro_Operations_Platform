@@ -43,13 +43,13 @@ export const Drawer: React.FC<DrawerProps> = ({
         <div className="afc-drawer__header">
           <div>
             <h2 className="afc-drawer__title">{title}</h2>
-            {description && <p className="text-xs text-gray-500 mt-1">{description}</p>}
+            {description && <p className="text-xs text-muted mt-1">{description}</p>}
           </div>
           <IconButton
             label="关闭抽屉"
             size="sm"
             variant="ghost"
-            className="text-gray-400 hover:text-gray-700 p-1 rounded-lg transition-colors"
+            className="text-muted hover:text-ink p-1 rounded-lg transition-colors"
             onClick={onClose}
           >
             <X size={20} weight="bold" />

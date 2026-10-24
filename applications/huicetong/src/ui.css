@@ -9,7 +9,7 @@
 .hct-section>h2{margin-bottom:12px}
 .hct-wrap small,.hct-status small{display:block;color:var(--afc-color-muted)}
 .hct-status small{max-width:180px;white-space:normal;overflow-wrap:anywhere}
-.hct-alert{padding:12px 14px;border:1px solid var(--afc-color-line);border-radius:8px;color:var(--afc-color-danger);overflow-wrap:anywhere;margin:0 0 14px}
+.hct-alert{padding:12px 14px;border:1px solid var(--afc-color-line);border-radius:8px;color: var(--afc-color-danger-ink);overflow-wrap:anywhere;margin:0 0 14px}
 .hct-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .hct-wide{grid-column:1/-1}
 .hct-form textarea{width:100%;min-height:84px}

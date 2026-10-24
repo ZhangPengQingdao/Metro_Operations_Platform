@@ -12,7 +12,7 @@ export const Divider: React.FC<DividerProps> = ({
   ...props
 }) => {
   if (orientation === "vertical") {
-    return <div className={`inline-block w-px self-stretch bg-gray-200 mx-3 ${className}`} role="separator" {...props} />;
+    return <div className={`inline-block w-px self-stretch bg-soft mx-3 ${className}`} role="separator" {...props} />;
   }
 
   return (

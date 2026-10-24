@@ -1,7 +1,7 @@
 {
   "id": "faults",
   "name": "故障记录",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "登记、查询、处置与导出设备故障",
   "color": "#DC2626",
   "platform": ">=0.30.0",

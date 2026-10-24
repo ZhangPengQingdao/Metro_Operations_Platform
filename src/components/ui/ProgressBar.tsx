@@ -65,7 +65,7 @@ const TONE_TEXT_CLASSES: Record<ProgressTone, string> = {
   warning: 'text-amber-700 font-semibold',
   danger: 'text-red-600 font-semibold',
   purple: 'text-purple-600 font-semibold',
-  neutral: 'text-slate-600 font-semibold',
+  neutral: 'text-muted font-semibold',
   gradient: 'text-emerald-700 font-semibold'
 };
 
@@ -129,7 +129,7 @@ export const ProgressBar = React.forwardRef<HTMLDivElement, ProgressBarProps>(({
       {resolvedPosition === 'top' && (label || showLabel) && (
         <div className="flex items-center justify-between gap-2 text-xs">
           {label ? (
-            <span className="font-medium text-gray-700 truncate">{label}</span>
+            <span className="font-medium text-ink truncate">{label}</span>
           ) : (
             <span className="sr-only">Progress</span>
           )}
@@ -148,7 +148,7 @@ export const ProgressBar = React.forwardRef<HTMLDivElement, ProgressBarProps>(({
           aria-valuemin={min}
           aria-valuemax={max}
           aria-label={ariaLabel || (typeof label === 'string' ? label : undefined)}
-          className={`afc-progress-track relative w-full overflow-hidden bg-[#e4ede7] transition-all ${sizeCfg.height} ${roundedClass} ${trackClassName}`}
+          className={`afc-progress-track relative w-full overflow-hidden bg-hover transition-all ${sizeCfg.height} ${roundedClass} ${trackClassName}`}
         >
           <div
             style={barStyle}
@@ -174,7 +174,7 @@ export const ProgressBar = React.forwardRef<HTMLDivElement, ProgressBarProps>(({
       </div>
 
       {resolvedPosition === 'bottom' && (label || showLabel) && (
-        <div className="flex items-center justify-between gap-2 text-xs text-gray-500 mt-0.5">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted mt-0.5">
           {label && <span className="truncate">{label}</span>}
           {showLabel && (
             <span className={`font-mono text-xs tabular-nums ml-auto shrink-0 ${textClass}`}>
@@ -349,8 +349,8 @@ export const StepProgress: React.FC<StepProgressProps> = ({
                     isCompleted
                       ? 'bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-50'
                       : isCurrent
-                      ? 'bg-white text-emerald-700 border-2 border-emerald-600 ring-4 ring-emerald-50'
-                      : 'bg-[#f1f5f3] text-gray-400 border border-gray-200'
+                      ? 'bg-paper text-emerald-700 border-2 border-emerald-600 ring-4 ring-emerald-50'
+                      : 'bg-soft text-muted border border-line'
                   }`}
                 >
                   {isCompleted ? (
@@ -364,12 +364,12 @@ export const StepProgress: React.FC<StepProgressProps> = ({
 
                 <div className="mt-2 text-center max-w-[100px]">
                   <div className={`text-xs font-medium truncate ${
-                    isCompleted || isCurrent ? 'text-gray-900 font-semibold' : 'text-gray-400'
+                    isCompleted || isCurrent ? 'text-ink font-semibold' : 'text-muted'
                   }`}>
                     {step.title}
                   </div>
                   {step.description && (
-                    <div className="text-[10px] text-gray-400 truncate mt-0.5">
+                    <div className="text-[10px] text-muted truncate mt-0.5">
                       {step.description}
                     </div>
                   )}
@@ -379,7 +379,7 @@ export const StepProgress: React.FC<StepProgressProps> = ({
               {!isLast && (
                 <div
                   className={`flex-1 h-0.5 -mt-6 transition-all ${
-                    idx < currentStep ? 'bg-emerald-600' : 'bg-gray-200'
+                    idx < currentStep ? 'bg-emerald-600' : 'bg-soft'
                   }`}
                 />
               )}

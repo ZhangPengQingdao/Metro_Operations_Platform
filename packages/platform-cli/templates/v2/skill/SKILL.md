@@ -42,7 +42,7 @@ export default defineApp({pages: {'/': Page, '/records/:id': Detail}, dashboard:
 ```
 
 - 页面渲染在平台内容区，标题与侧栏由平台根据 `pages` 生成，页面里不要再放大标题或侧栏。
-- 使用 `@metro/platform-sdk/ui` 组件；颜色、字号用平台 CSS 变量（如 `var(--afc-color-muted)`）。样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`（未引用时构建报错），构建时自动限定在本应用内。
+- 使用 `@metro/platform-sdk/ui` 组件；颜色、字号用平台 CSS 变量，不写固定色值（暗色主题下会白底白字）：文字 `--afc-color-ink`/`--afc-color-muted`，底色 `--afc-color-paper`/`--afc-color-neutral-soft`，边框 `--afc-color-line`，主色 `--afc-color-primary`（其上文字 `--afc-on-primary`），状态 `--afc-color-danger-ink`/`--afc-color-danger-soft` 等。样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`（未引用时构建报错），构建时自动限定在本应用内。
 - 只从 `react` 导入需要的名称（如 `Fragment`、`useState`），不要使用全局 `React.xxx`（构建会报错）。
 - 页面生成的文件（如导出的 Excel）用 `saveAs(blob, 文件名)` 交给浏览器保存，`saveAs` 从 `@metro/platform-sdk/app` 导入。
 - 前端的 `user.has()` 只控制显示；真正的权限在接口里检查。

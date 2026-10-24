@@ -1,5 +1,5 @@
 /** Public UI kit for applications (`@metro/platform-sdk/ui`). The SDK build and the v2 app shell both use this list. */
-export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp,Play,Pause,ArrowsClockwise,Eye} from '@phosphor-icons/react';
+export {PencilSimpleLine,Trash,Plus,ArrowLineDown,ArrowLineUp,Play,Pause,ArrowsClockwise,Eye,CheckCircle} from '@phosphor-icons/react';
 export {Button,IconButton} from './Button';
 export {Input,Select,Field,QuantityInput} from './FormControls';
 export {SearchSelect} from './SearchSelect';

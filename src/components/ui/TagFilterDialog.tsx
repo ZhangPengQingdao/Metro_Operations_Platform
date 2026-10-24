@@ -93,7 +93,7 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
         {/* 标签列表区 */}
         <div className="max-h-[420px] overflow-y-auto pr-1 space-y-4">
           {items.length === 0 ? (
-            <div className="text-center py-8 text-xs text-gray-400">
+            <div className="text-center py-8 text-xs text-muted">
               暂无可选项目
             </div>
           ) : (
@@ -108,9 +108,9 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
                   <div key={groupName} className="space-y-2">
                     {/* 分组标题与 全选 / 清除 动作 */}
                     <div className="flex items-center justify-between text-xs px-0.5">
-                      <span className="font-bold text-gray-700 tracking-wide">
+                      <span className="font-bold text-ink tracking-wide">
                         {groupName}{' '}
-                        <span className="font-normal text-gray-400">
+                        <span className="font-normal text-muted">
                           ({selectedInGroupCount > 0 ? `${selectedInGroupCount}/` : ''}{groupList.length})
                         </span>
                       </span>
@@ -120,16 +120,16 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
                             type="button"
                             onClick={() => handleSelectAllGroup(groupList)}
                             className={`text-[11px] font-semibold transition-colors bg-transparent border-0 p-0 cursor-pointer ${
-                              isAllSelected ? 'text-gray-400 hover:text-gray-600' : 'text-emerald-600 hover:text-emerald-800'
+                              isAllSelected ? 'text-muted hover:text-muted' : 'text-emerald-600 hover:text-emerald-800'
                             }`}
                           >
                             全选
                           </button>
-                          <span className="text-gray-300 text-[10px]">|</span>
+                          <span className="text-placeholder text-[10px]">|</span>
                           <button
                             type="button"
                             onClick={() => handleClearGroup(groupList)}
-                            className="text-[11px] font-semibold text-gray-400 hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                            className="text-[11px] font-semibold text-muted hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
                           >
                             清除
                           </button>
@@ -151,7 +151,7 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
                           >
                             {item.label}
                             {item.badge && (
-                              <span className={`ml-1 text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-400'}`}>
+                              <span className={`ml-1 text-[10px] ${isSelected ? 'text-white/80' : 'text-muted'}`}>
                                 {item.badge}
                               </span>
                             )}
@@ -167,9 +167,9 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
               {groupedItems.ungrouped.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs px-0.5">
-                    <span className="font-bold text-gray-700 tracking-wide">
+                    <span className="font-bold text-ink tracking-wide">
                       {Object.keys(groupedItems.groups).length > 0 ? '其他' : '全部选项'}{' '}
-                      <span className="font-normal text-gray-400">({groupedItems.ungrouped.length})</span>
+                      <span className="font-normal text-muted">({groupedItems.ungrouped.length})</span>
                     </span>
                     {multiple && (
                       <div className="flex items-center gap-2">
@@ -180,11 +180,11 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
                         >
                           全选
                         </button>
-                        <span className="text-gray-300 text-[10px]">|</span>
+                        <span className="text-placeholder text-[10px]">|</span>
                         <button
                           type="button"
                           onClick={() => handleClearGroup(groupedItems.ungrouped)}
-                          className="text-[11px] font-semibold text-gray-400 hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                          className="text-[11px] font-semibold text-muted hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
                         >
                           清除
                         </button>
@@ -204,7 +204,7 @@ export const TagFilterDialog: React.FC<TagFilterDialogProps> = ({
                         >
                           {item.label}
                           {item.badge && (
-                            <span className={`ml-1 text-[10px] ${isSelected ? 'text-white/80' : 'text-gray-400'}`}>
+                            <span className={`ml-1 text-[10px] ${isSelected ? 'text-white/80' : 'text-muted'}`}>
                               {item.badge}
                             </span>
                           )}
@@ -252,14 +252,14 @@ export const TagPicker: React.FC<TagPickerProps> = ({
   return (
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-gray-700">{title}</span>
+        <span className="text-xs font-bold text-ink">{title}</span>
         <button
           type="button"
           disabled={disabled}
           onClick={() => setOpen(true)}
           className={`px-3 py-1 text-xs font-semibold rounded-full transition-all cursor-pointer ${
             buttonVariant === 'secondary'
-              ? 'bg-[#edf4f0] text-gray-700 hover:bg-[#e2ece6]'
+              ? 'bg-soft text-ink hover:bg-hover'
               : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
           }`}
         >
@@ -268,7 +268,7 @@ export const TagPicker: React.FC<TagPickerProps> = ({
       </div>
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         {selectedIds.length === 0 ? (
-          <span className="text-[11px] text-gray-400">{emptyText}</span>
+          <span className="text-[11px] text-muted">{emptyText}</span>
         ) : (
           selectedIds.map((id) => {
             const item = items.find((x) => x.id === id);

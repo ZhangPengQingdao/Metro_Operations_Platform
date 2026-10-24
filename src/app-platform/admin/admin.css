@@ -1,8 +1,8 @@
 /* OmegAI visual reference: neutral surfaces, system type and floating navigation.
    Implemented for the AFC React shell; shared by administrator and employee workspaces. */
-.afc-admin { --afc-page:#fafafa; --afc-surface:#fff; --afc-sidebar:#f1f3f5; --afc-hover:#e9ecf0; --afc-active:#e0e4eb; --afc-ink:#171717; --afc-muted:#737373; --afc-border:rgb(0 0 0 / .08); --afc-sidebar-width:224px; background:var(--afc-page); color:var(--afc-ink); min-height:100dvh; font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; color-scheme:light; }
-.afc-admin[data-theme="dark"] { --afc-page:#121212; --afc-surface:#202021; --afc-sidebar:#1b1b1c; --afc-hover:#2c2c2e; --afc-active:#43454a; --afc-ink:#fafafa; --afc-muted:#a3a3a3; --afc-border:rgb(255 255 255 / .1); color-scheme:dark; }
-@media(prefers-color-scheme:dark) { .afc-admin[data-theme="system"] { --afc-page:#121212; --afc-surface:#202021; --afc-sidebar:#1b1b1c; --afc-hover:#2c2c2e; --afc-active:#43454a; --afc-ink:#fafafa; --afc-muted:#a3a3a3; --afc-border:rgb(255 255 255 / .1); color-scheme:dark; } }
+.afc-admin { --afc-page:var(--afc-color-canvas); --afc-surface:var(--afc-color-paper); --afc-sidebar:var(--afc-color-sidebar); --afc-hover:var(--afc-control-hover); --afc-active:var(--afc-color-primary-soft); --afc-ink:var(--afc-color-ink); --afc-muted:var(--afc-color-muted); --afc-border:var(--afc-color-line); --afc-sidebar-width:224px; background:var(--afc-page); color:var(--afc-ink); min-height:100dvh; font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; color-scheme:light; }
+.afc-admin[data-theme="dark"] { color-scheme:dark; }
+@media(prefers-color-scheme:dark) { .afc-admin[data-theme="system"] { color-scheme:dark; } }
 .afc-admin *, .afc-admin *::before, .afc-admin *::after { box-sizing:border-box; }
 
 .afc-admin a { color:inherit; text-decoration:none; }
@@ -29,7 +29,7 @@
 .afc-nav-link svg { flex-shrink:0; }
 .afc-nav-link span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .afc-nav-link:hover { background:var(--afc-hover); }
-.afc-nav-link.is-active { background:var(--afc-active); font-weight:500; }
+.afc-nav-link.is-active { background:var(--afc-active); color:var(--afc-color-primary-ink); font-weight:600; }
 .afc-admin[data-rail="true"] .afc-sidebar-nav { padding-inline:6px; }
 .afc-admin[data-rail="true"] .afc-platform-sidebar .afc-nav-link { justify-content:center; padding:10px 0; }
 .afc-app-links { margin-top:18px; border-top:1px solid var(--afc-border); padding-top:12px; }
@@ -68,7 +68,7 @@
 .afc-settings-layout nav { display:flex; flex-direction:column; gap:4px; }
 .afc-settings-layout nav button { padding:10px 12px; text-align:left; border:0; border-radius:10px; background:transparent; font-size:13px; }
 .afc-settings-layout nav button:hover { background:var(--afc-hover); }
-.afc-settings-layout nav button[aria-current] { background:var(--afc-active); }
+.afc-settings-layout nav button[aria-current] { background:var(--afc-active); color:var(--afc-color-primary-ink); }
 .afc-settings-content { display:flex; flex-direction:column; align-self:start; border-radius:14px; background:var(--afc-page); padding:0 16px; }
 .afc-settings-content>a, .afc-setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:64px; border-bottom:1px solid var(--afc-border); }
 .afc-settings-content>a:last-child, .afc-setting-row:last-child { border-bottom:0; }

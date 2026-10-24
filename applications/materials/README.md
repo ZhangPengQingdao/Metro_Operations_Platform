@@ -14,6 +14,10 @@
 
 `npm test` 运行规则测试。平台测试另以 PGlite 执行声明式迁移及 SQL 事务，验证流水失败回滚库存。这些测试不替代实际托管存储、Docker、浏览器或安装验收。
 
+## 0.3.1
+
+样式改用平台主题变量（不再硬编码浅色），暗色主题下背景、文字、边框、状态色随主题切换；要求平台 1.1.0。
+
 ## 0.3.0：应用模型 v2（P3 试点）
 
 本应用已改为 v2 项目：`app.json`、`icon.svg`、`src/`（页面 `ui.jsx`、接口 `server.js` 及业务模块）、`migrations/`（与旧版 `migration-00x.json` 逐字节相同）。后端仍使用 `createAppBackend`，在平台子进程中原样运行；页面改为 `defineApp`，直接渲染在平台内，标题与侧栏由平台生成，「设置」仅对有 `manage` 权限的人显示。
@@ -21,7 +25,7 @@
 ```sh
 npm test            # 业务规则测试
 npm run check
-npm run build       # 输出 dist/materials-0.3.0.mopkg
+npm run build       # 输出 dist/materials-0.3.1.mopkg
 ```
 
 要求平台 0.29.0 及以上。管理员上传 `.mopkg` 安装后指定应用负责人，负责人配置角色与使用人员。

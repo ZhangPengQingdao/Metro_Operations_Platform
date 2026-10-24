@@ -1,7 +1,7 @@
 {
   "id": "maintenance",
   "name": "检修管理",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "计划、派工、完成与检修归档",
   "color": "#0891B2",
   "platform": ">=0.30.0",

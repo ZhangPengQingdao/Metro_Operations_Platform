@@ -2,6 +2,10 @@
 
 独立签名应用，使用公开 `@metro/platform-sdk`、共享 L2 组件和应用托管存储；不依赖旧 AFC 项目，不迁移旧数据。业务对照与权限说明见 [设计记录](../../docs/hazard-reporting-app-plan.md)。
 
+## 1.0.2
+
+样式改用平台主题变量（不再硬编码浅色），暗色主题下背景、文字、边框、状态色随主题切换；要求平台 1.1.0。
+
 ## 1.0.1
 
 补 `migrations/002-photos.json`（照片表），修复照片上传失败。已安装 1.0.0 的升级时执行该迁移。
@@ -13,7 +17,7 @@
 ```sh
 npm test            # 业务规则测试
 npm run check       # 校验 app.json、迁移与页面/接口一致性
-npm run build       # 输出 dist/hazards-1.0.1.mopkg
+npm run build       # 输出 dist/hazards-1.0.2.mopkg
 ```
 
 要求平台 0.30.0 及以上。管理员上传 `.mopkg` 安装后指定应用负责人，负责人配置角色与使用人员。以下为各版业务说明，涉及签名包、沙箱和 `build.mjs` 的构建与安装步骤已不再适用。

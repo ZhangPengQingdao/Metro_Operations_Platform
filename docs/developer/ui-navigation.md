@@ -31,7 +31,19 @@ export default defineApp({pages: {'/': Records, '/records/:id': Detail}});
 
 ## 样式
 
-样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`；构建时自动限定到本应用（`[data-app="<id>"]`），不会影响平台或其他应用。颜色、字号使用平台 CSS 变量（如 `var(--afc-color-muted)`），以跟随明暗主题。暂不支持 `@keyframes`、`@font-face`、`@import`。
+样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`；构建时自动限定到本应用（`[data-app="<id>"]`），不会影响平台或其他应用。
+
+颜色只用平台主题变量，不写固定色值（否则暗色主题下会出现白底白字）：
+
+| 用途 | 变量 |
+| --- | --- |
+| 文字 / 次要文字 | `--afc-color-ink` / `--afc-color-muted` |
+| 卡片底色 / 弱底色 | `--afc-color-paper` / `--afc-color-neutral-soft` |
+| 分隔线 / 控件边框 | `--afc-color-line` / `--afc-interactive-border` |
+| 主色 / 主色上的文字 / 主色浅底 | `--afc-color-primary` / `--afc-on-primary` / `--afc-color-primary-soft` |
+| 状态文字 / 状态浅底 | `--afc-color-{success,warning,danger,info}-ink` / `--afc-color-{…}-soft` |
+
+例：`.card{background:var(--afc-color-paper);border:1px solid var(--afc-color-line)}`。签名图片、二维码等必须深色在白底上的内容可以保留白底。颜色、字号使用平台 CSS 变量（如 `var(--afc-color-muted)`），以跟随明暗主题。暂不支持 `@keyframes`、`@font-face`、`@import`。
 
 ## 图标
 

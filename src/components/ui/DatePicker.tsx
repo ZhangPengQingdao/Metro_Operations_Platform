@@ -141,17 +141,17 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between border rounded-xl bg-white text-left transition-all duration-150 select-none ${sizeClasses} ${clearable && value ? 'pr-9' : ''} ${
+        className={`w-full flex items-center justify-between border rounded-xl bg-paper text-left transition-all duration-150 select-none ${sizeClasses} ${clearable && value ? 'pr-9' : ''} ${
           disabled
-            ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
+            ? 'opacity-50 cursor-not-allowed bg-soft border-line text-muted'
             : isOpen
-            ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-sm'
-            : 'border-neutral-300 hover:border-neutral-900 text-neutral-900'
+            ? 'border-accent ring-2 ring-line shadow-sm'
+            : 'border-strong hover:border-accent text-ink'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <CalendarDots size={16} className={isOpen ? 'text-neutral-900' : 'text-gray-400'} />
-          <span className={`truncate font-mono ${value ? 'text-[#17211d] font-semibold' : 'text-gray-400'}`}>
+          <CalendarDots size={16} className={isOpen ? 'text-ink' : 'text-muted'} />
+          <span className={`truncate font-mono ${value ? 'text-ink font-semibold' : 'text-muted'}`}>
             {value || placeholder}
           </span>
         </div>
@@ -162,7 +162,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           type="button"
           aria-label="清除日期"
           onClick={handleClear}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full text-muted hover:text-muted hover:bg-hover transition-colors"
         >
           <X size={12} weight="bold" />
         </button>
@@ -175,16 +175,16 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         onDismiss={() => setIsOpen(false)}
         width={292}
         ariaLabel="日期选择器"
-        className="p-3.5 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
+        className="p-3.5 overflow-y-auto bg-paper rounded-2xl border border-line shadow-2xl shadow-black/10 select-none animation-fade-in"
       >
           {/* 头部年份与月份切换 */}
-          <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-neutral-100">
+          <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-line">
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={handlePrevYear}
                 title="上一年"
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-lg text-muted hover:text-ink hover:bg-hover transition-colors"
               >
                 <CaretLeft size={13} weight="bold" />
               </button>
@@ -192,13 +192,13 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 type="button"
                 onClick={handlePrevMonth}
                 title="上个月"
-                className="p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-lg text-muted hover:text-ink hover:bg-hover transition-colors"
               >
                 <CaretLeft size={15} weight="bold" />
               </button>
             </div>
 
-            <div className="font-bold text-xs text-[#17211d] tracking-wide">
+            <div className="font-bold text-xs text-ink tracking-wide">
               {viewYear}年 {viewMonth + 1}月
             </div>
 
@@ -207,7 +207,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 type="button"
                 onClick={handleNextMonth}
                 title="下个月"
-                className="p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-lg text-muted hover:text-ink hover:bg-hover transition-colors"
               >
                 <CaretRight size={15} weight="bold" />
               </button>
@@ -215,7 +215,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 type="button"
                 onClick={handleNextYear}
                 title="下一年"
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-lg text-muted hover:text-ink hover:bg-hover transition-colors"
               >
                 <CaretRight size={13} weight="bold" />
               </button>
@@ -227,7 +227,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             {['日', '一', '二', '三', '四', '五', '六'].map((day, idx) => (
               <span
                 key={day}
-                className="text-[11px] font-semibold text-neutral-400"
+                className="text-[11px] font-semibold text-muted"
               >
                 {day}
               </span>
@@ -237,18 +237,18 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           {/* 日期数字网格 (7x6) */}
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((item) => {
-              let btnClass = 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900';
+              let btnClass = 'text-ink hover:bg-hover hover:text-ink';
 
               if (item.isSelected) {
-                btnClass = 'bg-neutral-900 text-white font-bold shadow-sm hover:bg-neutral-800';
+                btnClass = 'bg-accent text-white font-bold shadow-sm hover:bg-accent-hover';
               } else if (item.isToday) {
-                btnClass = 'border border-neutral-900 font-bold text-neutral-900 hover:bg-neutral-100';
+                btnClass = 'border border-accent font-bold text-ink hover:bg-hover';
               } else if (!item.isCurrentMonth) {
-                btnClass = 'text-neutral-300 hover:bg-neutral-50 hover:text-neutral-500';
+                btnClass = 'text-placeholder hover:bg-hover hover:text-muted';
               }
 
               if (item.isDisabled) {
-                btnClass = 'text-neutral-200 cursor-not-allowed opacity-40 hover:bg-transparent';
+                btnClass = 'text-placeholder cursor-not-allowed opacity-40 hover:bg-transparent';
               }
 
               return (
@@ -268,11 +268,11 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           </div>
 
           {/* 底部快捷操作栏 */}
-          <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-neutral-100">
+          <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-line">
             <button
               type="button"
               onClick={handleSelectToday}
-              className="text-[11px] font-semibold text-neutral-900 hover:text-neutral-700 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              className="text-[11px] font-semibold text-ink hover:text-ink transition-colors bg-transparent border-0 p-0 cursor-pointer"
             >
               今天
             </button>
@@ -280,7 +280,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               <button
                 type="button"
                 onClick={() => onChange?.('')}
-                className="text-[11px] font-semibold text-gray-400 hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                className="text-[11px] font-semibold text-muted hover:text-red-500 transition-colors bg-transparent border-0 p-0 cursor-pointer"
               >
                 清空
               </button>

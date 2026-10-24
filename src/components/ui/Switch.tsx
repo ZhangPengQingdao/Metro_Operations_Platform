@@ -34,7 +34,7 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(function S
       {(label || description) && (
         <div className="flex flex-col">
           {label && <span className="afc-switch__label">{label}</span>}
-          {description && <span className="text-xs text-gray-500">{description}</span>}
+          {description && <span className="text-xs text-muted">{description}</span>}
         </div>
       )}
     </label>

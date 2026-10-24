@@ -1,7 +1,7 @@
 {
   "id": "hazards",
   "name": "隐患提报 · 识隐",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "隐患识别建议、提报、治理复审与闭环案例库",
   "color": "#EA580C",
   "platform": ">=0.30.0",

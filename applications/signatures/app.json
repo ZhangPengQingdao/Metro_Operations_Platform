@@ -1,7 +1,7 @@
 {
   "id": "signatures",
   "name": "在线签字",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "四种业务模板、签字列表与本人电子签名",
   "color": "#7C3AED",
   "platform": ">=0.30.0",

@@ -155,7 +155,7 @@ function App() {
             preloaded={warming.current.get(route === '/meeting' ? 'meeting' : 'handover')} onBootstrapped={warmOtherForm} />
         )
       ) : !error && (
-        <p style={{ color: '#a1a1aa', fontSize: 13 }}>正在连接工班工作台…</p>
+        <p style={{ color: 'var(--afc-color-muted)', fontSize: 13 }}>正在连接工班工作台…</p>
       )}
     </main>
   );
@@ -1080,8 +1080,8 @@ function Records({ session, kind }) {
             <TableRow key={row.id}>
               <TableCell>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 600, color: '#18181b' }}>{row.record_date}</span>
-                  <span style={{ color: '#71717a' }}>{row.record_time}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--afc-color-ink)' }}>{row.record_date}</span>
+                  <span style={{ color: 'var(--afc-color-muted)' }}>{row.record_time}</span>
                   {kind === 'handover' && (
                     <span className={`shift-tag ${row.shift_type === 'day' ? 'day' : 'night'}`}>
                       {row.shift_type === 'day' ? '白班' : '夜班'}
@@ -1132,9 +1132,9 @@ function Records({ session, kind }) {
           ) : (
             <div className="shifts-dialog" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Header Info */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, borderBottom: '1px solid #e4e4e7' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, borderBottom: '1px solid var(--afc-color-line)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: '#18181b' }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--afc-color-ink)' }}>
                     {detail.record_date} {detail.record_time}
                   </span>
                   {kind === 'handover' && (
@@ -1158,9 +1158,9 @@ function Records({ session, kind }) {
               </div>
 
               {/* Personnel */}
-              <div style={{ background: '#fafafa', padding: '10px 14px', borderRadius: 8, fontSize: 13, border: '1px solid #f4f4f5' }}>
-                <span style={{ color: '#71717a', marginRight: 8 }}>相关人员：</span>
-                <span style={{ color: '#18181b', fontWeight: 500 }}>
+              <div style={{ background: 'var(--afc-color-neutral-soft)', padding: '10px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--afc-color-line)' }}>
+                <span style={{ color: 'var(--afc-color-muted)', marginRight: 8 }}>相关人员：</span>
+                <span style={{ color: 'var(--afc-color-ink)', fontWeight: 500 }}>
                   {detail.people.map(p => p.name).join('、')}
                 </span>
               </div>
@@ -1174,7 +1174,7 @@ function Records({ session, kind }) {
                       <div className="module-icon-wrap" style={{ width: 24, height: 24, borderRadius: 6 }}>
                         <AppIcon name={meta.icon} size={13} />
                       </div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: '#18181b' }}>{m.label}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--afc-color-ink)' }}>{m.label}</span>
                     </div>
                     <div className="record-snapshot-block">
                       {moduleSummary(m, detail.form_data[m.id], detail.people)}
@@ -1185,13 +1185,13 @@ function Records({ session, kind }) {
 
               {/* Signature Section */}
               {kind === 'meeting' && (
-                <section style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #e4e4e7' }}>
+                <section style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid var(--afc-color-line)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#18181b' }}>参会人员本人签署</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--afc-color-ink)' }}>参会人员本人签署</span>
                   </div>
 
                   {detail.signatureInfo?.unavailable ? (
-                    <p style={{ color: '#a1a1aa', fontSize: 13 }}>平台签署信息暂时无法读取</p>
+                    <p style={{ color: 'var(--afc-color-muted)', fontSize: 13 }}>平台签署信息暂时无法读取</p>
                   ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                       {detail.people.map(p => {
@@ -1209,9 +1209,9 @@ function Records({ session, kind }) {
                               padding: '4px 10px',
                               borderRadius: 9999,
                               fontSize: 12,
-                              border: isSigned ? '1px solid #18181b' : '1px solid #e4e4e7',
-                              background: isSigned ? '#18181b' : '#fafafa',
-                              color: isSigned ? '#ffffff' : '#a1a1aa',
+                              border: isSigned ? '1px solid var(--afc-color-primary)' : '1px solid var(--afc-color-line)',
+                              background: isSigned ? 'var(--afc-color-primary)' : 'var(--afc-color-neutral-soft)',
+                              color: isSigned ? 'var(--afc-on-primary)' : 'var(--afc-color-muted)',
                               cursor: isSigned ? 'pointer' : 'default'
                             }}
                             onClick={async () => {
@@ -1233,7 +1233,7 @@ function Records({ session, kind }) {
 
                   {signatureImage && (
                     <div className="signature-box">
-                      <div style={{ fontSize: 12, color: '#71717a', marginBottom: 6 }}>电子手写签名</div>
+                      <div style={{ fontSize: 12, color: 'var(--afc-color-muted)', marginBottom: 6 }}>电子手写签名</div>
                       <img src={signatureImage} alt="电子签名" className="signature-img" />
                     </div>
                   )}
@@ -1303,7 +1303,7 @@ function SignaturePad({ id, onSaved }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {error && <div className="notice-banner error" role="alert">{error}</div>}
-      <div style={{ border: '1px solid #e4e4e7', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+      <div style={{ border: '1px solid var(--afc-color-line)', borderRadius: 10, overflow: 'hidden', background: 'var(--afc-color-paper)' }}>
         <HandwrittenSignaturePad
           embedded
           showHeading={false}

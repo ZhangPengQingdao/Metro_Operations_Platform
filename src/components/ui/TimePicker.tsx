@@ -99,17 +99,17 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between border rounded-xl bg-white text-left transition-all duration-150 select-none ${sizeClasses} ${clearable && value ? 'pr-9' : ''} ${
+        className={`w-full flex items-center justify-between border rounded-xl bg-paper text-left transition-all duration-150 select-none ${sizeClasses} ${clearable && value ? 'pr-9' : ''} ${
           disabled
-            ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
+            ? 'opacity-50 cursor-not-allowed bg-soft border-line text-muted'
             : isOpen
-            ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-sm'
-            : 'border-neutral-300 hover:border-neutral-900 text-neutral-900'
+            ? 'border-accent ring-2 ring-line shadow-sm'
+            : 'border-strong hover:border-accent text-ink'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <Clock size={16} className={isOpen ? 'text-neutral-900' : 'text-gray-400'} />
-          <span className={`truncate font-mono ${value ? 'text-[#17211d] font-semibold' : 'text-gray-400'}`}>
+          <Clock size={16} className={isOpen ? 'text-ink' : 'text-muted'} />
+          <span className={`truncate font-mono ${value ? 'text-ink font-semibold' : 'text-muted'}`}>
             {value || placeholder}
           </span>
         </div>
@@ -120,7 +120,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           type="button"
           aria-label="清除时间"
           onClick={handleClear}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full text-muted hover:text-muted hover:bg-hover transition-colors"
         >
           <X size={12} weight="bold" />
         </button>
@@ -133,12 +133,12 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         onDismiss={() => setIsOpen(false)}
         width={230}
         ariaLabel="时间选择器"
-        className="p-3 overflow-y-auto bg-white rounded-2xl border border-neutral-200 shadow-2xl shadow-black/10 select-none animation-fade-in"
+        className="p-3 overflow-y-auto bg-paper rounded-2xl border border-line shadow-2xl shadow-black/10 select-none animation-fade-in"
       >
           {/* 面板头部 */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-100">
-            <span className="text-xs font-bold text-[#17211d]">选择时间</span>
-            <span className="text-xs font-mono font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded-md">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-line">
+            <span className="text-xs font-bold text-ink">选择时间</span>
+            <span className="text-xs font-mono font-bold text-ink bg-soft px-2 py-0.5 rounded-md">
               {value || `${pad(selectedHour)}:${pad(selectedMinute)}`}
             </span>
           </div>
@@ -160,8 +160,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     onClick={() => handleSelectHour(h)}
                     className={`w-full py-1 rounded-lg text-xs font-mono transition-colors text-center cursor-pointer ${
                       isSel
-                        ? 'bg-neutral-900 text-white font-bold shadow-sm'
-                        : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900'
+                        ? 'bg-accent text-white font-bold shadow-sm'
+                        : 'text-ink hover:bg-hover hover:text-ink'
                     }`}
                   >
                     {pad(h)}
@@ -185,8 +185,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                     onClick={() => handleSelectMinute(m)}
                     className={`w-full py-1 rounded-lg text-xs font-mono transition-colors text-center cursor-pointer ${
                       isSel
-                        ? 'bg-neutral-900 text-white font-bold shadow-sm'
-                        : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900'
+                        ? 'bg-accent text-white font-bold shadow-sm'
+                        : 'text-ink hover:bg-hover hover:text-ink'
                     }`}
                   >
                     {pad(m)}
@@ -197,18 +197,18 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           </div>
 
           {/* 底部快捷操作 */}
-          <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-neutral-100">
+          <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-line">
             <button
               type="button"
               onClick={handleSelectNow}
-              className="text-[11px] font-semibold text-neutral-900 hover:text-neutral-700 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              className="text-[11px] font-semibold text-ink hover:text-ink transition-colors bg-transparent border-0 p-0 cursor-pointer"
             >
               此时
             </button>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="text-[11px] font-semibold text-gray-500 hover:text-gray-800 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+              className="text-[11px] font-semibold text-muted hover:text-ink transition-colors bg-transparent border-0 p-0 cursor-pointer"
             >
               完成
             </button>

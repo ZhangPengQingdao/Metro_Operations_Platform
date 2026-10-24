@@ -1,17 +1,17 @@
 /* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
 .maintenance{color:var(--afc-color-ink)}
 *{box-sizing:border-box}
-.maintenance-error{padding:10px 12px;background:#fff1f2;color:#991b1b;border-radius:8px;margin:10px 0}
+.maintenance-error{padding:10px 12px;background:var(--afc-color-danger-soft);color: var(--afc-color-danger-ink);border-radius:8px;margin:10px 0}
 .maintenance-note{font-size:13px;color:var(--afc-color-muted);margin:8px 0}
 .maintenance-cell{max-width:260px;white-space:normal;overflow-wrap:anywhere}
 .maintenance-cell small{display:block;color:var(--afc-color-muted)}
-.maintenance-progress{width:96px;height:5px;background:var(--afc-color-neutral-soft,#eee);border-radius:5px;overflow:hidden;margin-top:6px}
-.maintenance-progress span{display:block;height:100%;background:var(--afc-color-ink,#18181b)}
+.maintenance-progress{width:96px;height:5px;background:var(--afc-color-neutral-soft,var(--afc-color-neutral-soft));border-radius:5px;overflow:hidden;margin-top:6px}
+.maintenance-progress span{display:block;height:100%;background:var(--afc-color-ink,var(--afc-color-primary))}
 .maintenance-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .maintenance-wide{grid-column:1/-1}
 .maintenance-form textarea{width:100%}
 .maintenance-items{display:grid;gap:12px}
-.maintenance-item{border:1px solid var(--afc-color-border,#ddd);border-radius:10px;padding:14px}
+.maintenance-item{border:1px solid var(--afc-color-border,var(--afc-color-line));border-radius:10px;padding:14px}
 .maintenance-item h3{margin:0 0 10px;font-size:14px}
 .maintenance-item-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .maintenance-item-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}

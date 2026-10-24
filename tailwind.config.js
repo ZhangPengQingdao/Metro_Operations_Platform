@@ -10,13 +10,22 @@ export default {
     ],
     theme: {
         extend: {
+            // Theme tokens from index.css, so utilities follow light/dark (opacity modifiers do not apply to these).
             colors: {
-                primary: "#10B981", // Emerald 500
-                "primary-dark": "#059669",
-                "background-light": "#F9FAFB",
-                "text-main": "#111827",
-                "text-muted": "#6B7280",
-                "border-light": "#E5E7EB",
+                paper: "var(--afc-color-paper)",
+                canvas: "var(--afc-color-canvas)",
+                soft: "var(--afc-color-neutral-soft)",
+                hover: "var(--afc-control-hover)",
+                ink: "var(--afc-color-ink)",
+                muted: "var(--afc-color-muted)",
+                placeholder: "var(--afc-placeholder)",
+                line: "var(--afc-color-line)",
+                strong: "var(--afc-interactive-border)",
+                accent: "var(--afc-color-primary)",
+                "accent-hover": "var(--afc-color-primary-hover)",
+                "accent-soft": "var(--afc-color-primary-soft)",
+                "accent-ink": "var(--afc-color-primary-ink)",
+                "on-accent": "var(--afc-on-primary)",
             },
             fontFamily: {
                 sans: ["Noto Sans SC", "PingFang SC", "Microsoft YaHei", "sans-serif"],

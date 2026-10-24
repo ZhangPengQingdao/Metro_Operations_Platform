@@ -126,7 +126,7 @@ export function Settings({ session, call }) {
       {notice && <div className="notice-banner success" role="status">{notice}</div>}
 
       {/* Nav Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid var(--afc-color-line)', paddingBottom: 12 }}>
         {[
           ['handover', '交接班功能模块', 'clock'],
           ['meeting', '晨会功能模块', 'sparkle'],
@@ -145,9 +145,9 @@ export function Settings({ session, call }) {
                 borderRadius: 9999,
                 fontSize: 13,
                 fontWeight: active ? 600 : 500,
-                border: active ? '1px solid #18181b' : '1px solid #e4e4e7',
-                background: active ? '#18181b' : '#ffffff',
-                color: active ? '#ffffff' : '#52525b',
+                border: active ? '1px solid var(--afc-color-primary)' : '1px solid var(--afc-color-line)',
+                background: active ? 'var(--afc-color-primary)' : 'var(--afc-color-paper)',
+                color: active ? 'var(--afc-on-primary)' : 'var(--afc-color-muted)',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease'
               }}
@@ -167,10 +167,10 @@ export function Settings({ session, call }) {
         <section className="info-card">
           {tab === 'webhook' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14, borderBottom: '1px solid var(--afc-color-line)' }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>启用群机器人消息推送</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--afc-color-ink)' }}>启用群机器人消息推送</div>
+                  <div style={{ fontSize: 12, color: 'var(--afc-color-muted)', marginTop: 2 }}>
                     当交接班完成或晨会召开保存时，自动将摘要通知推送到企业微信或钉钉群
                   </div>
                 </div>
@@ -191,8 +191,8 @@ export function Settings({ session, call }) {
               </Field>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>自动触发事件</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #eef2f6' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--afc-color-ink)' }}>自动触发事件</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--afc-color-neutral-soft)', padding: 14, borderRadius: 8, border: '1px solid var(--afc-color-line)' }}>
                   <Switch
                     label="交接班确认后自动推送工作群"
                     checked={current.value.handover === true}
@@ -209,10 +209,10 @@ export function Settings({ session, call }) {
           ) : (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--afc-color-ink)' }}>
                   {tab === 'meeting' ? '晨会填报模块列表' : '交接班填报模块列表'}
                 </span>
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>可拖动 ⠿ 调整在填报页中的显示次序</span>
+                <span style={{ fontSize: 12, color: 'var(--afc-color-muted)' }}>可拖动 ⠿ 调整在填报页中的显示次序</span>
               </div>
 
               {/* Fixed Base Module Banner */}
@@ -223,20 +223,20 @@ export function Settings({ session, call }) {
                   justifyContent: 'space-between',
                   padding: '12px 14px',
                   borderRadius: 8,
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
+                  background: 'var(--afc-color-neutral-soft)',
+                  border: '1px solid var(--afc-color-line)',
                   marginBottom: 10
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 6, background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--afc-color-neutral-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--afc-color-muted)' }}>
                     <SettingIcon name="users" size={15} />
                   </div>
-                  <strong style={{ fontSize: 14, color: '#334155' }}>
+                  <strong style={{ fontSize: 14, color: 'var(--afc-color-ink)' }}>
                     {tab === 'meeting' ? '晨会时间 / 主持人 / 参会人员' : '交接班次 / 时间 / 交接人员'}
                   </strong>
                 </div>
-                <span style={{ padding: '2px 8px', borderRadius: 4, background: '#e2e8f0', color: '#475569', fontSize: 11, fontWeight: 600 }}>
+                <span style={{ padding: '2px 8px', borderRadius: 4, background: 'var(--afc-color-neutral-soft)', color: 'var(--afc-color-muted)', fontSize: 11, fontWeight: 600 }}>
                   必选基础模块
                 </span>
               </div>
@@ -253,8 +253,8 @@ export function Settings({ session, call }) {
                       justifyContent: 'space-between',
                       padding: '10px 14px',
                       borderRadius: 8,
-                      background: '#ffffff',
-                      border: '1px solid #e2e8f0',
+                      background: 'var(--afc-color-paper)',
+                      border: '1px solid var(--afc-color-line)',
                       boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                       opacity: dragging === m.id ? 0.55 : 1,
                       transition: 'border-color 0.15s ease'
@@ -269,10 +269,10 @@ export function Settings({ session, call }) {
                           touchAction: 'none',
                           cursor: 'grab',
                           padding: '4px 6px',
-                          background: '#f1f5f9',
+                          background: 'var(--afc-color-neutral-soft)',
                           borderRadius: 4,
                           border: 'none',
-                          color: '#64748b',
+                          color: 'var(--afc-color-muted)',
                           fontSize: 16,
                           display: 'flex',
                           alignItems: 'center',
@@ -306,9 +306,9 @@ export function Settings({ session, call }) {
                       >
                         ⠿
                       </button>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#0f172a' }}>{m.label}</span>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--afc-color-ink)' }}>{m.label}</span>
                       {m.custom && (
-                        <span style={{ padding: '2px 6px', borderRadius: 4, background: '#eff6ff', color: '#2563eb', fontSize: 11 }}>
+                        <span style={{ padding: '2px 6px', borderRadius: 4, background: 'var(--afc-color-primary-soft)', color: 'var(--afc-color-primary)', fontSize: 11 }}>
                           自定义
                         </span>
                       )}
@@ -354,7 +354,7 @@ export function Settings({ session, call }) {
           )}
 
           {/* Bottom Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--afc-color-line)' }}>
             <div style={{ display: 'flex', gap: 10 }}>
               {tab !== 'webhook' && (
                 <Button variant="ghost" onClick={() => setModules(structuredClone(defaults[tab]))}>
@@ -416,7 +416,7 @@ export function Settings({ session, call }) {
 
             {edit.type === 'text' && (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #eef2f6' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--afc-color-neutral-soft)', padding: 14, borderRadius: 8, border: '1px solid var(--afc-color-line)' }}>
                   {edit.id === 'other_matters' ? (
                     <Switch
                       label="自动带入上次填写的未结事项"
@@ -449,7 +449,7 @@ export function Settings({ session, call }) {
                       style={{
                         width: '100%',
                         borderRadius: 8,
-                        border: '1px solid #cbd5e1',
+                        border: '1px solid var(--afc-interactive-border)',
                         padding: 10,
                         fontSize: 13,
                         fontFamily: 'inherit'
@@ -462,7 +462,7 @@ export function Settings({ session, call }) {
 
             {edit.items && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>子项配置</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--afc-color-ink)' }}>子项配置</span>
                 {edit.items.map((item, i) => (
                   <div
                     key={item.id}
@@ -472,8 +472,8 @@ export function Settings({ session, call }) {
                       gap: 10,
                       padding: 8,
                       borderRadius: 8,
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0'
+                      background: 'var(--afc-color-neutral-soft)',
+                      border: '1px solid var(--afc-color-line)'
                     }}
                   >
                     <Input
