@@ -1,0 +1,154 @@
+{
+  "id": "hazards",
+  "name": "隐患提报 · 识隐",
+  "version": "1.0.0",
+  "description": "隐患识别建议、提报、治理复审与闭环案例库",
+  "color": "#EA580C",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看隐患记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "cases",
+      "name": "查看闭环案例库",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "create",
+      "name": "提报隐患",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "update",
+      "name": "治理和完善隐患",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "review",
+      "name": "复审并关闭隐患",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "photo",
+      "name": "上传隐患留证照片",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "locations.read",
+    "people.read",
+    "ai.complete"
+  ],
+  "pages": [
+    {
+      "path": "/report",
+      "title": "隐患提报",
+      "permission": "create",
+      "nav": true
+    },
+    {
+      "path": "/",
+      "title": "隐患记录",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/cases",
+      "title": "闭环案例库",
+      "permission": "cases",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "session"
+    },
+    {
+      "id": "catalog"
+    },
+    {
+      "id": "list",
+      "permission": "read"
+    },
+    {
+      "id": "detail",
+      "permission": "read"
+    },
+    {
+      "id": "cases",
+      "permission": "cases"
+    },
+    {
+      "id": "suggest",
+      "permission": "create"
+    },
+    {
+      "id": "create",
+      "permission": "create"
+    },
+    {
+      "id": "update",
+      "permission": "update"
+    },
+    {
+      "id": "close",
+      "permission": "review"
+    },
+    {
+      "id": "photo-begin"
+    },
+    {
+      "id": "photo-part"
+    },
+    {
+      "id": "photo-finish"
+    },
+    {
+      "id": "photo-read",
+      "permission": "read"
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

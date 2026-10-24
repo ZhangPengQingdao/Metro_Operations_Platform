@@ -1,0 +1,119 @@
+{
+  "id": "faults",
+  "name": "故障记录",
+  "version": "1.0.0",
+  "description": "登记、查询、处置与导出设备故障",
+  "color": "#DC2626",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看故障记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "create",
+      "name": "新增故障记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "update",
+      "name": "编辑和处置故障",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "export",
+      "name": "导出故障记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "delete",
+      "name": "作废故障记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read",
+    "locations.read",
+    "assets.read"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "故障记录",
+      "permission": "read",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "session"
+    },
+    {
+      "id": "catalog"
+    },
+    {
+      "id": "list",
+      "permission": "read"
+    },
+    {
+      "id": "detail",
+      "permission": "read"
+    },
+    {
+      "id": "create",
+      "permission": "create"
+    },
+    {
+      "id": "update",
+      "permission": "update"
+    },
+    {
+      "id": "delete",
+      "permission": "delete"
+    },
+    {
+      "id": "export",
+      "permission": "export"
+    },
+    {
+      "id": "dashboard-summary",
+      "permission": "read",
+      "dashboard": true
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

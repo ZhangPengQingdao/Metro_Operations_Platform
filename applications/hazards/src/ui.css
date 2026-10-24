@@ -1,0 +1,40 @@
+/* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
+.hazards{color:var(--afc-color-ink)}
+.hazards-sub,.hazards-note{color:var(--afc-color-muted);font-size:13px}
+.hazards-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hazards-toolbar{margin-bottom:18px}
+.hazards-report{display:grid;grid-template-columns:minmax(280px,1fr) minmax(0,2fr);gap:24px;align-items:start;margin-top:24px}
+.hazards-report>*{min-width:0}
+.hazards-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;border:0;padding:0;margin:0;min-width:0}
+.hazards-wide{grid-column:1/-1}
+.hazards-form textarea,.hazards-ai textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:88px;padding:10px;border:1px solid var(--afc-color-line,#ddd);border-radius:8px;background:var(--afc-color-paper,#fff);color:inherit}
+.hazards-ai{display:grid;gap:16px}
+.hazards-ai textarea{min-height:160px}
+.hazards-ai>.afc-button{justify-self:center;width:calc(100% - 24px);max-width:360px}
+.hazards-time{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:8px}
+.hazards-warning{background:var(--afc-color-canvas);border:1px solid var(--afc-color-line);padding:12px;border-radius:8px;margin:10px 0}
+.hazards-error{color:var(--afc-color-danger,#b91c1c);padding:10px 0;margin:0 0 12px}
+.hazards-success{color:var(--afc-color-ink);background:var(--afc-color-canvas);border:1px solid var(--afc-color-line);padding:12px;border-radius:8px;margin:10px 0}
+.hazards-suggestion{display:grid;gap:12px}
+.hazards-suggestion dl{display:grid;gap:8px}
+.hazards-suggestion dt{font-size:12px;color:var(--afc-color-muted)}
+.hazards-suggestion dd{margin:0;overflow-wrap:anywhere}
+.hazards-cell{max-width:340px;white-space:normal;overflow-wrap:anywhere}
+.hazards-cell small{display:block;color:var(--afc-color-muted)}
+.hazards-photo{max-width:100%;max-height:300px;object-fit:contain;border:1px solid var(--afc-color-line,#ddd);border-radius:8px}
+.hazards-mobile{display:none}
+.hazards-card{border:1px solid var(--afc-color-line,#ddd);background:var(--afc-color-paper,#fff);border-radius:10px;padding:12px;margin-bottom:8px}
+.hazards-card p{margin:5px 0}
+.hazards-footer{justify-content:flex-end;margin-top:20px}
+.hazards-report .hazards-footer{border-top:1px solid var(--afc-color-line);padding-top:20px}
+@media(max-width:800px){.hazards-report{grid-template-columns:1fr}
+.hazards-ai textarea{min-height:120px}
+}
+@media(max-width:700px){.hazards-form{grid-template-columns:minmax(0,1fr)}
+.hazards-wide{grid-column:1}
+.hazards-desktop{display:none}
+.hazards-mobile{display:block}
+.hazards-time{grid-template-columns:minmax(0,1fr)}
+.hazards-time>*{min-width:0}
+.hazards-report{gap:16px}
+}

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {createMaintenanceService} from './service.mjs';
-import {createMaintenanceHandlers} from './handlers.mjs';
+import {createMaintenanceService} from './src/service.mjs';
+import {createMaintenanceHandlers} from './src/handlers.mjs';
 import * as XLSX from 'xlsx';
-import {parsePlanImportFile} from './import.mjs';
+import {parsePlanImportFile} from './src/import.mjs';
 
 test('CSV import keeps device numbers as text and Excel import reads the template',async()=>{
  const csv=new File(['日期,车站,设备类型,设备编号,检修内容\n2026-09-27,测试站,TVM,01/02,季度检修'],'plans.csv',{type:'text/csv'});

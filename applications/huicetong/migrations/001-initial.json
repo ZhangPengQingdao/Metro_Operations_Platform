@@ -1,0 +1,819 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "createTable",
+      "table": "plan_cycles",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "year",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "month",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "fill_deadline",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "intent_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "category_nodes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "parent_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "level",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "sort",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "plan_items",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "cycle_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "root_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "parent_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "category_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "quality_standard",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "supervision_entry_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "escalated",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "remark",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "lead_person_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "assignees",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "intent_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "plan_item_assignees",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "person_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "person_organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "person_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "is_lead",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "sort",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "review_records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "cycle_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "reviewer_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "comment",
+          "type": "text",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "completion_records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "submitted_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "submitted_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "confirmed_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "confirmed_at",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "reject_comment",
+          "type": "text",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "change_records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "cycle_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "requested_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "countersigned_by",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "recurring_templates",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "quality_standard",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "assignees",
+          "type": "jsonb",
+          "nullable": false
+        },
+        {
+          "name": "lead_person_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "escalated",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "remark",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "sort",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "supervision_entries",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "cycle_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "meeting_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "meeting_title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "raw_text",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "item_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "registered_by",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "language_patterns",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "content_pattern",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "quality_pattern",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "example",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "review_bindings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "person_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "audit_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "entity_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "entity_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "before",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "after",
+          "type": "jsonb",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "plan_cycles",
+      "name": "cycles_org_month_unique",
+      "columns": [
+        "organization_id",
+        "year",
+        "month"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "category_nodes",
+      "name": "categories_org_parent_idx",
+      "columns": [
+        "organization_id",
+        "parent_id",
+        "sort"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "plan_items",
+      "name": "items_org_cycle_status_idx",
+      "columns": [
+        "organization_id",
+        "cycle_id",
+        "status"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "plan_items",
+      "name": "items_org_category_idx",
+      "columns": [
+        "organization_id",
+        "category_id"
+      ]
+    },
+    {
+      "kind": "createIndex",
+      "table": "plan_item_assignees",
+      "name": "assignees_item_person_unique",
+      "columns": [
+        "item_id",
+        "person_id"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "review_bindings",
+      "name": "bindings_org_category_person_unique",
+      "columns": [
+        "organization_id",
+        "category_id",
+        "person_id"
+      ],
+      "unique": true
+    },
+    {
+      "kind": "createIndex",
+      "table": "audit_events",
+      "name": "audit_org_entity_idx",
+      "columns": [
+        "organization_id",
+        "entity_type",
+        "entity_id"
+      ]
+    }
+  ]
+}

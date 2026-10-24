@@ -1,0 +1,140 @@
+{
+  "id": "todos",
+  "name": "待办事项",
+  "version": "1.0.0",
+  "description": "工班待办、车站和人员子项、周期自动任务",
+  "color": "#2563EB",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看待办",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "create",
+      "name": "发布普通待办",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "handle",
+      "name": "办理待办子项",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "manage",
+      "name": "修改及删除待办",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "recurring",
+      "name": "管理周期模板",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "score",
+      "name": "设置任务分值",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read",
+    "locations.read"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "待办事项",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/recurring",
+      "title": "周期待办",
+      "permission": "recurring",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "session"
+    },
+    {
+      "id": "directory"
+    },
+    {
+      "id": "list"
+    },
+    {
+      "id": "detail"
+    },
+    {
+      "id": "create-task",
+      "permission": "create"
+    },
+    {
+      "id": "update-task",
+      "permission": "manage"
+    },
+    {
+      "id": "delete-task",
+      "permission": "manage"
+    },
+    {
+      "id": "handle-item"
+    },
+    {
+      "id": "save-template",
+      "permission": "recurring"
+    },
+    {
+      "id": "template-state",
+      "permission": "recurring"
+    },
+    {
+      "id": "trigger"
+    },
+    {
+      "id": "dashboard-summary",
+      "permission": "read",
+      "dashboard": true
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

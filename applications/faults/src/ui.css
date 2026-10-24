@@ -1,0 +1,26 @@
+/* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
+.faults{color:var(--afc-color-ink)}
+.faults-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.faults-toolbar{display:flex;align-items:flex-end;margin-bottom:22px}
+.faults-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.faults-form .wide{grid-column:1/-1}
+.faults-form textarea,.faults-form input,.faults-form select{width:100%;box-sizing:border-box}
+.faults-date-time{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:8px;min-width:0}
+.faults-date-time>*{min-width:0}
+.faults-form textarea{min-height:74px;padding:10px;border:1px solid var(--afc-color-border,#ddd);border-radius:8px;background:var(--afc-color-surface,#fff);color:inherit}
+.faults-error{padding:10px 12px;background:#fff1f2;color:#991b1b;border-radius:8px;margin:12px 0}
+.faults-note{font-size:13px;color:var(--afc-color-muted);margin:8px 0}
+.faults-table-cell{max-width:300px;white-space:normal;overflow-wrap:anywhere}
+.faults-table-cell small{display:block;color:var(--afc-color-muted)}
+.faults-dialog-actions{display:flex;gap:8px;justify-content:flex-end}
+.faults-slip{width:100%;min-height:180px;box-sizing:border-box}
+.faults-hidden{display:none}
+.faults-mobile{display:none}
+@media(max-width:700px){.faults-form{grid-template-columns:1fr}
+.faults-form .wide{grid-column:1}
+.faults-desktop{display:none}
+.faults-mobile{display:grid;gap:10px}
+.fault-card{padding:12px;border:1px solid var(--afc-color-border,#ddd);border-radius:10px;background:var(--afc-color-surface,#fff)}
+.fault-card p{margin:5px 0}
+.faults-actions{justify-content:flex-start}
+}

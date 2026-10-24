@@ -1,0 +1,167 @@
+{
+  "id": "shifts",
+  "name": "晨会交接",
+  "version": "1.0.0",
+  "description": "交接班台账、晨会记录与本人签署",
+  "color": "#DB2777",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看台账",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "submit",
+      "name": "填写台账",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "delete",
+      "name": "删除台账记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "config",
+      "name": "应用设置",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "sign",
+      "name": "本人签署",
+      "scopes": [
+        "self"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read",
+    "webhook.send",
+    "signatures.create",
+    "signatures.read",
+    "signatures.sign"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "交接班",
+      "permission": "submit",
+      "nav": true
+    },
+    {
+      "path": "/handover-records",
+      "title": "交接班记录",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/meeting",
+      "title": "晨会",
+      "permission": "submit",
+      "nav": true
+    },
+    {
+      "path": "/meeting-records",
+      "title": "晨会记录",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/settings",
+      "title": "设置",
+      "permission": "config",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "save-draft",
+      "permission": "submit"
+    },
+    {
+      "id": "clear-draft",
+      "permission": "submit"
+    },
+    {
+      "id": "load-draft",
+      "permission": "submit"
+    },
+    {
+      "id": "session"
+    },
+    {
+      "id": "members"
+    },
+    {
+      "id": "previous"
+    },
+    {
+      "id": "template",
+      "permission": "submit"
+    },
+    {
+      "id": "bootstrap",
+      "permission": "submit"
+    },
+    {
+      "id": "settings",
+      "permission": "config"
+    },
+    {
+      "id": "configure",
+      "permission": "config"
+    },
+    {
+      "id": "test-webhook",
+      "permission": "config"
+    },
+    {
+      "id": "list",
+      "permission": "read"
+    },
+    {
+      "id": "detail"
+    },
+    {
+      "id": "signature-image"
+    },
+    {
+      "id": "save",
+      "permission": "submit"
+    },
+    {
+      "id": "delete-record",
+      "permission": "delete"
+    },
+    {
+      "id": "sign",
+      "permission": "sign"
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {createSignatureHandlers} from './handlers.mjs';
-import {templates} from './templates.mjs';
+import {createSignatureHandlers} from './src/handlers.mjs';
+import {templates} from './src/templates.mjs';
 
 function fixture(){
  const org=randomUUID(),otherOrg=randomUUID(),owner=randomUUID(),signer=randomUUID(),outsider=randomUUID();

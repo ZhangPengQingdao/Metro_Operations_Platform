@@ -1,0 +1,71 @@
+/* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
+.signatures{color:var(--afc-color-ink)}
+*{box-sizing:border-box}
+.sig-muted{color:#71717a;font-size:13px;margin:0}
+.sig-error{padding:12px 14px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;border-radius:10px;margin:12px 0}
+.sig-warning{padding:12px 14px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:10px;margin:12px 0}
+.sig-field input,.sig-field select,.sig-field textarea{width:100%;border:1px solid #d4d4d8;border-radius:8px;background:white;padding:9px 10px;color:#18181b;font:inherit}
+.sig-field textarea{min-height:90px;resize:vertical}
+.sig-templates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.sig-template{border:1px solid #e4e4e7;border-radius:14px;background:white;padding:20px;text-align:left;display:flex;flex-direction:column;gap:8px;min-height:190px;cursor:pointer}
+.sig-template:hover,.sig-template:focus-visible{border-color:#52525b;box-shadow:0 6px 20px #0000000d}
+.sig-template h2{font-size:17px;margin:0}
+.sig-template p{font-size:13px;color:#71717a;line-height:1.6;margin:0}
+.sig-template small{color:#3f3f46}
+.sig-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.sig-field{display:block;font-size:13px;font-weight:600;color:#3f3f46}
+.sig-field>span{display:block;margin-bottom:6px}
+.sig-field.wide,.sig-section{grid-column:1/-1}
+.sig-section{border-top:1px solid #e4e4e7;margin-top:8px;padding-top:16px}
+.sig-section h3{margin:0 0 8px;font-size:15px}
+.sig-person-search{max-width:320px;margin:10px 0}
+.sig-people-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #e4e4e7;border-radius:10px;background:#fafafa;min-height:54px;padding:9px 12px}
+.sig-people-selected{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.sig-people-label{font-size:13px;font-weight:600;white-space:nowrap}
+.sig-person-chip{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #e4e4e7;border-radius:999px;padding:3px 7px 3px 9px;font-size:12px}
+.sig-person-chip small{color:#71717a}
+.sig-person-chip button{border:0;background:transparent;color:#71717a;cursor:pointer;padding:0 2px;font-size:15px;line-height:1}
+.sig-person-chip button:hover{color:#b91c1c}
+.sig-score{display:grid;grid-template-columns:1fr 110px 110px;gap:8px;align-items:center;margin:6px 0}
+.sig-score input{width:100%;border:1px solid #d4d4d8;border-radius:8px;padding:8px}
+.sig-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.sig-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:30px;align-items:start;margin-top:18px}
+.sig-detail-main{min-width:0}
+.sig-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;row-gap:18px;margin:0}
+.sig-detail>div{min-width:0}
+.sig-detail>div.long{grid-column:1/-1}
+.sig-detail dt{font-size:12px;color:#71717a}
+.sig-detail dd{margin:5px 0 0;white-space:pre-wrap;font-size:14px;line-height:1.55}
+.sig-qr-side{background:#f7f7f8;border-radius:12px;padding:16px;text-align:center}
+.sig-qr-side h3{margin:0 0 5px;font-size:14px}
+.sig-qr-side p{font-size:12px;color:#71717a;line-height:1.5;margin:5px 0}
+.sig-qr-image{display:block;width:188px;height:188px;max-width:100%;margin:12px auto;background:#fff;border-radius:8px}
+.sig-progress{height:6px;background:#e4e4e7;border-radius:20px;overflow:hidden;margin-top:14px}
+.sig-progress span{display:block;height:100%;background:#18181b}
+.sig-qr-actions{display:flex;justify-content:center;gap:6px;margin-top:12px}
+.sig-sign-list{margin-top:12px;border-top:1px solid #e4e4e7}
+.sig-sign-row{display:grid;grid-template-columns:minmax(110px,1fr) 60px minmax(128px,1.3fr) auto;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f1;font-size:13px}
+.sig-sign-row strong{font-weight:600}
+.sig-sign-row time{font-size:12px;color:#71717a}
+.sig-sign-state{font-size:12px;color:#71717a}
+.sig-sign-state.done{color:#166534}
+.sig-sign-preview{margin-top:14px;background:#fafafa;border-radius:10px;padding:14px;display:flex;align-items:center;gap:18px}
+.sig-sign-preview img{max-width:180px;max-height:100px;object-fit:contain;background:white}
+.sig-sign-preview p{margin:0;font-size:12px;color:#71717a}
+.sig-sign-preview button{border:0;background:transparent;color:#52525b;text-decoration:underline;cursor:pointer}
+.sig-mobile{display:none}
+.sig-card{border:1px solid #e4e4e7;background:#fff;border-radius:12px;padding:14px;margin:8px 0}
+.sig-card h3{font-size:15px;margin:0 0 5px}
+.sig-card p{font-size:12px;color:#71717a;margin:3px 0}
+.sig-pad{border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;background:#fff}
+@media(max-width:700px){
+.sig-templates,.sig-form,.sig-detail,.sig-detail-layout{grid-template-columns:1fr}
+.sig-qr-side{grid-row:1}
+.sig-people-bar{align-items:stretch;flex-direction:column}
+.sig-people-bar .relative{align-self:flex-end}
+.sig-sign-row{grid-template-columns:minmax(70px,1fr) 50px 1fr}
+.sig-sign-row button{grid-column:1/-1;justify-self:start}
+.sig-desktop{display:none}
+.sig-mobile{display:block}
+.sig-score{grid-template-columns:1fr 70px 70px}
+}

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createTodosService} from './service.mjs';
-import {createTodosHandlers} from './handlers.mjs';
-import {dueAt,occurrence} from './schedule.mjs';
+import {createTodosService} from './src/service.mjs';
+import {createTodosHandlers} from './src/handlers.mjs';
+import {dueAt,occurrence} from './src/schedule.mjs';
 
 const ids={orgA:'11111111-1111-4111-8111-111111111111',orgB:'22222222-2222-4222-8222-222222222222',station:'33333333-3333-4333-8333-333333333333',alice:'44444444-4444-4444-8444-444444444444',bob:'55555555-5555-4555-8555-555555555555',carol:'66666666-6666-4666-8666-666666666666'};
 let counter=100;const id=()=>`00000000-0000-4000-8000-${String(++counter).padStart(12,'0')}`;

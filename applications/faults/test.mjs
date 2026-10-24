@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {createFaultService} from './service.mjs';
-import {createFaultHandlers} from './handlers.mjs';
-import {parseSlip} from './slip.mjs';
+import {createFaultService} from './src/service.mjs';
+import {createFaultHandlers} from './src/handlers.mjs';
+import {parseSlip} from './src/slip.mjs';
 
 function fixture(){
  const org=randomUUID(),otherOrg=randomUUID(),personId=randomUUID(),otherPerson=randomUUID(),locationId=randomUUID();

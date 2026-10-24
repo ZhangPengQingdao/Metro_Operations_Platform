@@ -53,6 +53,14 @@ export interface AppRuntime {
   confirm(options: { title: string; message?: string; confirmLabel?: string; danger?: boolean }): Promise<boolean>;
 }
 
+/** Hands a file the page generated (e.g. an Excel export) to the browser's save dialog. */
+export function saveAs(contents: Blob, fileName: string): void {
+  const url = URL.createObjectURL(contents), link = document.createElement('a');
+  link.href = url; link.download = fileName; link.style.display = 'none';
+  document.body.append(link);
+  try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+
 const AppRuntimeContext = createContext<AppRuntime | null>(null);
 
 export function defineApp(definition: { pages: Record<string, ComponentType<AppPageProps>>; dashboard?: ComponentType }): AppDefinition {

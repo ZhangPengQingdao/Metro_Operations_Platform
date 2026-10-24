@@ -1,0 +1,231 @@
+{
+  "id": "huicetong",
+  "name": "慧策通·计划督办",
+  "version": "1.0.0",
+  "description": "月度工作计划编制与督办",
+  "color": "#059669",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看本部门计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "fill",
+      "name": "填报本人计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "review",
+      "name": "归口审核计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "manage",
+      "name": "管理周期与计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "sign",
+      "name": "部门负责人确认签发",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read",
+    "ai.complete",
+    "attachments.create",
+    "attachments.read"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "计划提报",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/bindings",
+      "title": "基础配置",
+      "permission": "manage",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "plan-suggest"
+    },
+    {
+      "id": "item-workflow",
+      "permission": "read"
+    },
+    {
+      "id": "completion-review"
+    },
+    {
+      "id": "authorize-attachment",
+      "permission": "read"
+    },
+    {
+      "id": "photo-begin"
+    },
+    {
+      "id": "photo-part"
+    },
+    {
+      "id": "photo-finish"
+    },
+    {
+      "id": "photo-read",
+      "permission": "read"
+    },
+    {
+      "id": "session"
+    },
+    {
+      "id": "members",
+      "permission": "read"
+    },
+    {
+      "id": "cycle-list",
+      "permission": "read"
+    },
+    {
+      "id": "cycle-get",
+      "permission": "read"
+    },
+    {
+      "id": "cycle-create",
+      "permission": "manage"
+    },
+    {
+      "id": "cycle-submit-review",
+      "permission": "manage"
+    },
+    {
+      "id": "cycle-return-draft",
+      "permission": "manage"
+    },
+    {
+      "id": "cycle-submit-countersign",
+      "permission": "manage"
+    },
+    {
+      "id": "cycle-signature-status",
+      "permission": "read"
+    },
+    {
+      "id": "cycle-confirm-signature",
+      "permission": "sign"
+    },
+    {
+      "id": "cycle-lock",
+      "permission": "manage"
+    },
+    {
+      "id": "category-list",
+      "permission": "read"
+    },
+    {
+      "id": "category-upsert",
+      "permission": "manage"
+    },
+    {
+      "id": "binding-list",
+      "permission": "read"
+    },
+    {
+      "id": "binding-upsert",
+      "permission": "manage"
+    },
+    {
+      "id": "binding-delete",
+      "permission": "manage"
+    },
+    {
+      "id": "item-list",
+      "permission": "read"
+    },
+    {
+      "id": "item-get",
+      "permission": "read"
+    },
+    {
+      "id": "item-create"
+    },
+    {
+      "id": "item-update"
+    },
+    {
+      "id": "item-progress"
+    },
+    {
+      "id": "item-submit",
+      "permission": "fill"
+    },
+    {
+      "id": "item-review",
+      "permission": "review"
+    },
+    {
+      "id": "change-list",
+      "permission": "read"
+    },
+    {
+      "id": "change-create",
+      "permission": "manage"
+    },
+    {
+      "id": "change-review",
+      "permission": "review"
+    },
+    {
+      "id": "change-countersign",
+      "permission": "sign"
+    },
+    {
+      "id": "export-plan",
+      "permission": "read"
+    },
+    {
+      "id": "dashboard-summary",
+      "permission": "read",
+      "dashboard": true
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

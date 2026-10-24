@@ -1,10 +1,17 @@
 {
-  "name": "@metro-apps/todos",
+  "name": "metro-todos",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "test": "node --test test.mjs"
+    "test": "node --test test.mjs",
+    "check": "node ../../packages/platform-cli/dist/cli.mjs check",
+    "build": "node ../../packages/platform-cli/dist/cli.mjs build",
+    "dev": "node ../../packages/platform-cli/dist/cli.mjs dev"
+  },
+  "dependencies": {
+    "@metro/platform-sdk": "*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   }
 }

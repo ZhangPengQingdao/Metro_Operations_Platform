@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {createShiftsHandlers} from './handlers.mjs';
-import {defaults,meetingDraftValue,restoreMeetingDraft} from './modules.mjs';
+import {createShiftsHandlers} from './src/handlers.mjs';
+import {defaults,meetingDraftValue,restoreMeetingDraft} from './src/modules.mjs';
 const org='61000000-0000-4000-8000-000000000001',other='61000000-0000-4000-8000-000000000002',person='61000000-0000-4000-8000-000000000003',second='61000000-0000-4000-8000-000000000004';
 function fixture(){
  const tables={records:new Map(),configs:new Map(),drafts:new Map()},calls=[],signed=new Set();let failPush=false,failTransaction=false,failSignatureRead=false;

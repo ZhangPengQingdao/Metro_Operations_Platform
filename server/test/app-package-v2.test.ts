@@ -229,5 +229,16 @@ test('mop-app init, check and build produce one installable-format file', async 
     const invalid = run(['check'], project);
     assert.equal(invalid.status, 1);
     assert.match(invalid.stderr, /app\.json#pages\[0\]\.permission/);
+    appJson.pages[0].permission = 'read';
+    await writeFile(join(project, 'app.json'), JSON.stringify(appJson));
+    const page = await readFile(join(project, 'src/ui.jsx'), 'utf8');
+    await writeFile(join(project, 'src/ui.jsx'), page.replace("import './ui.css';\n", ''));
+    const unstyled = run(['build'], project);
+    assert.equal(unstyled.status, 1);
+    assert.match(unstyled.stderr, /样式文件未被页面引用/);
+    await writeFile(join(project, 'src/ui.jsx'), `${page}\nexport const Probe = () => <React.Fragment />;\n`);
+    const undeclared = run(['build'], project);
+    assert.equal(undeclared.status, 1);
+    assert.match(undeclared.stderr, /未导入的 React/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,0 +1,32 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "addColumn",
+      "table": "plan_cycles",
+      "column": {
+        "name": "confirmed_by",
+        "type": "uuid",
+        "nullable": true
+      }
+    },
+    {
+      "kind": "addColumn",
+      "table": "plan_cycles",
+      "column": {
+        "name": "confirmed_at",
+        "type": "timestamptz",
+        "nullable": true
+      }
+    },
+    {
+      "kind": "addColumn",
+      "table": "plan_items",
+      "column": {
+        "name": "via_change",
+        "type": "boolean",
+        "nullable": true
+      }
+    }
+  ]
+}

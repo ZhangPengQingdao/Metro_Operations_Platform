@@ -1,0 +1,27 @@
+/* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
+.maintenance{color:var(--afc-color-ink)}
+*{box-sizing:border-box}
+.maintenance-error{padding:10px 12px;background:#fff1f2;color:#991b1b;border-radius:8px;margin:10px 0}
+.maintenance-note{font-size:13px;color:var(--afc-color-muted);margin:8px 0}
+.maintenance-cell{max-width:260px;white-space:normal;overflow-wrap:anywhere}
+.maintenance-cell small{display:block;color:var(--afc-color-muted)}
+.maintenance-progress{width:96px;height:5px;background:var(--afc-color-neutral-soft,#eee);border-radius:5px;overflow:hidden;margin-top:6px}
+.maintenance-progress span{display:block;height:100%;background:var(--afc-color-ink,#18181b)}
+.maintenance-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.maintenance-wide{grid-column:1/-1}
+.maintenance-form textarea{width:100%}
+.maintenance-items{display:grid;gap:12px}
+.maintenance-item{border:1px solid var(--afc-color-border,#ddd);border-radius:10px;padding:14px}
+.maintenance-item h3{margin:0 0 10px;font-size:14px}
+.maintenance-item-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.maintenance-item-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.maintenance-footer{display:flex;gap:8px;justify-content:flex-end}
+.maintenance-batch{display:flex;gap:8px;margin:8px 0}
+.maintenance-batch .afc-control{flex:1;min-width:0}
+.maintenance-batch .afc-button{flex:none}
+.maintenance-import{width:100%;max-height:220px;overflow:auto}
+.maintenance-file{display:none}
+@media(max-width:700px){.maintenance-form,.maintenance-item-grid{grid-template-columns:1fr}
+.maintenance-wide{grid-column:1}
+.maintenance-footer{flex-wrap:wrap}
+}

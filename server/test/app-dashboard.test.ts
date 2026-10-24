@@ -4,10 +4,10 @@ import {PGlite} from '@electric-sql/pglite';
 import {runtimeCountInput,runtimeCountQuery,runtimeListInput,runtimeListQuery,runtimeListSelection,runtimeDailyCountInput,runtimeDailyCountQuery} from '../src/app-platform/storage/runtime-list.ts';
 import {isAppDashboardSnapshot,readAppDashboard} from '../../packages/platform-sdk/src/app-dashboard.ts';
 import {AppRuntimeDataService} from '../src/app-platform/storage/runtime-data.ts';
-import {createFaultService} from '../../applications/faults/service.mjs';
-import {createMaintenanceService} from '../../applications/maintenance/service.mjs';
-import {createHuicetongService} from '../../applications/huicetong/service.mjs';
-import {createTodosService} from '../../applications/todos/service.mjs';
+import {createFaultService} from '../../applications/faults/src/service.mjs';
+import {createMaintenanceService} from '../../applications/maintenance/src/service.mjs';
+import {createHuicetongService} from '../../applications/huicetong/src/service.mjs';
+import {createTodosService} from '../../applications/todos/src/service.mjs';
 
 const id=(n:number)=>`61000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const snapshot={version:'1.0',generatedAt:'2026-10-10T01:00:00Z',scopeLabel:'授权范围',metrics:[{id:'pending',label:'待处理',value:0,unit:'项'}],items:[]};

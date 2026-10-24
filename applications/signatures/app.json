@@ -1,0 +1,98 @@
+{
+  "id": "signatures",
+  "name": "在线签字",
+  "version": "1.0.0",
+  "description": "四种业务模板、签字列表与本人电子签名",
+  "color": "#7C3AED",
+  "platform": ">=0.30.0",
+  "permissions": [
+    {
+      "code": "read",
+      "name": "查看签字任务",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "create",
+      "name": "创建签字任务",
+      "scopes": [
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "sign",
+      "name": "本人签字",
+      "scopes": [
+        "self"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read",
+    "notifications.create",
+    "notifications.manage",
+    "signatures.create",
+    "signatures.read",
+    "signatures.sign"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "签字列表",
+      "permission": "read",
+      "nav": true
+    },
+    {
+      "path": "/templates",
+      "title": "签字模板",
+      "permission": "create",
+      "nav": true
+    },
+    {
+      "path": "/sign/:taskId",
+      "title": "本人签字",
+      "permission": "sign"
+    }
+  ],
+  "api": [
+    {
+      "id": "session"
+    },
+    {
+      "id": "templates",
+      "permission": "create"
+    },
+    {
+      "id": "members"
+    },
+    {
+      "id": "list"
+    },
+    {
+      "id": "detail"
+    },
+    {
+      "id": "evidence"
+    },
+    {
+      "id": "create",
+      "permission": "create"
+    },
+    {
+      "id": "sign",
+      "permission": "sign"
+    }
+  ],
+  "limits": {
+    "memoryMiB": 128,
+    "timeoutSeconds": 30
+  }
+}

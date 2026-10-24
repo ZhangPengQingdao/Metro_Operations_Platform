@@ -4,7 +4,7 @@ import { watch } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { validateAppManifestV2, type AppManifestIssueV2, type AppManifestV2 } from '@metro/platform-sdk/manifest';
 import { createMopkg, inspectMopkg, MOPKG_MIGRATION_PATH } from '@metro/platform-sdk/mopkg';
@@ -142,7 +142,12 @@ export async function buildProject(target: string): Promise<BuildResult> {
       });
       if (Object.keys(result.metafile.inputs).some(path => LEGACY_MODULES.test(path))) throw new CliError('v2 页面不使用 app-sandbox 或 ui-styles', [{ path: checked.ui, message: '改用 @metro/platform-sdk/app 的 defineApp/useApp' }]);
       if (!exportsDefault(result.metafile, 'ui.js')) throw new CliError('页面缺少默认导出', [{ path: checked.ui, message: '应 export default defineApp({...})' }]);
-      entries.push({ path: 'ui.js', data: await readFile(join(work, 'ui.js')) });
+      const stylesheet = join(dirname(checked.ui), 'ui.css');
+      if (await exists(join(root, stylesheet)) && !Object.keys(result.metafile.inputs).some(path => resolve(root, path) === join(root, stylesheet))) throw new CliError('样式文件未被页面引用', [{ path: stylesheet, message: `在 ${checked.ui} 中加入 import './ui.css'` }]);
+      const bundle = await readFile(join(work, 'ui.js'));
+      // Imported bindings are renamed by the minifier, so a literal `React.` left in the bundle is an undeclared global.
+      if (/(^|[^\w$.])React\./.test(bundle.toString('utf8'))) throw new CliError('页面引用了未导入的 React', [{ path: checked.ui, message: "从 'react' 导入所需名称（如 Fragment），不要使用全局 React" }]);
+      entries.push({ path: 'ui.js', data: bundle });
       if (await exists(join(work, 'ui.css'))) entries.push({ path: 'ui.css', data: new TextEncoder().encode(await scopeCss(await readFile(join(work, 'ui.css'), 'utf8'), manifest.id)) });
     }
     if (checked.server) {
