@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {createMaterialsService} from './service.mjs';
+import {createMaterialsService} from './src/service.mjs';
 function fixture(){
  let tables={materials:new Map(),movements:new Map(),reversals:new Map(),managers:new Map(),manager_audit:new Map()};const spent=new Set();let writes=0,unknown=false;
  const employee={personId:randomUUID(),organizationUnitId:randomUUID()};
@@ -59,13 +59,13 @@ test('outbound correction can only reverse the same employee outbound within the
  await f.service.reverse({requestId:randomUUID(),movementId:out.id,reason:'correct'},f.employee,undefined,{expectedKind:'out',ownOnly:true});assert.equal(f.tables.materials.get(id).quantity,10);
 });
 test('handler route fixes direction and rejects client overrides',async()=>{
- const {createMaterialsHandlers}=await import('./handlers.mjs');let calls=0;
+ const {createMaterialsHandlers}=await import('./src/handlers.mjs');let calls=0;
  const handlers=createMaterialsHandlers({invoke:async()=>{calls++;throw Error('not expected');}});
  const result=await handlers.get('outbound').execute({direction:'in'},new AbortController().signal,{personId:randomUUID(),organizationUnitId:randomUUID()});
  assert.equal(result.error.code,'INVALID_INPUT');assert.equal(calls,0);assert.equal(handlers.has('move'),false);assert.equal(handlers.has('reverse'),false);
 });
 test('only the leader delegates to active same-workgroup members; managers cannot delegate',async()=>{
- const {createMaterialsAccess}=await import('./access.mjs'),f=fixture(),access=createMaterialsAccess(f.gateway);
+ const {createMaterialsAccess}=await import('./src/access.mjs'),f=fixture(),access=createMaterialsAccess(f.gateway);
  const leader={...f.employee,permissions:['app.materials.manage']},member={...f.employee,personId:randomUUID()},outsider={id:randomUUID(),organizationUnitId:randomUUID()};
  f.members.set(member.personId,{id:member.personId,name:'Member',employeeNo:'E1',organizationUnitId:member.organizationUnitId});f.members.set(outsider.id,outsider);
  const change={requestId:randomUUID(),personId:member.personId,active:true,revision:null};
@@ -80,7 +80,7 @@ test('only the leader delegates to active same-workgroup members; managers canno
  const moved={...member,organizationUnitId:randomUUID()};assert.equal((await access.capabilities(moved)).manageMaterials,false);
 });
 test('manager revocation races with inbound: stale delegation cannot commit stock or ledger',async()=>{
- const {createMaterialsAccess}=await import('./access.mjs'),{createMaterialsHandlers}=await import('./handlers.mjs');
+ const {createMaterialsAccess}=await import('./src/access.mjs'),{createMaterialsHandlers}=await import('./src/handlers.mjs');
  const f=fixture(),access=createMaterialsAccess(f.gateway),leader={...f.employee,permissions:['app.materials.manage']},member={...f.employee,personId:randomUUID()};
  const id=await f.stock();f.members.set(member.personId,{id:member.personId,organizationUnitId:member.organizationUnitId});
  await access.setManager({requestId:randomUUID(),personId:member.personId,active:true,revision:null},leader);
@@ -89,7 +89,7 @@ test('manager revocation races with inbound: stale delegation cannot commit stoc
  assert.equal(result.ok,false);assert.equal(f.tables.materials.get(id).quantity,0);assert.equal(f.tables.movements.size,0);
 });
 test('manager performs inbound but ordinary member and spoofed leadership are denied',async()=>{
- const {createMaterialsAccess}=await import('./access.mjs'),{createMaterialsHandlers}=await import('./handlers.mjs');
+ const {createMaterialsAccess}=await import('./src/access.mjs'),{createMaterialsHandlers}=await import('./src/handlers.mjs');
  const f=fixture(),access=createMaterialsAccess(f.gateway),leader={...f.employee,permissions:['app.materials.manage']},member={...f.employee,personId:randomUUID()},handlers=createMaterialsHandlers(f.gateway);
  const id=await f.stock(),payload={requestId:randomUUID(),materialId:id,quantity:3};
  assert.equal((await handlers.get('inbound').execute(payload,undefined,member)).error.code,'ACCESS_DENIED');
@@ -125,7 +125,7 @@ test('movement presentation respects the single-owner storage session and includ
 });
 test('bootstrap returns session and first page in one application request',async()=>{
  const f=fixture(),id=await f.stock(),operations=[];
- const {createMaterialsHandlers}=await import('./handlers.mjs');
+ const {createMaterialsHandlers}=await import('./src/handlers.mjs');
  const handlers=createMaterialsHandlers({invoke:async(operation,payload,signal)=>{operations.push(operation);return f.gateway.invoke(operation,payload,signal);}});
  const response=await handlers.get('bootstrap').execute({route:'stock'},new AbortController().signal,{...f.employee,permissions:['app.materials.manage']});
  assert.equal(response.ok,true);
@@ -139,7 +139,7 @@ test('bootstrap returns session and first page in one application request',async
  assert.equal(denied.error.code,'ACCESS_DENIED');
 });
 test('material editing preserves stock, rejects stale versions, and requires a manager',async()=>{
- const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./src/handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
  const input={requestId:randomUUID(),materialId:id,name:'新名称',sku:'M8',unit:'件',version:0};
  assert.equal((await handlers.get('update').execute(input,undefined,f.employee)).error.code,'ACCESS_DENIED');
  assert.equal((await handlers.get('update').execute(input,undefined,{...f.employee,permissions:['app.materials.manage']})).ok,true);
@@ -148,7 +148,7 @@ test('material editing preserves stock, rejects stale versions, and requires a m
  await assert.rejects(f.service.update({...input,requestId:randomUUID(),version:1,quantity:99},f.employee),/INVALID_INPUT/);
 });
 test('outbound accepts only a directory-confirmed active workgroup recipient',async()=>{
- const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./src/handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
  await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);
  const recipient={id:randomUUID(),name:'同班人员',employeeNo:'A01',organizationUnitId:f.employee.organizationUnitId};f.members.set(recipient.id,recipient);
  const payload={requestId:randomUUID(),materialId:id,quantity:2,receiverId:recipient.id};
@@ -159,7 +159,7 @@ test('outbound accepts only a directory-confirmed active workgroup recipient',as
  assert.equal((await handlers.get('correct-outbound').execute({requestId:randomUUID(),movementId:reply.result.id,quantity:1,receiverId:recipient.id},undefined,f.employee)).error.code,'ACCESS_DENIED');
 });
 test('deleting own consumption returns stock once, preserves ledger, and removes it from effective consumption results',async()=>{
- const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./src/handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
  await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:5},f.employee);
  const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:2},f.employee),original=structuredClone(f.tables.movements.get(out.id));
  assert.equal((await f.service.list({kind:'consumptions'},f.employee)).rows.length,1);
@@ -171,13 +171,13 @@ test('deleting own consumption returns stock once, preserves ledger, and removes
  assert.equal((await handlers.get('reverse-outbound').execute({...payload,requestId:randomUUID()},undefined,f.employee)).error.code,'ALREADY_REVERSED');assert.equal(f.tables.materials.get(id).quantity,5);
 });
 test('ordinary employees can select recipients but cannot manage delegation or supply a foreign group',async()=>{
- const f=fixture(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const f=fixture(),{createMaterialsHandlers}=await import('./src/handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
  f.members.set(f.employee.personId,{id:f.employee.personId,name:'本人',organizationUnitId:f.employee.organizationUnitId});f.members.set(randomUUID(),{id:randomUUID(),organizationUnitId:randomUUID()});
  const result=await handlers.get('recipients').execute({},undefined,f.employee);assert.equal(result.ok,true);assert.equal(result.result.rows.length,1);
  assert.equal((await handlers.get('recipients').execute({organizationUnitId:randomUUID()},undefined,f.employee)).error.code,'INVALID_INPUT');assert.equal((await handlers.get('members').execute({},undefined,f.employee)).error.code,'ACCESS_DENIED');
 });
 test('leader may correct and delete group consumption while ownership and organization boundaries remain intact',async()=>{
- const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
+ const f=fixture(),id=await f.stock(),{createMaterialsHandlers}=await import('./src/handlers.mjs'),handlers=createMaterialsHandlers(f.gateway);
  await f.service.move({requestId:randomUUID(),materialId:id,direction:'in',quantity:8},f.employee);
  const out=await f.service.move({requestId:randomUUID(),materialId:id,direction:'out',quantity:3},f.employee);
  f.members.set(f.employee.personId,{id:f.employee.personId,name:'员工',organizationUnitId:f.employee.organizationUnitId});

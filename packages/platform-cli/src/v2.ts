@@ -146,14 +146,13 @@ export async function buildProject(target: string): Promise<BuildResult> {
       if (await exists(join(work, 'ui.css'))) entries.push({ path: 'ui.css', data: new TextEncoder().encode(await scopeCss(await readFile(join(work, 'ui.css'), 'utf8'), manifest.id)) });
     }
     if (checked.server) {
-      const result = await esbuild({
+      await esbuild({
         absWorkingDir: root, entryPoints: { server: join(root, checked.server) }, outdir: work, outExtension: { '.js': '.js' }, bundle: true, format: 'esm',
         platform: 'node', target: 'node22', metafile: true, logLevel: 'silent', minify: false,
         banner: { js: "import {createRequire as __mopCreateRequire} from 'node:module';const require=__mopCreateRequire(import.meta.url);" },
       }).catch((error: { errors?: { text: string; location?: { file: string; line: number } | null }[] }) => {
         throw new CliError('接口构建失败', (error.errors ?? []).map(item => ({ path: item.location ? `${item.location.file}:${item.location.line}` : checked.server!, message: item.text })));
       });
-      if (!exportsDefault(result.metafile, 'server.js')) throw new CliError('接口缺少默认导出', [{ path: checked.server, message: '应 export default defineServer({...})' }]);
       const handlers = await serverHandlerNames(join(work, 'server.js'));
       if (!handlers) throw new CliError('接口默认导出不是 defineServer(...) 的结果', [{ path: checked.server, message: '应 export default defineServer({...})，或调用 createAppBackend({handlers})' }]);
       const missing = manifest.api.filter(api => !handlers.includes(api.id)).map(api => api.id);

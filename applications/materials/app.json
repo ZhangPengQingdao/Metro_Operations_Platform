@@ -1,0 +1,183 @@
+{
+  "id": "materials",
+  "name": "物料管理",
+  "version": "0.3.0",
+  "description": "入库、出库、库存查询及关联冲销",
+  "color": "#D97706",
+  "platform": ">=0.29.0",
+  "permissions": [
+    {
+      "code": "read-stock",
+      "name": "查看库存",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "read-records",
+      "name": "查看消耗记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "create",
+      "name": "新建物料",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "update",
+      "name": "修改物料",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "inbound",
+      "name": "入库及入库修改",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "modify-consumption",
+      "name": "修改消耗记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "delete-consumption",
+      "name": "删除消耗记录",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "read",
+      "name": "查询本组织物料和流水"
+    },
+    {
+      "code": "manage",
+      "name": "工班长物料管理及设置物资管理员"
+    },
+    {
+      "code": "outbound",
+      "name": "新增消耗",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    }
+  ],
+  "platformAccess": [
+    "people.read"
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "库存列表",
+      "permission": "read-stock",
+      "nav": true
+    },
+    {
+      "path": "/records",
+      "title": "消耗记录",
+      "permission": "read-records",
+      "nav": true
+    },
+    {
+      "path": "/settings",
+      "title": "物资管理员",
+      "permission": "manage",
+      "nav": true
+    }
+  ],
+  "api": [
+    {
+      "id": "recipients"
+    },
+    {
+      "id": "update",
+      "permission": "update"
+    },
+    {
+      "id": "correct-inbound",
+      "permission": "inbound"
+    },
+    {
+      "id": "correct-outbound",
+      "permission": "modify-consumption"
+    },
+    {
+      "id": "create",
+      "permission": "create"
+    },
+    {
+      "id": "inbound",
+      "permission": "inbound"
+    },
+    {
+      "id": "outbound",
+      "permission": "outbound"
+    },
+    {
+      "id": "reverse-inbound",
+      "permission": "inbound"
+    },
+    {
+      "id": "reverse-outbound",
+      "permission": "delete-consumption"
+    },
+    {
+      "id": "list"
+    },
+    {
+      "id": "session"
+    },
+    {
+      "id": "bootstrap"
+    },
+    {
+      "id": "members",
+      "permission": "manage"
+    },
+    {
+      "id": "set-manager",
+      "permission": "manage"
+    }
+  ]
+}

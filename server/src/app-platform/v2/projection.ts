@@ -20,7 +20,9 @@ export const migrationArtifactId = (migrationId: string) => `migration-${migrati
  * employee access, owners and roles, business authorization, navigation and the dashboard.
  * Pages with parameters stay v2-only; the shell resolves them from the stored v2 manifest.
  */
-export function projectV2Manifest(manifest: AppManifestV2, inspection: { files: MopkgInspection['files']; migrations: Pick<MopkgInspection['migrations'][number], 'id' | 'file' | 'sha256' | 'bytes'>[] }, sha256: (path: string) => string): AppManifest {
+export function projectV2Manifest(manifest: AppManifestV2, inspection: { files: MopkgInspection['files']; migrations: Pick<MopkgInspection['migrations'][number], 'id' | 'file' | 'sha256' | 'bytes'>[] }, sha256: (path: string) => string,
+  /** Installed manifest being upgraded: its publisher and recorded migration declarations are kept, so the registry's append-only rule holds. */
+  inherit?: AppManifest): AppManifest {
   const full = (code: string) => appPermissionCode(manifest.id, code);
   const bytes = (path: string) => inspection.files.find(file => file.path === path)?.bytes;
   const hasUi = bytes('ui.js') !== undefined, hasServer = bytes('server.js') !== undefined;
@@ -30,8 +32,15 @@ export function projectV2Manifest(manifest: AppManifestV2, inspection: { files: 
   const fallbackPermission = manifest.permissions[0] ? full(manifest.permissions[0].code) : undefined;
   const dashboardApi = manifest.api.find(api => api.dashboard);
   const dashboardRoute = routes.find(route => manifest.pages.some(page => page.nav && page.path === route.path)) ?? routes[0];
+  // Migrations already recorded for this installation keep their declaration (the installer verified the bytes match).
+  const inherited = inherit?.storage.mode === 'managed' ? inherit.storage.migrations.slice(0, inspection.migrations.length) : [];
+  const migrationDeclarations = inspection.migrations.map((m, index) => inherited[index] ?? { id: `m${m.id}`, artifactId: migrationArtifactId(m.id) });
+  const migrationArtifacts = inspection.migrations.map((m, index) => {
+    const previous = inherited[index] && inherit!.artifacts.find(artifact => artifact.id === inherited[index]!.artifactId);
+    return previous && previous.sha256 === m.sha256 ? previous : { id: migrationDeclarations[index]!.artifactId, kind: 'migration', path: m.file, sha256: m.sha256, bytes: m.bytes };
+  });
   const projected = {
-    manifestVersion: '1.0', id: manifest.id, version: manifest.version, name: manifest.name, description: manifest.description, publisherId: 'local',
+    manifestVersion: '1.0', id: manifest.id, version: manifest.version, name: manifest.name, description: manifest.description, publisherId: inherit?.publisherId ?? 'local',
     compatibility: { platform: range, capabilities: [], applications: [] },
     permissions: {
       requested: [...new Set([...manifest.platformAccess.map(platformPermission), ...(inspection.migrations.length ? ['platform.app_data.read', 'platform.app_data.write'] : [])])],
@@ -39,7 +48,7 @@ export function projectV2Manifest(manifest: AppManifestV2, inspection: { files: 
     },
     ui: hasUi ? { mode: 'sandbox', entryArtifactId: 'frontend', clientRouting: true } : { mode: 'none' },
     backend: hasServer ? { mode: 'isolated', runtime: 'node', entryArtifactId: 'backend', limits: { memoryMiB: manifest.limits?.memoryMiB ?? 256, cpuMillis: 1000, timeoutSeconds: manifest.limits?.timeoutSeconds ?? 30 } } : { mode: 'none' },
-    storage: inspection.migrations.length ? { mode: 'managed', migrations: inspection.migrations.map(m => ({ id: `m${m.id}`, artifactId: migrationArtifactId(m.id) })) } : { mode: 'none' },
+    storage: inspection.migrations.length ? { mode: 'managed', migrations: migrationDeclarations } : { mode: 'none' },
     routes,
     navigation: manifest.pages.filter(page => page.nav).map((page, order) => ({ id: pageRouteId(page.path), label: page.title, routeId: pageRouteId(page.path), order })),
     api: manifest.api.map(api => api.permission
@@ -53,7 +62,7 @@ export function projectV2Manifest(manifest: AppManifestV2, inspection: { files: 
     artifacts: [
       ...(hasUi ? [{ id: 'frontend', kind: 'frontend', path: 'ui.js', sha256: sha256('ui.js'), bytes: bytes('ui.js')! }] : []),
       ...(hasServer ? [{ id: 'backend', kind: 'backend', path: 'server.js', sha256: sha256('server.js'), bytes: bytes('server.js')! }] : []),
-      ...inspection.migrations.map(m => ({ id: migrationArtifactId(m.id), kind: 'migration', path: m.file, sha256: m.sha256, bytes: m.bytes })),
+      ...migrationArtifacts,
     ],
   };
   const result = validateAppManifest(projected);

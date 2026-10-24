@@ -123,26 +123,12 @@ export class AppRegistryService {
       record.enabled = enabled;
     });
   }
-  /**
-   * v2 installer only: convert a stopped v1 installation in place. The installation id (and therefore its
-   * storage schema, owner, roles and employee access) is kept; service identity and grants are re-issued.
-   */
-  convertToV2(context:PlatformManagementContext,appId:string,revision:number,manifestInput:unknown,runtime:AppRuntimePackage){
-    const parsed=validateAppManifest(manifestInput);
-    return this.change(context,appId,revision,'runtime-package-changed',`Converted to application model v2 (${runtime.manifest.version})`,async record=>{
-      if(!parsed.ok)throw new AppRegistryError('INVALID_MANIFEST');
-      if(record.enabled)throw new AppRegistryError('DISABLE_REQUIRED');
-      if(record.runtime?.model==='v2'||runtime.model!=='v2'||parsed.manifest.id!==record.appId||runtime.manifest.id!==record.appId||runtime.manifest.version!==parsed.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
-      if(!checkAppManifestCompatibility(parsed.manifest,await this.options.host()).ok)throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
-      record.manifest=parsed.manifest;record.runtime=structuredClone(runtime);
-      record.grants=[];record.serviceIdentityId=null;record.credentialDigest=null;
-    });
-  }
   /** v2 installer only: record the package that matches the (already upgraded) projected manifest. */
   setRuntimePackage(context:PlatformManagementContext,appId:string,revision:number,runtime:AppRuntimePackage){
     return this.change(context,appId,revision,'runtime-package-changed',`Package ${runtime.manifest.version} ${runtime.sha256.slice(0,12)}`,async record=>{
       if(record.enabled)throw new AppRegistryError('DISABLE_REQUIRED');
-      if(record.runtime?.model!=='v2'||runtime.model!=='v2'||runtime.manifest.id!==record.appId||runtime.manifest.version!==record.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
+      // A v1 record gets its first runtime package right after the conversion upgrade.
+      if((record.runtime&&record.runtime.model!=='v2')||runtime.model!=='v2'||runtime.manifest.id!==record.appId||runtime.manifest.version!==record.manifest.version||!/^[a-f0-9]{64}$/.test(runtime.sha256))throw new AppRegistryError('INVALID_RUNTIME_PACKAGE');
       record.runtime=structuredClone(runtime);
     });
   }

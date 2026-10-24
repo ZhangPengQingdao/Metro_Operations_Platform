@@ -45,7 +45,7 @@ export class AppInstallerV2 {
     const manifest = preview.manifest, appId = manifest.id, kind = preview.change.kind;
     const files = readMopkg(bytes);
     const digest = (path: string) => createHash('sha256').update(files.get(path)!).digest('hex');
-    const projection = projectV2Manifest(manifest, preview, digest);
+    const projectFor = (installed?: AppInstallation) => projectV2Manifest(manifest, preview, digest, installed?.manifest);
     const runtime: AppRuntimePackage = { model: 'v2', sha256: preview.sha256, manifest };
     await this.options.store.write(appId, preview.sha256, files);
     const migrations = preview.migrations.map(migration => ({ id: migration.id, file: migration.file, text: files.get(migration.file)!.toString('utf8') }));
@@ -53,7 +53,7 @@ export class AppInstallerV2 {
 
     let record: AppInstallation;
     const existing = await this.options.findInstallation(appId);
-    if (!existing) record = await registry.register(context, projection, `Install ${appId} ${manifest.version}`, 'standard', runtime);
+    if (!existing) record = await registry.register(context, projectFor(), `Install ${appId} ${manifest.version}`, 'standard', runtime);
     else {
       record = await registry.get(context, appId);
       // v1 → v2 conversion keeps the installation; the administrator stops the v1 app first.
@@ -74,9 +74,10 @@ export class AppInstallerV2 {
       });
     } finally { client.release(); }
 
-    if (conversion) record = await registry.convertToV2(context, appId, record.revision, projection, runtime);
-    else if (existing && kind === 'upgrade') {
-      record = await registry.beginLifecycle(context, appId, record.revision, 'upgrade', projection);
+    if (existing && kind === 'upgrade') {
+      // Re-read: v1 lifecycle bookkeeping may still have advanced the revision after the app was stopped.
+      if (conversion) record = await registry.get(context, appId);
+      record = await registry.beginLifecycle(context, appId, record.revision, 'upgrade', projectFor(record));
       record = await registry.settleLifecycle(context, appId, record.revision, record.lifecycle!.operationId, 'completed');
     }
     if (existing && record.runtime?.sha256 !== preview.sha256) record = await registry.setRuntimePackage(context, appId, record.revision, runtime);
