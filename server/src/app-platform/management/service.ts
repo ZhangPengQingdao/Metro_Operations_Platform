@@ -277,7 +277,7 @@ export async function createAppManagement(configFile:string,origin:string){
     {apiId:route.id,method:'POST',path:route.path,payload:request});
    if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).sort().join(',')!=='organizationId')throw new GatewayError('ACCESS_DENIED',403);
    const authorization=result as Record<string,unknown>;
-   if(typeof authorization.organizationId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorization.organizationId))throw new GatewayError('ACCESS_DENIED',403);
+   if(typeof authorization.organizationId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorization.organizationId))throw new GatewayError('ACCESS_DENIED',403);
    const fresh=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(fresh,admissionKey);
    if(fresh.identity.userId!==first.identity.userId||fresh.installation.revision!==first.installation.revision)throw new GatewayError('ACCESS_DENIED',403);
    const serviceIdentityId=fresh.installation.serviceIdentityId;
