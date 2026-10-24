@@ -21,3 +21,20 @@ test('unified login routes verified identity with isolated cookies, rejects ambi
   assert.equal((await login()).statusCode,429);
  }finally{await app.close();}
 });
+
+test('separate admin site: each account signs in on its own origin, and the hint needs the right password',async()=>{
+ const app=Fastify();await app.register(cookie);let kind='admin';const revoked:string[]=[];
+ const service=(name:string)=>({login:async(input:{password:string})=>{if(input.password!=='valid')throw new EmployeeIdentityError(401,'LOGIN_FAILED');return {account:{username:name},token:`${name}-token`};},logout:async(token:string)=>{revoked.push(token);}});
+ registerUnifiedLogin(app,{origin:'https://ops.example.com',adminOrigin:'https://admin.ops.example.com',pool:{connect:async()=>({query:async()=>({rows:[{kind}]}),release(){}})} as never,admin:service('admin') as never,employee:service('employee') as never});
+ const login=(origin:string,password='valid')=>app.inject({method:'POST',url:'/api/auth/login',headers:{origin},payload:{username:'someone',password}});
+ try{
+  assert.equal((await login('https://ops.example.com','wrong')).statusCode,401,'wrong password gives no site hint');
+  const redirected=await login('https://ops.example.com');
+  assert.equal(redirected.statusCode,409);assert.deepEqual(redirected.json(),{error:'LOGIN_USE_ADMIN_SITE',site:'https://admin.ops.example.com'});
+  assert.equal(redirected.headers['set-cookie'],undefined);assert.deepEqual(revoked,['admin-token'],'the session created for the check is revoked');
+  const admin=await login('https://admin.ops.example.com');assert.equal(admin.json().kind,'admin');assert.match(String(admin.headers['set-cookie']),/Path=\/api\/admin/);
+  kind='employee';
+  assert.equal((await login('https://admin.ops.example.com')).json().error,'LOGIN_USE_EMPLOYEE_SITE');
+  assert.equal((await login('https://evil.example.com')).statusCode,403);
+ }finally{await app.close();}
+});

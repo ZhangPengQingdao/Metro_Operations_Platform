@@ -23,10 +23,12 @@ export function registerUnifiedLogin(app:FastifyInstance,options:{origin:string;
   // Existing ambiguous usernames fail closed; never select the more privileged identity.
   if(roles.length>1)return reply.code(409).send({error:'LOGIN_ACCOUNT_CONFLICT'});
   const kind=roles[0]==='admin'?'admin':'employee';
-  // Separate sites: each account type signs in on its own origin, so its cookie is scoped to that host.
-  if(split&&kind!==site)return reply.code(409).send({error:kind==='admin'?'LOGIN_USE_ADMIN_SITE':'LOGIN_USE_EMPLOYEE_SITE',site:kind==='admin'?options.adminOrigin:options.origin});
   try{
-   const result=await (kind==='admin'?options.admin:options.employee).login(parsed.data);
+   const service=kind==='admin'?options.admin:options.employee;
+   const result=await service.login(parsed.data);
+   // Separate sites: each account type signs in on its own origin so its cookie is scoped to that host.
+   // Checked only after the password, so the redirect never reveals which usernames are administrators.
+   if(split&&kind!==site){await service.logout(result.token);return reply.code(409).send({error:kind==='admin'?'LOGIN_USE_ADMIN_SITE':'LOGIN_USE_EMPLOYEE_SITE',site:kind==='admin'?options.adminOrigin:options.origin});}
    const cookie={httpOnly:true,secure:new URL(site==='admin'?options.adminOrigin!:options.origin).protocol==='https:',sameSite:'strict' as const};
    if(!split)reply.clearCookie(kind==='admin'?EMPLOYEE_SESSION_COOKIE:ADMIN_SESSION_COOKIE,{...cookie,path:kind==='admin'?'/api/employee':'/api/admin'});
    reply.setCookie(kind==='admin'?ADMIN_SESSION_COOKIE:EMPLOYEE_SESSION_COOKIE,result.token,{...cookie,path:kind==='admin'?'/api/admin':'/api/employee',maxAge:8*60*60});
