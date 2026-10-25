@@ -10,12 +10,14 @@ const reporter='33333333-3333-4333-8333-333333333333',reviewer='44444444-4444-44
 const uid=n=>'aaaaaaaa-aaaa-4aaa-8aaa-'+String(n).padStart(12,'0');
 const grants=(person,organization=org)=>['read','cases','create','update','review','photo'].map(name=>({permission:'app.hazards.'+name,all:false,self:false,organizationIds:[organization]}));
 const employee=(person,organization=org)=>({personId:person,organizationUnitId:organization,businessAuthorization:{revision:uid(900),grants:grants(person,organization),organizations:[{id:organization,name:'测试工班'}]}});
-test('workspace shows only separately granted report, records and case pages',()=>{
+test('workspace keeps reporting out of navigation while preserving authorized direct links',()=>{
  const session=permissions=>({permissions:permissions.map(name=>'app.hazards.'+name)});
- assert.deepEqual(visiblePages(session(['create'])).map(page=>page.id),['report']);
+ assert.deepEqual(visiblePages(session(['create'])).map(page=>page.id),[]);
  assert.deepEqual(visiblePages(session(['read'])).map(page=>page.id),['records']);
  assert.deepEqual(visiblePages(session(['cases'])).map(page=>page.id),['cases']);
- assert.deepEqual(visiblePages(session(['create','read','cases'])).map(page=>page.id),['report','records','cases']);
+ assert.deepEqual(visiblePages(session(['create','read','cases'])).map(page=>page.id),['records','cases']);
+ assert.equal(pageForRoute('/report',session(['create']))?.id,'report');
+ assert.equal(pageForRoute('/report',session(['read'])),undefined);
  assert.equal(pageForRoute('/cases',session(['read'])),undefined);
  assert.equal(pageForRoute('/cases',session(['cases']))?.label,'闭环案例库');
 });

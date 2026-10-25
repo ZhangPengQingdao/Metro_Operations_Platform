@@ -29,7 +29,7 @@ export function SystemUpdates(){
  <section className="admin-card">
   <div className="system-update-heading"><div><h2>平台版本</h2><p className="system-update-version">{status?.currentVersion??'—'}</p></div>
   {status?.configured!==false&&<Button variant="secondary" disabled={!status||!!blocked} onClick={()=>void check()}>{busy?'处理中…':'检查更新'}</Button>}</div>
-  <p className="afc-muted">先下载并校验更新包，确认安装后才会进入维护、备份和升级。</p>
+  <p className="afc-muted">下载并校验更新包后，确认安装。</p>
   {status?.configured===false&&<p className="afc-muted">此部署尚未配置更新服务。</p>}
   {available&&<div className="system-update-available"><div><strong>{available.available?`发现新版本 ${available.version}`:'当前已是最新版本'}</strong><p><a href={available.url} target="_blank" rel="noreferrer">查看更新说明 ↗</a></p></div>
    {available.available&&!ready&&<Button variant="primary" disabled={!!blocked} onClick={()=>void run('download',available.version)}>下载更新</Button>}</div>}
@@ -39,8 +39,8 @@ export function SystemUpdates(){
   {task.applications&&<p role="status">应用运行快照：{task.applications.phase==='unknown'?'暂时无法核对，请勿重复安装':`共 ${task.applications.total} 个应用，已暂停 ${task.applications.stopped} 个，已恢复 ${task.applications.restored} 个，原先停用 ${task.applications.unchanged} 个。`}</p>}
   {task.phase==='queued'&&<p role="status">{task.action==='install'?'安装请求已受理，正在等待升级预检。':'下载请求已受理，正在等待处理。'}</p>}
   {task.pull&&task.phase==='downloading'&&<p role="status">正在准备镜像 {task.pull.image}：{task.pull.state==='cached'?'复用本机镜像':task.pull.state==='downloaded'?'已下载':'拉取缺失镜像层'}（{task.pull.completed}/{task.pull.total}）</p>}
-  {task.phase==='downloading'&&!task.pull&&<div className="system-update-progress"><div><span>{percent===undefined?'正在获取更新包…':`${bytes(progress!.receivedBytes)} / ${bytes(progress!.totalBytes)}`}</span><strong>{percent===undefined?'下载中':`${percent.toFixed(0)}%`}</strong></div><progress aria-label="更新包下载进度" max={100} value={percent}/><p className="afc-muted">下载完成后还需校验文件并导入镜像，请保持耐心。</p></div>}
-  {['verified','verifying','loading'].includes(task.phase)&&<p className="afc-muted">更新包已下载，正在校验内容或导入 Docker 镜像；此步骤可能需要几分钟。</p>}
+  {task.phase==='downloading'&&!task.pull&&<div className="system-update-progress"><div><span>{percent===undefined?'正在获取更新包…':`${bytes(progress!.receivedBytes)} / ${bytes(progress!.totalBytes)}`}</span><strong>{percent===undefined?'下载中':`${percent.toFixed(0)}%`}</strong></div><progress aria-label="更新包下载进度" max={100} value={percent}/><p className="afc-muted">正在下载更新包…</p></div>}
+  {['verified','verifying','loading'].includes(task.phase)&&<p className="afc-muted">正在校验更新包…</p>}
   {task.failedPhase&&<p>失败阶段：{phases[task.failedPhase]??task.failedPhase}</p>}
   {task.error&&<div className="system-update-error" role="alert"><strong>更新未完成</strong><p>{task.error==='COMMAND_FAILED'?'服务器命令执行失败。请核对宿主更新器日志；此错误码未提供具体失败原因。':task.error}</p>{task.error==='COMMAND_FAILED'&&<p>错误代码：COMMAND_FAILED</p>}{task.failedPhase==='preflight'&&<p>升级预检未通过，尚未进入维护、数据库备份或迁移。请先确认业务应用已停用，并由管理员核对未完成工作及服务器状态。</p>}{(/IMAGE_|image.*inspect/.test(task.error))&&<p>镜像包与本机 Docker 镜像标识可能不兼容，请核对发行包和宿主更新器版本。</p>}</div>}
   {task.phase==='downloaded'&&<div className="admin-actions"><Button variant="primary" disabled={!!blocked} onClick={()=>setConfirm(true)}>安装更新</Button><span className="afc-muted">安装期间平台暂时不可用。</span></div>}

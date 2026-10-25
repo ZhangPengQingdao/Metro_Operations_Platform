@@ -9,7 +9,7 @@
 .hct-section>h2{margin-bottom:12px}
 .hct-wrap small,.hct-status small{display:block;color:var(--afc-color-muted)}
 .hct-status small{max-width:180px;white-space:normal;overflow-wrap:anywhere}
-.hct-alert{padding:12px 14px;border:1px solid var(--afc-color-line);border-radius:8px;color: var(--afc-color-danger-ink);overflow-wrap:anywhere;margin:0 0 14px}
+.hct-alert{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
 .hct-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .hct-wide{grid-column:1/-1}
 .hct-form textarea{width:100%;min-height:84px}
@@ -38,13 +38,13 @@
 .hct-editor .afc-dialog__heading h2,.hct-progress .afc-dialog__heading h2{font-size:15px;font-weight:500;color:var(--afc-color-muted)}
 .hct-compose{padding-top:18px}
 .hct-compose-title{display:block;font-size:24px;line-height:1.4;font-weight:600;letter-spacing:-.6px}
-.hct-compose-input{display:block;width:100%;min-height:164px;border:0;border-radius:0;outline:none;resize:vertical;background:transparent;color:var(--afc-color-ink);font:inherit;font-size:16px;line-height:1.9;padding:20px 0;margin:8px 0 24px}
+.hct-compose-input{display:block;width:100%;min-height:132px;border:0;border-radius:0;outline:none;resize:none;background:transparent;color:var(--afc-color-ink);font:inherit;font-size:16px;line-height:1.9;padding:16px 0;margin:8px 0 16px}
 .hct-compose-input::placeholder{color:var(--afc-color-muted);opacity:.7}
-.hct-compose-input:focus-visible{box-shadow:0 2px 0 var(--afc-color-muted)}
-.hct-compose-actions{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid var(--afc-color-line);padding-top:20px}
+.hct-compose-input:focus{border:0;background:transparent;outline:none;box-shadow:none}
+.hct-compose:focus-within .hct-compose-title{color:var(--afc-color-primary-ink)}
+.hct-compose-actions{display:flex;justify-content:space-between;gap:12px;align-items:center;padding-top:8px}
 .hct-fields{padding:0;margin:0;min-width:0;border:0}
 .hct-fields .hct-form{gap:18px}
-.hct-fields textarea{min-height:70px;resize:vertical;line-height:1.6}
 .hct-persons{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:10px 0 0}
 .hct-persons li{display:flex;align-items:center;border-radius:6px;background:color-mix(in srgb,var(--afc-color-ink) 5%,transparent);padding:3px 5px}
 .hct-persons button{border:0;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer;padding:5px}
@@ -92,7 +92,7 @@
 .hct-editor>.afc-dialog__body,.hct-progress>.afc-dialog__body{padding:8px 20px 20px}
 .hct-editor>.afc-dialog__footer,.hct-progress>.afc-dialog__footer{padding:14px 20px}
 .hct-compose-title{font-size:22px}
-.hct-compose-input{min-height:170px;font-size:15px}
+.hct-compose-input{min-height:132px;font-size:15px}
 .hct-plan-summary h3{font-size:20px}
 .hct-modes{gap:18px}
 .hct-fields .hct-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px}

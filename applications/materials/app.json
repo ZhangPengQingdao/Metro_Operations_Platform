@@ -1,7 +1,7 @@
 {
   "id": "materials",
   "name": "物料管理",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "入库、出库、库存查询及关联冲销",
   "color": "#D97706",
   "platform": ">=0.29.0",

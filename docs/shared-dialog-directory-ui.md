@@ -1,6 +1,8 @@
 # L2 弹窗与组织选择
 
-平台与独立应用共用 `@metro/platform-sdk/ui` 组件及 `@metro/platform-sdk/ui-styles` 样式。普通确认或表单使用 `Dialog`；需要左侧分区导航、右侧独立滚动内容时使用 `SidebarDialog`，不在业务页面复制侧栏结构和滚动 CSS。
+平台与独立应用共用 `@metro/platform-sdk/ui` 组件，样式由平台宿主提供。普通确认或表单使用 `Dialog`；需要左侧分区导航、右侧独立滚动内容时使用 `SidebarDialog`，不在业务页面复制侧栏结构和滚动 CSS。
+
+普通弹窗的标题、内容和按钮区使用同一底色，不加外框或上下分隔线。有侧栏的弹窗保留左右两种底色，每一侧从顶到底一致；标题和按钮区不另铺底色。内容中的表单边框、状态提示和选中状态保留。侧栏切换、页签和分页等导航使用圆角矩形（`Button shape="rounded"`），保存、取消、确认等操作按钮使用默认胶囊形。
 
 ```tsx
 <SidebarDialog open title="应用设置" onClose={close}

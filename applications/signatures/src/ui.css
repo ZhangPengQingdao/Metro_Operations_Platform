@@ -2,8 +2,8 @@
 .signatures{color:var(--afc-color-ink)}
 *{box-sizing:border-box}
 .sig-muted{color:var(--afc-color-muted);font-size:13px;margin:0}
-.sig-error{padding:12px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 30%,transparent);background:var(--afc-color-danger-soft);color: var(--afc-color-danger-ink);border-radius:10px;margin:12px 0}
-.sig-warning{padding:12px 14px;border:1px solid color-mix(in srgb,var(--afc-color-warning) 30%,transparent);background:var(--afc-color-warning-soft);color: var(--afc-color-warning-ink);border-radius:10px;margin:12px 0}
+.sig-error{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
+.sig-warning{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-warning) 28%,transparent);background:var(--afc-color-warning-soft);color:var(--afc-color-warning-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
 .sig-field input,.sig-field select,.sig-field textarea{width:100%;border:1px solid var(--afc-interactive-border);border-radius:8px;background:var(--afc-control-background);padding:9px 10px;color:var(--afc-color-ink);font:inherit}
 .sig-field textarea{min-height:90px;resize:vertical}
 .sig-templates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
@@ -16,21 +16,22 @@
 .sig-field{display:block;font-size:13px;font-weight:600;color:var(--afc-color-ink)}
 .sig-field>span{display:block;margin-bottom:6px}
 .sig-field.wide,.sig-section{grid-column:1/-1}
-.sig-section{border-top:1px solid var(--afc-color-line);margin-top:8px;padding-top:16px}
+.sig-section{margin-top:20px}
 .sig-section h3{margin:0 0 8px;font-size:15px}
 .sig-person-search{max-width:320px;margin:10px 0}
 .sig-people-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--afc-color-line);border-radius:10px;background:var(--afc-color-neutral-soft);min-height:54px;padding:9px 12px}
 .sig-people-selected{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .sig-people-label{font-size:13px;font-weight:600;white-space:nowrap}
-.sig-person-chip{display:inline-flex;align-items:center;gap:5px;background:var(--afc-color-paper);border:1px solid var(--afc-color-line);border-radius:999px;padding:3px 7px 3px 9px;font-size:12px}
+.sig-person-chip{display:inline-flex;align-items:center;gap:5px;background:var(--afc-color-paper);border:1px solid var(--afc-color-line);border-radius: 9999px;padding:3px 7px 3px 9px;font-size:12px}
 .sig-person-chip small{color:var(--afc-color-muted)}
 .sig-person-chip button{border:0;background:transparent;color:var(--afc-color-muted);cursor:pointer;padding:0 2px;font-size:15px;line-height:1}
 .sig-person-chip button:hover{color: var(--afc-color-danger-ink)}
 .sig-score{display:grid;grid-template-columns:1fr 110px 110px;gap:8px;align-items:center;margin:6px 0}
 .sig-score input{width:100%;border:1px solid var(--afc-interactive-border);border-radius:8px;padding:8px}
 .sig-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
-.sig-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:30px;align-items:start;margin-top:18px}
+.sig-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
 .sig-detail-main{min-width:0}
+.sig-detail-main>.sig-section:first-child{margin-top:0}
 .sig-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;row-gap:18px;margin:0}
 .sig-detail>div{min-width:0}
 .sig-detail>div.long{grid-column:1/-1}
@@ -38,33 +39,28 @@
 .sig-detail dd{margin:5px 0 0;white-space:pre-wrap;font-size:14px;line-height:1.55}
 .sig-qr-side{background:var(--afc-color-neutral-soft);border-radius:12px;padding:16px;text-align:center}
 .sig-qr-side h3{margin:0 0 5px;font-size:14px}
+.sig-qr-side .sig-section{text-align:left}
 .sig-qr-side p{font-size:12px;color:var(--afc-color-muted);line-height:1.5;margin:5px 0}
-.sig-qr-image{display:block;width:188px;height:188px;max-width:100%;margin:12px auto;background:var(--afc-color-paper);border-radius:8px}
+.sig-qr-image{display:block;width:160px;height:160px;max-width:100%;margin:12px auto;background:var(--afc-color-paper);border-radius:8px}
 .sig-progress{height:6px;background:var(--afc-color-neutral-soft);border-radius:20px;overflow:hidden;margin-top:14px}
 .sig-progress span{display:block;height:100%;background:var(--afc-color-primary)}
 .sig-qr-actions{display:flex;justify-content:center;gap:6px;margin-top:12px}
-.sig-sign-list{margin-top:12px;border-top:1px solid var(--afc-color-line)}
-.sig-sign-row{display:grid;grid-template-columns:minmax(110px,1fr) 60px minmax(128px,1.3fr) auto;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--afc-color-line);font-size:13px}
-.sig-sign-row strong{font-weight:600}
+.sig-sign-list{margin-top:8px}
+.sig-sign-row{display:grid;grid-template-columns:minmax(0,1fr) 36px 132px;align-items:center;gap:8px;padding:8px 0;font-size:13px}
+.sig-sign-row strong{font-weight:600;overflow-wrap:anywhere}
 .sig-sign-row time{font-size:12px;color:var(--afc-color-muted)}
 .sig-sign-state{font-size:12px;color:var(--afc-color-muted)}
 .sig-sign-state.done{color: var(--afc-color-success-ink)}
-.sig-sign-preview{margin-top:14px;background:var(--afc-color-neutral-soft);border-radius:10px;padding:14px;display:flex;align-items:center;gap:18px}
-.sig-sign-preview img{max-width:180px;max-height:100px;object-fit:contain;background:white}
-.sig-sign-preview p{margin:0;font-size:12px;color:var(--afc-color-muted)}
-.sig-sign-preview button{border:0;background:transparent;color:var(--afc-color-muted);text-decoration:underline;cursor:pointer}
 .sig-mobile{display:none}
 .sig-card{border:1px solid var(--afc-color-line);background:var(--afc-color-paper);border-radius:12px;padding:14px;margin:8px 0}
 .sig-card h3{font-size:15px;margin:0 0 5px}
 .sig-card p{font-size:12px;color:var(--afc-color-muted);margin:3px 0}
-.sig-pad{border:1px solid var(--afc-color-line);border-radius:10px;overflow:hidden;background:var(--afc-color-paper)}
+.sig-pad{margin-top:12px}
 @media(max-width:700px){
 .sig-templates,.sig-form,.sig-detail,.sig-detail-layout{grid-template-columns:1fr}
 .sig-qr-side{grid-row:1}
 .sig-people-bar{align-items:stretch;flex-direction:column}
 .sig-people-bar .relative{align-self:flex-end}
-.sig-sign-row{grid-template-columns:minmax(70px,1fr) 50px 1fr}
-.sig-sign-row button{grid-column:1/-1;justify-self:start}
 .sig-desktop{display:none}
 .sig-mobile{display:block}
 .sig-score{grid-template-columns:1fr 70px 70px}

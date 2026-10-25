@@ -11,7 +11,7 @@ export interface AdminShellProps {
   mode?:'admin'|'employee';
   headerActions?: ReactNode;
   user: AdminUser; applications: AdminApplication[]; children: ReactNode; onLogout: () => Promise<void>;
-  profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode; notificationCount?:number;
+  profileContent?: ReactNode | ((onSaved:()=>void,onBusy:(busy:boolean)=>void)=>ReactNode); settingsContent?: ReactNode; notificationsContent?: ReactNode | ((onNavigate:()=>void)=>ReactNode); notificationCount?:number;
 }
 const navigation = [
   {path: '/admin', label: '系统总览', icon: 'grid' as PlatformIconName},
@@ -57,12 +57,14 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const account = useRef<HTMLDivElement>(null);
   const accountTrigger = useRef<HTMLButtonElement>(null);
   const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications,base);
-  const secondary = Boolean(app) && navigationMode !== 'primary';
+  const appMenu = app?.navigation??[];
+  const hasSecondaryNavigation = appMenu.length > 1;
+  const secondary = hasSecondaryNavigation && navigationMode !== 'primary';
   const rail = !secondary && collapsed;
   const toggleNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    if (app) {setNavigationMode('secondary'); setCollapsed(false);}
+    if (hasSecondaryNavigation) {setNavigationMode('secondary'); setCollapsed(false);}
   };
   useEffect(() => {setMobileOpen(false); setAccountOpen(false);}, [pathname]);
   useEffect(() => {setNavigationMode('secondary'); setCollapsed(false);}, [app?.id]);
@@ -82,7 +84,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   return <div className="afc-admin afc-theme-neutral" data-theme={theme} data-rail={rail} data-secondary={secondary}>
     <a className="afc-skip-link" href="#admin-main">跳至主要内容</a>
     {mobileOpen && <button type="button" className="afc-mobile-backdrop" aria-label="关闭导航" onClick={() => setMobileOpen(false)}/>}
-    <aside className={`afc-sidebar-island${mobileOpen ? ' is-open' : ''}`} aria-label="平台导航" onKeyDown={event => {if (event.key === 'Escape') setMobileOpen(false);}}>
+    <aside className={`afc-sidebar${mobileOpen ? ' is-open' : ''}`} aria-label="平台导航" onKeyDown={event => {if (event.key === 'Escape') setMobileOpen(false);}}>
       <div className="afc-platform-sidebar">
         <div className="afc-sidebar-header">
           <button className="afc-brand" aria-label={rail ? '展开侧边栏' : '运管开放平台'} onClick={() => setCollapsed(false)}>
@@ -91,7 +93,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
           </button>
           {!rail && <IconButton size="sm" type="button" label={secondary ? "返回一级菜单" : "收起侧边栏"} onClick={() => {if(secondary)setNavigationMode('primary');else setCollapsed(true);}}><PlatformIcon name={secondary ? "arrowLeft" : "panelLeft"} size={18}/></IconButton>}
         </div>
-        {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{app.navigation.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
+        {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{appMenu.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
           {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
           {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><ApplicationIcon appId={item.id} iconUrl={item.iconUrl} color={item.color}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
         </nav>}
@@ -107,12 +109,12 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
       </div>
 
     </aside>
-    <div className={`afc-admin-workspace${applicationCanvas?' afc-admin-workspace--application':''}${dashboardCanvas?' afc-admin-workspace--dashboard':''}`}><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton>{!applicationCanvas&&<span>{title}</span>}{headerActions&&<div className="afc-page-header-actions">{headerActions}</div>}</header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status">{notice}</p>}{children}</main></div>
+    <div className={`afc-admin-workspace${applicationCanvas?' afc-admin-workspace--application':''}${dashboardCanvas?' afc-admin-workspace--dashboard':''}`}><header className="afc-page-header"><IconButton size="sm" type="button" className="afc-mobile-toggle" label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)}><PlatformIcon name="panelLeft" size={22}/></IconButton>{!applicationCanvas&&<span className="afc-page-header-title">{title}</span>}{headerActions&&<div className="afc-page-header-actions">{headerActions}</div>}</header><main id="admin-main" className="afc-admin-main" tabIndex={-1}>{notice&&<p role="status" className="afc-message--success">{notice}</p>}{children}</main></div>
     <Dialog open={confirmLogout} title="退出登录" size="sm" onClose={()=>{if(!loggingOut)setConfirmLogout(false);}} footer={<><Button variant="secondary" disabled={loggingOut} onClick={()=>setConfirmLogout(false)}>取消</Button><Button disabled={loggingOut} onClick={logout}>{loggingOut?'正在退出…':'退出登录'}</Button></>}><p>确定退出当前账号吗？</p>{error&&<p role="alert" className="afc-error">{error}</p>}</Dialog>
     {panel && <AdminDialog className={panel==='profile'?'afc-profile-dialog':panel==='settings'?'afc-profile-dialog afc-sidebar-dialog':undefined} title={{profile: '个人中心', settings: '系统设置', preferences: '外观偏好', notifications: '通知'}[panel]} onClose={() => {if(!panelBusy)setPanel(null);}}>
       {panel === 'profile' && ((typeof profileContent==='function'?profileContent(savedPanel,setPanelBusy):profileContent) ?? <dl className="afc-details"><dt>用户名</dt><dd>{user.username}</dd><dt>显示名称</dt><dd>{user.displayName}</dd></dl>)}
       {panel === 'settings' && (settingsContent ?? <SettingsSections onSaved={savedPanel} onBusy={setPanelBusy}/>)}
-      {panel === 'notifications' && (notificationsContent ?? <p className="afc-muted">通知服务暂不可用。</p>)}
+      {panel === 'notifications' && ((typeof notificationsContent==='function'?notificationsContent(()=>setPanel(null)):notificationsContent) ?? <p className="afc-muted">通知服务暂不可用。</p>)}
       {panel === 'preferences' && <div className="afc-settings-content"><label className="afc-setting-row">外观<Select value={theme} onChange={event => (()=>{const next=event.target.value as typeof theme;saveThemePreference(next);setTheme(next);})()}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></Select></label></div>}
     </AdminDialog>}
   </div>;

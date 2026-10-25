@@ -1,7 +1,7 @@
 /* Scoped to this app by mop-app build; page spacing and title come from the platform shell. */
 .maintenance{color:var(--afc-color-ink)}
 *{box-sizing:border-box}
-.maintenance-error{padding:10px 12px;background:var(--afc-color-danger-soft);color: var(--afc-color-danger-ink);border-radius:8px;margin:10px 0}
+.maintenance-error{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
 .maintenance-note{font-size:13px;color:var(--afc-color-muted);margin:8px 0}
 .maintenance-cell{max-width:260px;white-space:normal;overflow-wrap:anywhere}
 .maintenance-cell small{display:block;color:var(--afc-color-muted)}

@@ -49,7 +49,9 @@ export const TableCell: React.FC<React.TdHTMLAttributes<HTMLTableCellElement>> =
   <td className={className} {...props}>{children}</td>
 );
 
-/** Compact icon-and-label action for a table's trailing operations column. */
-export function TableActionButton({icon,children,className='',...props}:ButtonProps&{icon:React.ReactNode}){
-  return <Button {...props} variant="ghost" size="sm" className={`afc-table-action ${className}`}><span className="afc-table-action__icon" aria-hidden="true">{icon}</span><span>{children}</span></Button>;
+const DESTRUCTIVE=/^(删除|作废|撤销|移除|停用|驳回|退回)/;
+/** Inline text action for a table's trailing operations column; destructive labels render in red. */
+export function TableActionButton({icon,children,className='',tone,...props}:ButtonProps&{icon?:React.ReactNode;tone?:'default'|'danger'}){
+  const danger=tone==='danger'||(tone===undefined&&typeof children==='string'&&DESTRUCTIVE.test(children));
+  return <Button {...props} variant="ghost" size="sm" className={`afc-table-action${danger?' afc-table-action--danger':''} ${className}`}>{icon&&<span className="afc-table-action__icon" aria-hidden="true">{icon}</span>}<span>{children}</span></Button>;
 }

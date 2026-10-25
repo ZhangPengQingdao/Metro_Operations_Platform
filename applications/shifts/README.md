@@ -9,7 +9,7 @@
 ```sh
 npm test            # 业务规则测试
 npm run check       # 校验 app.json、迁移与页面/接口一致性
-npm run build       # 输出 dist/shifts-1.0.1.mopkg
+npm run build       # 输出 dist/shifts-1.0.2.mopkg
 ```
 
 要求平台 0.30.0 及以上。管理员上传 `.mopkg` 安装后指定应用负责人，负责人配置角色与使用人员。以下为各版业务说明，涉及签名包、沙箱和 `build.mjs` 的构建与安装步骤已不再适用。

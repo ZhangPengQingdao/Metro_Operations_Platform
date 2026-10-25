@@ -88,7 +88,7 @@ export function EmployeeDashboard({apps,loaded,onBusyChange,settingsOpen,onSetti
    {layout.charts.length>0&&<div className="dashboard-chart-grid">{layout.charts.slice(0,2).map(renderChart)}</div>}
    {shortcuts.length>0&&<nav className="dashboard-shortcuts" aria-label="应用快捷入口">{shortcuts.map(app=><Link key={app.appId} to={appHref(app)} data-tone={dashboardTone(app.appId)}><span className="dashboard-shortcut-icon"><ApplicationIcon appId={app.appId} {...appIconProps(app)} size={24}/></span><span>{app.name}</span></Link>)}</nav>}
    {layout.charts.length>2&&<div className="dashboard-chart-grid">{layout.charts.slice(2).map(renderChart)}</div>}
-   {!layout.cards.length&&!layout.charts.length&&!layout.shortcuts.length&&loaded&&<div className="dashboard-empty"><h2>按你的习惯布置首页</h2><p className="afc-muted">通过右上角“首页设置”添加卡片、图表和快捷入口。</p></div>}
+   {!layout.cards.length&&!layout.charts.length&&!layout.shortcuts.length&&loaded&&<div className="dashboard-empty"><h2>按你的习惯布置首页</h2><p className="afc-muted">可在右上角“首页设置”中添加卡片。</p></div>}
    {loaded&&!apps.length&&<p className="afc-empty">暂无可用应用，请联系管理员分配应用权限。</p>}
   </div><aside className="dashboard-side-column">
    <section className="dashboard-panel"><header><h2>重点关注</h2></header><div className="dashboard-focus">{sources.map(app=>{const data=cards[app.appId]?.data,metric=data?.metrics[0];return metric?<Link key={app.appId} to={appHref(app)}><ApplicationIcon appId={app.appId} {...appIconProps(app)} size={18}/><span>{metric.label}</span><b>{metric.value}</b></Link>:null;})}{!sources.some(app=>cards[app.appId]?.data)&&<p className="afc-muted">{loading?'正在读取…':'暂无可用摘要'}</p>}</div></section>

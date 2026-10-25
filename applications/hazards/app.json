@@ -1,7 +1,7 @@
 {
   "id": "hazards",
   "name": "隐患提报 · 识隐",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "隐患识别建议、提报、治理复审与闭环案例库",
   "color": "#EA580C",
   "platform": ">=0.30.0",
@@ -80,12 +80,6 @@
   ],
   "pages": [
     {
-      "path": "/report",
-      "title": "隐患提报",
-      "permission": "create",
-      "nav": true
-    },
-    {
       "path": "/",
       "title": "隐患记录",
       "permission": "read",
@@ -96,6 +90,12 @@
       "title": "闭环案例库",
       "permission": "cases",
       "nav": true
+    },
+    {
+      "path": "/report",
+      "title": "提报隐患",
+      "permission": "create",
+      "nav": false
     }
   ],
   "api": [

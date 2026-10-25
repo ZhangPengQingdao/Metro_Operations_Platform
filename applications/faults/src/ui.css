@@ -8,7 +8,7 @@
 .faults-date-time{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:8px;min-width:0}
 .faults-date-time>*{min-width:0}
 .faults-form textarea{min-height:74px;padding:10px;border:1px solid var(--afc-color-border,var(--afc-color-line));border-radius:8px;background:var(--afc-color-surface,var(--afc-color-paper));color:inherit}
-.faults-error{padding:10px 12px;background:var(--afc-color-danger-soft);color: var(--afc-color-danger-ink);border-radius:8px;margin:12px 0}
+.faults-error{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
 .faults-note{font-size:13px;color:var(--afc-color-muted);margin:8px 0}
 .faults-table-cell{max-width:300px;white-space:normal;overflow-wrap:anywhere}
 .faults-table-cell small{display:block;color:var(--afc-color-muted)}

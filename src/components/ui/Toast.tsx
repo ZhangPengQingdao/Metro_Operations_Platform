@@ -44,10 +44,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const info = useCallback((msg: string, dur?: number) => show(msg, "info", dur), [show]);
 
   const toastIcons: Record<ToastType, React.ReactNode> = {
-    success: <CheckCircle size={18} className="text-emerald-400" weight="fill" />,
-    warning: <Warning size={18} className="text-amber-400" weight="fill" />,
-    danger: <WarningCircle size={18} className="text-rose-400" weight="fill" />,
-    info: <Info size={18} className="text-blue-400" weight="fill" />
+    success: <CheckCircle size={18} weight="fill" />,
+    warning: <Warning size={18} weight="fill" />,
+    danger: <WarningCircle size={18} weight="fill" />,
+    info: <Info size={18} weight="fill" />
   };
 
   return (
@@ -55,17 +55,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
       <div className="afc-toast-container" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`afc-toast afc-toast--${t.type}`} role="status">
-            {toastIcons[t.type]}
-            <span className="flex-1">{t.message}</span>
-            <button
-              type="button"
-              className="text-muted hover:text-white ml-2 transition-colors"
-              onClick={() => removeToast(t.id)}
-              aria-label="关闭"
-            >
-              <X size={14} />
-            </button>
+          <div key={t.id} className={`afc-toast afc-toast--${t.type}`} role={t.type === "danger" ? "alert" : "status"}>
+            <span className="afc-toast__icon" aria-hidden="true">{toastIcons[t.type]}</span>
+            <span className="afc-toast__message">{t.message}</span>
+            <button type="button" className="afc-toast__close" onClick={() => removeToast(t.id)} aria-label="关闭"><X size={14} /></button>
           </div>
         ))}
       </div>

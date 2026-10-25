@@ -22,6 +22,10 @@ const buttonSizeClass: Record<ButtonSize, string> = {
 };
 
 export type ButtonShape = 'pill' | 'rounded';
+const buttonShapeClass: Record<ButtonShape, string> = {
+  pill: 'afc-button--pill',
+  rounded: 'afc-button--rounded'
+};
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -55,7 +59,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
         'afc-button',
         buttonVariantClass[variant],
         buttonSizeClass[size],
-        `afc-button--${shape}`,
+        buttonShapeClass[shape],
         fullWidth && 'afc-button--full',
         className
       )}
@@ -122,7 +126,7 @@ export interface ButtonGroupProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const ButtonGroup: React.FC<ButtonGroupProps> = ({ shape = 'pill', className, children, ...props }) => {
   return (
-    <div className={joinClasses('afc-button-group', `afc-button-group--${shape}`, className)} role="group" {...props}>
+    <div className={joinClasses('afc-button-group', {pill:'afc-button-group--pill',rounded:'afc-button-group--rounded'}[shape], className)} role="group" {...props}>
       {children}
     </div>
   );

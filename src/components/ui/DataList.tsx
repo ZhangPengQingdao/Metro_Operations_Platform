@@ -32,8 +32,8 @@ export interface ListPaginationProps {
 export function ListPagination({page,total,hasNext,busy=false,onPrevious,onNext,extra}:ListPaginationProps){
   return <nav className="afc-list-pagination" aria-label="列表分页">
     <span className="afc-list-pagination__summary">第 {page} 页{total!==undefined?` · 共 ${total} 项`:''}</span>
-    <Button variant="secondary" size="sm" disabled={busy||page<=1} onClick={onPrevious}>上一页</Button>
-    <Button variant="secondary" size="sm" disabled={busy||!hasNext} onClick={onNext}>下一页</Button>
+    <Button variant="secondary" shape="rounded" size="sm" disabled={busy||page<=1} onClick={onPrevious}>上一页</Button>
+    <Button variant="secondary" shape="rounded" size="sm" disabled={busy||!hasNext} onClick={onNext}>下一页</Button>
     {extra}
   </nav>;
 }

@@ -1,7 +1,7 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "月度工作计划编制与督办",
   "color": "#059669",
   "platform": ">=0.30.0",

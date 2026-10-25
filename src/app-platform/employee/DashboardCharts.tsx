@@ -38,7 +38,7 @@ export function DailyChart({series}:{series:Series}){
    {current.map((point,index)=><g key={point.date}><circle cx={x(index)} cy={y(point.value)} r={hover===index?6:3.5} tabIndex={0} onMouseEnter={()=>setHover(index)} onMouseLeave={()=>setHover(null)} onFocus={()=>setHover(index)} onBlur={()=>setHover(null)} aria-label={`${point.date}：${point.value}${series.unit}`}><title>{point.date} · {point.value}{series.unit}</title></circle><text x={x(index)} y="204" textAnchor="middle">{dayLabel(point.date)}</text></g>)}
    {hover!==null&&active&&<line x1={x(hover)} x2={x(hover)} y1="30" y2="178" className="dashboard-hover-line"/>}
   </svg>
-  <div className="dashboard-chart-readout" aria-live="polite">{active?`${active.date} · ${active.value} ${series.unit}`:'近 7 日与前 7 日对比 · 移入数据点查看'}</div>
+  <div className="dashboard-chart-readout" aria-live="polite">{active?`${active.date} · ${active.value} ${series.unit}`:'近 7 日 · 前 7 日'}</div>
   <details className="dashboard-chart-values"><summary>查看每日数据</summary><table><thead><tr><th>日期</th><th>数量（{series.unit}）</th></tr></thead><tbody>{points.map(point=><tr key={point.date}><td>{point.date}</td><td>{point.value}</td></tr>)}</tbody></table></details>
  </div>;
 }

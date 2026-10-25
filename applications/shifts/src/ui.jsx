@@ -13,31 +13,31 @@ import './ui.css';
 let api;
 const membersCache = new Map();
 
-// Module metadata dictionary: unified neutral icons, descriptions, and tags
+// Module icons
 const MODULE_METAS = {
-  shift_info: { desc: '日期、时间与交接时段', tag: '基础', icon: 'clock' },
-  staff_selector: { desc: '交班人与接班人员', tag: '关键', icon: 'users' },
-  meeting_info: { desc: '晨会时间与主持人', tag: '必选', icon: 'clock' },
-  meeting_participants: { desc: '主持人与参会人员', tag: '人员', icon: 'users' },
-  study_content: { desc: '业务学习文件与要点传达', tag: '学习', icon: 'book' },
-  ideology_minute: { desc: '班组思政与微分享交流', tag: '分享', icon: 'sparkle' },
-  key_work_items: { desc: '重点任务与配合要求', tag: '重点', icon: 'list' },
-  safety_prediction: { desc: '现场风险辨识与预想确认', tag: '安全', icon: 'shield' },
-  quiz_record: { desc: '现场抽问与业务掌握情况', tag: '抽问', icon: 'chat' },
-  checklist: { desc: '人员与工装状态点验', tag: '点验', icon: 'check' },
-  post_shift_checklist: { desc: '交班前设备与现场状态', tag: '确认', icon: 'check' },
-  todo_record: { desc: '需要后续跟进的事项', tag: '待办', icon: 'list' },
-  fault_record: { desc: '当班新增设备故障', tag: '异常', icon: 'shield' },
-  tool_check: { desc: '工器具状态点验', tag: '点验', icon: 'check' },
-  other_matters: { desc: '补充交办与持续跟踪', tag: '选填', icon: 'note' }
+  shift_info: { icon: 'clock' },
+  staff_selector: { icon: 'users' },
+  meeting_info: { icon: 'clock' },
+  meeting_participants: { icon: 'users' },
+  study_content: { icon: 'book' },
+  ideology_minute: { icon: 'sparkle' },
+  key_work_items: { icon: 'list' },
+  safety_prediction: { icon: 'shield' },
+  quiz_record: { icon: 'chat' },
+  checklist: { icon: 'check' },
+  post_shift_checklist: { icon: 'check' },
+  todo_record: { icon: 'list' },
+  fault_record: { icon: 'shield' },
+  tool_check: { icon: 'check' },
+  other_matters: { icon: 'note' }
 };
 
 function getModuleMeta(id, label) {
   if (MODULE_METAS[id]) return MODULE_METAS[id];
-  if (id.includes('study')) return { desc: '业务学习与传达', tag: '学习', icon: 'book' };
-  if (id.includes('safety') || id.includes('risk')) return { desc: '安全预想与风险防范', tag: '安全', icon: 'shield' };
-  if (id.includes('check')) return { desc: '状态点验与核查', tag: '点验', icon: 'check' };
-  return { desc: label || '填报事项', tag: '扩展', icon: 'folder' };
+  if (id.includes('study')) return { icon: 'book' };
+  if (id.includes('safety') || id.includes('risk')) return { icon: 'shield' };
+  if (id.includes('check')) return { icon: 'check' };
+  return { icon: 'folder' };
 }
 
 // Crisp inline SVG Icons in pure neutral style
@@ -383,9 +383,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
           </div>
           <div className="module-head-info">
             <div className="module-head-title">{kind === 'meeting' ? '晨会信息' : '交接班信息'}</div>
-            <div className="module-head-desc">{kind === 'meeting' ? '会议日期与时间' : '交接日期、时间与班次'}</div>
           </div>
-          <div className="module-head-tag">必填</div>
         </div>
         <div className="module-card-body">
           <div className="info-grid" style={kind === 'meeting' ? { gridTemplateColumns: '1fr 1fr' } : {}}>
@@ -429,9 +427,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
           </div>
           <div className="module-head-info">
             <div className="module-head-title">{kind === 'meeting' ? '参会信息' : '交接人员'}</div>
-            <div className="module-head-desc">{kind === 'meeting' ? '指定主持人与参会人员' : '交班人员与接班人员'}</div>
           </div>
-          <div className="module-head-tag">人员</div>
         </div>
         <div className="module-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {kind === 'meeting' ? (
@@ -674,9 +670,7 @@ function RecordForm({ session, kind, initial, onSaved, onBootstrapped, preloaded
               </div>
               <div className="module-head-info">
                 <div className="module-head-title">{m.label}</div>
-                <div className="module-head-desc">{meta.desc}</div>
               </div>
-              <div className="module-head-tag">{meta.tag}</div>
             </div>
             <div className="module-card-body">
               <ModuleFields

@@ -2,7 +2,7 @@
 .materials { color: var(--afc-color-ink); }
 .materials-actions { display: flex; gap: 8px; align-items: center; }
 .materials-form { display: grid; gap: 16px; }
-.materials-error { padding: 12px; background: var(--afc-color-danger-soft, var(--afc-color-danger-soft)); color: var(--afc-color-danger, var(--afc-color-danger)); border-radius: 8px; margin-bottom: 12px; }
+.materials-error{padding:10px 14px;border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);border-radius:8px;font-size:13px;line-height:1.55;margin:0 0 14px;overflow-wrap:anywhere}
 .materials-muted { color: var(--afc-color-muted); font-size: 13px; }
 .materials td { white-space: nowrap; }
 .materials .materials-note { white-space: normal; min-width: 120px; max-width: 240px; }

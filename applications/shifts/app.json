@@ -1,7 +1,7 @@
 {
   "id": "shifts",
   "name": "晨会交接",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "交接班台账、晨会记录与本人签署",
   "color": "#DB2777",
   "platform": ">=0.30.0",

@@ -186,7 +186,7 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
   };
 
   return (
-    <div className={`rounded-2xl border border-[#d0ded6] bg-white p-4 shadow-sm ${className}`}>
+    <div className={`${embedded ? 'bg-transparent' : 'rounded-2xl border border-line bg-paper p-4 shadow-sm'} ${className}`}>
       {/* Header & Signer Info */}
       {showHeading && (
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -194,7 +194,7 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
             <Badge variant="success" size="sm">
               手写签名板
             </Badge>
-            <div className="text-xs text-gray-700 font-semibold">
+            <div className="text-xs text-ink font-semibold">
               {signerName ? `签署人：${signerName}` : '请在下方画板内完成手写签名'}
             </div>
           </div>
@@ -245,10 +245,11 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
       )}
 
       {/* Canvas Drawing Area */}
-      <div className="relative rounded-xl border border-dashed border-[#b8cdc1] bg-[#f8faf9] overflow-hidden">
+      <div className="relative rounded-xl border border-dashed border-line bg-soft overflow-hidden">
         <canvas
           ref={canvasRef}
-          style={{ height }}
+          // Theme affects the preview only; the exported signature retains its original ink color.
+          style={{ height, filter: transparentBackground ? 'var(--afc-signature-preview-filter, none)' : undefined }}
           className="w-full touch-none cursor-crosshair bg-transparent"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -256,7 +257,7 @@ export const HandwrittenSignaturePad: React.FC<HandwrittenSignaturePadProps> = (
           onPointerCancel={stopDrawing}
         />
         {!hasInk && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-xs text-gray-400 font-serif italic select-none">
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-xs text-muted select-none">
             在此处使用鼠标、触控笔或触摸板手写签名
           </div>
         )}

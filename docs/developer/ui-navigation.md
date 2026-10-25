@@ -29,11 +29,15 @@ export default defineApp({pages: {'/': Records, '/records/:id': Detail}});
 
 页面在 `app.json` 的 `pages` 中声明：`{path, title, permission, nav}`。平台按数组顺序生成侧栏（`nav: true` 的页面），用 `title` 作页面标题，并按 `permission` 检查访问；页面里不要再画大标题或侧栏。带参数的页面（`/records/:id`）不进侧栏，通过 `navigate()` 或通知链接打开，参数在组件的 `params` 和 `useApp().route.params` 中。
 
+当前用户可切换的应用页面超过一个时，侧栏显示应用内导航；只有一个页面时保留平台一级导航并高亮当前应用。没有可见导航项时，应用入口使用服务端已授权的第一个静态路由。应用内容区保留一处页面标题，桌面端不再显示重复标题栏；侧栏从顶到底使用同一背景色。
+
 ## 样式
 
 样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`；构建时自动限定到本应用（`[data-app="<id>"]`），不会影响平台或其他应用。
 
 颜色只用平台主题变量，不写固定色值（否则暗色主题下会出现白底白字）：
+
+平台主色为深绿色，侧栏为通高布局。页面沿用共享控件的尺寸、圆角、行内列表操作和反馈样式，不另建浮动侧栏或重画平台导航。
 
 | 用途 | 变量 |
 | --- | --- |
@@ -44,6 +48,8 @@ export default defineApp({pages: {'/': Records, '/records/:id': Detail}});
 | 状态文字 / 状态浅底 | `--afc-color-{success,warning,danger,info}-ink` / `--afc-color-{…}-soft` |
 
 例：`.card{background:var(--afc-color-paper);border:1px solid var(--afc-color-line)}`。签名图片、二维码等必须深色在白底上的内容可以保留白底。颜色、字号使用平台 CSS 变量（如 `var(--afc-color-muted)`），以跟随明暗主题。暂不支持 `@keyframes`、`@font-face`、`@import`。
+
+手写签字画板使用主题底色；透明画布在暗色下仅调整笔迹预览，导出的签字凭证保持原始墨色，不把暗色预览写入图片。
 
 ## 图标
 

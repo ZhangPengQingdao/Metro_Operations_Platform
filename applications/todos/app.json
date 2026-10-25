@@ -1,7 +1,7 @@
 {
   "id": "todos",
   "name": "待办事项",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "工班待办、车站和人员子项、周期自动任务",
   "color": "#2563EB",
   "platform": ">=0.30.0",

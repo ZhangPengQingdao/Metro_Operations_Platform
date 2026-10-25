@@ -56,9 +56,9 @@ function DownloadsPage(){
 export default function DeveloperPage(){
  const [params,setParams]=useSearchParams(),section=sections.some(([id])=>id===params.get('section'))?params.get('section')!:'start';
  const selectedGuide=guides.find(g=>g.id===params.get('guide'))??guides[0];
- return <div className="developer-center"><div className="admin-heading"><div><h1>开发者中心</h1><p className="afc-muted">从公共能力到可安装应用 · 平台 v{metadata.version}</p></div></div><nav className="developer-tabs" aria-label="开发者中心导航">{sections.map(([id,title])=><Button key={id} size="sm" variant={section===id?'primary':'ghost'} aria-pressed={section===id} onClick={()=>setParams({section:id})}>{title}</Button>)}</nav>
- {section==='start'&&<><div className="developer-start-links">{sections.slice(1).map(([id,title])=><Button variant="secondary" key={id} onClick={()=>setParams({section:id})}>{title} →</Button>)}</div><DeveloperDocument content={start}/></>}
+ return <div className="developer-center"><div className="admin-heading"><div><h1>开发者中心</h1><p className="afc-muted">平台 v{metadata.version}</p></div></div><nav className="developer-tabs" aria-label="开发者中心导航">{sections.map(([id,title])=><Button key={id} shape="rounded" size="sm" variant={section===id?'primary':'ghost'} aria-pressed={section===id} onClick={()=>setParams({section:id})}>{title}</Button>)}</nav>
+ {section==='start'&&<><div className="developer-start-links">{sections.slice(1).map(([id,title])=><Button variant="secondary" shape="rounded" key={id} onClick={()=>setParams({section:id})}>{title} →</Button>)}</div><DeveloperDocument content={start}/></>}
  {section==='sdk'&&<PlatformSdk/>}{section==='downloads'&&<DownloadsPage/>}
- {section==='guides'&&<div className="developer-guide-layout"><nav aria-label="开发指南"><div className="developer-guide-links">{guides.map(guide=><Button key={guide.id} variant={guide.id===selectedGuide.id?'primary':'ghost'} aria-pressed={guide.id===selectedGuide.id} onClick={()=>setParams({section:'guides',guide:guide.id})}>{guide.title}</Button>)}</div></nav><DeveloperDocument content={selectedGuide.content}/></div>}
+ {section==='guides'&&<div className="developer-guide-layout"><nav aria-label="开发指南"><div className="developer-guide-links">{guides.map(guide=><Button key={guide.id} shape="rounded" variant={guide.id===selectedGuide.id?'primary':'ghost'} aria-pressed={guide.id===selectedGuide.id} onClick={()=>setParams({section:'guides',guide:guide.id})}>{guide.title}</Button>)}</div></nav><DeveloperDocument content={selectedGuide.content}/></div>}
  </div>;
 }

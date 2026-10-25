@@ -1,58 +1,64 @@
-/* OmegAI visual reference: neutral surfaces, system type and floating navigation.
-   Implemented for the AFC React shell; shared by administrator and employee workspaces. */
-.afc-admin { --afc-page:var(--afc-color-canvas); --afc-surface:var(--afc-color-paper); --afc-sidebar:var(--afc-color-sidebar); --afc-hover:var(--afc-control-hover); --afc-active:var(--afc-color-primary-soft); --afc-ink:var(--afc-color-ink); --afc-muted:var(--afc-color-muted); --afc-border:var(--afc-color-line); --afc-sidebar-width:224px; background:var(--afc-page); color:var(--afc-ink); min-height:100dvh; font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; color-scheme:light; }
+/* Platform shell shared by administrator and employee workspaces: fixed full-height sidebar, top bar, content. */
+.afc-admin { --afc-page:var(--afc-color-canvas); --afc-surface:var(--afc-color-paper); --afc-sidebar:var(--afc-color-sidebar); --afc-hover:var(--afc-control-hover); --afc-active:var(--afc-color-primary-soft); --afc-ink:var(--afc-color-ink); --afc-muted:var(--afc-color-muted); --afc-border:var(--afc-color-line); --afc-sidebar-width:240px; background:var(--afc-page); color:var(--afc-ink); min-height:100dvh; font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif; color-scheme:light; }
 .afc-admin[data-theme="dark"] { color-scheme:dark; }
 @media(prefers-color-scheme:dark) { .afc-admin[data-theme="system"] { color-scheme:dark; } }
 .afc-admin *, .afc-admin *::before, .afc-admin *::after { box-sizing:border-box; }
 
 .afc-admin a { color:inherit; text-decoration:none; }
 :where(.afc-admin h1, .afc-admin h2, .afc-admin h3, .afc-admin p) { margin:0; }
-.afc-admin h1 { font-size:26px; line-height:1.3; font-weight:600; letter-spacing:-.04em; }
-.afc-admin h2 { font-size:17px; font-weight:600; }
+.afc-admin h1 { font-size:22px; line-height:1.35; font-weight:600; letter-spacing:0; }
+.afc-admin h2 { font-size:16px; font-weight:600; }
 .afc-admin h3 { font-size:14px; font-weight:600; }
-.afc-admin[data-rail="true"] { --afc-sidebar-width:52px; }
-.afc-sidebar-island { position:fixed; z-index:30; top:12px; bottom:12px; left:12px; display:flex; width:var(--afc-sidebar-width); background:var(--afc-sidebar); border:1px solid var(--afc-border); border-radius:16px; box-shadow:0 1px 2px rgb(0 0 0 / .03),0 8px 24px rgb(0 0 0 / .05); transition:width .2s ease; }
-.afc-platform-sidebar { display:flex; flex-direction:column; width:224px; flex-shrink:0; min-width:0; }
-.afc-admin[data-rail="true"] .afc-platform-sidebar { width:52px; flex-shrink:0; }
-.afc-sidebar-header { display:flex; align-items:center; justify-content:space-between; height:76px; flex-shrink:0; padding:0 10px; gap:4px; }
-.afc-brand { display:flex; align-items:center; min-width:0; min-height:44px; padding:0; gap:8px; border:0; background:transparent; text-align:left; }
-.afc-brand-name { font-size:15px; font-weight:600; white-space:nowrap; letter-spacing:-.04em; }
-.afc-brand-mark { display:grid; place-items:center; width:32px; height:32px; flex-shrink:0; }
-.afc-brand-mark img, .afc-brand-mark>span { grid-area:1/1; width:30px; height:30px; object-fit:contain; transition:opacity .14s ease,transform .14s ease; }
+.afc-admin[data-rail="true"] { --afc-sidebar-width:64px; }
+.afc-sidebar { position:fixed; z-index:30; top:0; bottom:0; left:0; display:flex; width:var(--afc-sidebar-width); background:var(--afc-sidebar); border-right:1px solid var(--afc-border); transition:width .2s ease; }
+.afc-platform-sidebar { display:flex; flex-direction:column; width:100%; flex-shrink:0; min-width:0; }
+
+.afc-sidebar-header { display:flex; align-items:center; justify-content:space-between; height:72px; flex-shrink:0; padding:0 12px 0 16px; gap:4px; }
+.afc-brand { display:flex; align-items:center; min-width:0; min-height:44px; padding:0; gap:10px; color:var(--afc-ink); border:0; background:transparent; text-align:left; }
+.afc-brand-name { font-size:17px; font-weight:700; white-space:nowrap; letter-spacing:.01em; }
+.afc-brand-mark { display:grid; place-items:center; width:40px; height:40px; flex-shrink:0; }
+.afc-brand-mark img, .afc-brand-mark>span { grid-area:1/1; width:40px; height:40px; object-fit:contain; transition:opacity .14s ease,transform .14s ease; }
 .afc-brand-mark>span { display:grid; place-items:center; opacity:0; transform:translateX(-4px); }
 .afc-admin[data-rail="true"] .afc-brand:hover img, .afc-admin[data-rail="true"] .afc-brand:focus-visible img { opacity:0; transform:translateX(4px); }
 .afc-admin[data-rail="true"] .afc-brand:hover .afc-brand-mark>span, .afc-admin[data-rail="true"] .afc-brand:focus-visible .afc-brand-mark>span { opacity:1; transform:none; }
 .afc-admin[data-rail="true"] .afc-sidebar-header { justify-content:center; padding:0; }
 
-.afc-sidebar-nav { flex:1; min-height:0; overflow-y:auto; padding:0 10px 12px; overscroll-behavior:contain; }
-.afc-nav-link { display:flex; align-items:center; gap:10px; min-height:42px; padding:10px 12px; margin-bottom:4px; border-radius:10px; font-size:13px; transition:background .15s ease; }
+.afc-sidebar-nav { flex:1; min-height:0; overflow-y:auto; padding:12px 10px; overscroll-behavior:contain; }
+.afc-nav-link { position:relative; display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 12px; margin-bottom:2px; border-radius:6px; color:var(--afc-ink); font-size:14px; transition:background .15s ease,color .15s ease; }
 .afc-nav-link svg { flex-shrink:0; }
 .afc-nav-link span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .afc-nav-link:hover { background:var(--afc-hover); }
 .afc-nav-link.is-active { background:var(--afc-active); color:var(--afc-color-primary-ink); font-weight:600; }
+.afc-nav-link.is-active::before { content:''; position:absolute; left:-10px; top:8px; bottom:8px; width:3px; border-radius:0 3px 3px 0; background:var(--afc-color-primary); }
 .afc-admin[data-rail="true"] .afc-sidebar-nav { padding-inline:6px; }
 .afc-admin[data-rail="true"] .afc-platform-sidebar .afc-nav-link { justify-content:center; padding:10px 0; }
-.afc-app-links { margin-top:18px; border-top:1px solid var(--afc-border); padding-top:12px; }
-.afc-app-links>p { padding:0 12px 8px; font-size:11px; color:var(--afc-muted); }
-.afc-sidebar-bottom { margin:0 10px; padding:10px 0; border-top:1px solid var(--afc-border); display:flex; align-items:center; gap:2px; }
+.afc-app-links { margin-top:12px; border-top:1px solid var(--afc-border); padding-top:12px; }
+.afc-app-links>p { padding:0 12px 6px; font-size:12px; color:var(--afc-muted); }
+.afc-sidebar-bottom { padding:10px; display:flex; align-items:center; gap:2px; }
 .afc-notification-trigger { position:relative; display:inline-flex; flex:none; }
-.afc-notification-badge { position:absolute; top:-3px; right:-5px; min-width:17px; height:17px; padding:0 3px; border-radius:9px; background:#b91c1c; color:white; font-size:10px; line-height:17px; text-align:center; pointer-events:none; }
+.afc-notification-badge { position:absolute; top:-2px; right:-4px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; background:var(--afc-color-danger); color:#fff; font-size:10px; line-height:17px; text-align:center; pointer-events:none; }
 .afc-admin[data-rail="true"] .afc-sidebar-bottom { flex-direction:column; }
 .afc-account { position:relative; min-width:0; flex:1; }
-.afc-account-trigger { width:100%; min-height:44px; display:flex; align-items:center; gap:9px; border:0; background:transparent; border-radius:10px; padding:7px; text-align:left; font-size:13px; }
+.afc-account-trigger { width:100%; min-height:44px; display:flex; align-items:center; gap:10px; border:0; background:transparent; color:var(--afc-ink); border-radius:6px; padding:6px; text-align:left; font-size:13px; }
 .afc-account-trigger>span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .afc-account-trigger:hover { background:var(--afc-hover); }
-.afc-admin-avatar { display:grid; place-items:center; width:28px; height:28px; flex-shrink:0; border-radius:9px; background:var(--afc-active); font-size:12px; }
-.afc-account-popover { position:absolute; bottom:calc(100% + 12px); left:0; z-index:50; width:260px; max-width:calc(100vw - 44px); max-height:calc(100dvh - 110px); overflow-y:auto; background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:16px; padding:6px; box-shadow:0 12px 40px rgb(0 0 0 / .12); }
+.afc-admin-avatar { display:grid; place-items:center; width:32px; height:32px; flex-shrink:0; border-radius:50%; background:var(--afc-color-primary); color:var(--afc-on-primary); font-size:13px; font-weight:600; }
+.afc-account-popover { position:absolute; bottom:calc(100% + 12px); left:0; z-index:50; width:260px; max-width:calc(100vw - 44px); max-height:calc(100dvh - 110px); overflow-y:auto; background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:10px; padding:4px; box-shadow:var(--afc-shadow-md); }
 .afc-account-summary { display:grid; gap:2px; padding:10px 12px; font-size:13px; overflow-wrap:anywhere; }
 .afc-account-summary span { font-size:12px; color:var(--afc-muted); }
-.afc-account-popover>button { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; min-height:40px; border:0; border-radius:9px; background:transparent; text-align:left; font-size:13px; }
+.afc-account-popover>button { display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; min-height:38px; border:0; border-radius:6px; background:transparent; color:var(--afc-ink); text-align:left; font-size:14px; }
 .afc-account-popover>button:hover { background:var(--afc-hover); }
 .afc-account-popover hr { border:0; border-top:1px solid var(--afc-border); margin:5px 6px; }
-.afc-admin-workspace { margin-left:calc(var(--afc-sidebar-width) + 24px); min-width:0; transition:margin-left .2s ease; }
-.afc-page-header { height:72px; padding:0 32px; display:flex; align-items:center; gap:12px; font-size:13px; color:var(--afc-muted); }
-.afc-admin-main { padding:16px 32px 48px; max-width:1600px; margin:auto; }
-.afc-admin-workspace--application { --afc-app-height:calc(100dvh - 72px); }
+.afc-admin-workspace { margin-left:var(--afc-sidebar-width); min-width:0; min-height:100dvh; transition:margin-left .2s ease; }
+.afc-page-header { position:sticky; top:0; z-index:20; height:56px; padding:0 28px; display:flex; align-items:center; gap:12px; font-size:15px; font-weight:600; color:var(--afc-ink); background:var(--afc-surface); border-bottom:1px solid var(--afc-border); }
+.afc-page-header-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.afc-admin-main { padding:24px 28px 40px; max-width:1600px; margin:0 auto; }
+.afc-admin-workspace--application { --afc-app-height:calc(100dvh - 56px); }
+.afc-admin-workspace--application>.afc-page-header { background:var(--afc-page); border-bottom:0; }
+@media(min-width:901px) {
+ .afc-admin-workspace--application { --afc-app-height:100dvh; }
+ .afc-admin-workspace--application>.afc-page-header:not(:has(.afc-page-header-actions)) { display:none; }
+}
 .afc-admin-workspace--application .afc-admin-main { max-width:none; margin:0; padding:0; }
 .afc-admin-workspace--application .afc-admin-main>p { padding:16px 24px; }
 /* Dialog 关闭后焦点 uphill 落到该编程聚焦容器时，避免整页蓝色聚焦框。 */
@@ -60,55 +66,91 @@
 .afc-page-header .afc-mobile-toggle, .afc-mobile-backdrop { display:none; }
 .afc-skip-link { position:fixed; left:12px; top:-80px; z-index:100; padding:12px; background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:8px; }
 .afc-skip-link:focus { top:12px; }
-.afc-admin-dialog { padding:0; width:min(760px,calc(100vw - 32px)); max-height:calc(100dvh - 48px); border:1px solid var(--afc-border); border-radius:20px; background:var(--afc-surface); color:var(--afc-ink); box-shadow:0 24px 80px rgb(0 0 0 / .18); margin:auto; }
-.afc-admin-dialog::backdrop { background:rgb(0 0 0 / .25); backdrop-filter:blur(3px); }
-.afc-admin-dialog>header { display:flex; align-items:center; justify-content:space-between; padding:18px 24px; border-bottom:1px solid var(--afc-border); }
+.afc-admin-dialog { padding:0; width:min(760px,calc(100vw - 32px)); max-height:calc(100dvh - 48px); border:0; border-radius:14px; background:var(--afc-surface); color:var(--afc-ink); box-shadow:0 24px 80px rgb(0 0 0 / .18); margin:auto; }
+.afc-admin-dialog::backdrop { background:rgb(10 20 15 / .38); }
+.afc-admin-dialog>header { display:flex; align-items:center; justify-content:space-between; padding:18px 24px; }
 .afc-dialog-content { padding:24px; overflow:auto; }
 .afc-settings-layout { display:grid; grid-template-columns:120px minmax(0,1fr); gap:24px; min-height:230px; }
 .afc-settings-layout nav { display:flex; flex-direction:column; gap:4px; }
-.afc-settings-layout nav button { padding:10px 12px; text-align:left; border:0; border-radius:10px; background:transparent; font-size:13px; }
+.afc-settings-layout nav button { padding:8px 12px; text-align:left; border:0; border-radius:6px; background:transparent; font-size:13px; }
 .afc-settings-layout nav button:hover { background:var(--afc-hover); }
 .afc-settings-layout nav button[aria-current] { background:var(--afc-active); color:var(--afc-color-primary-ink); }
-.afc-settings-content { display:flex; flex-direction:column; align-self:start; border-radius:14px; background:var(--afc-page); padding:0 16px; }
+.afc-settings-content { display:flex; flex-direction:column; align-self:start; border-radius:10px; background:var(--afc-page); padding:0 16px; }
 .afc-settings-content>a, .afc-setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:64px; border-bottom:1px solid var(--afc-border); }
 .afc-settings-content>a:last-child, .afc-setting-row:last-child { border-bottom:0; }
 .afc-details { display:grid; grid-template-columns:110px minmax(0,1fr); gap:16px; margin:0; }
 .afc-details dt { color:var(--afc-muted); } .afc-details dd { margin:0; overflow-wrap:anywhere; }
 
-.afc-muted { color:var(--afc-muted); } .afc-error { color:#b42318; font-size:13px; padding:10px 0; overflow-wrap:anywhere; }
-.afc-admin[data-theme="dark"] .afc-error { color:#ffb4ab; }
-.afc-page-title { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:28px; }
-.afc-page-title p { margin-top:8px; color:var(--afc-muted); }
-.afc-card { background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:16px; padding:24px; margin-bottom:20px; }
+.afc-muted { color:var(--afc-muted); }
+/* One inline message style for errors and notices across the platform; apps use the same look. */
+.afc-error, .afc-message--danger { padding:10px 14px; border:1px solid color-mix(in srgb,var(--afc-color-danger) 28%,transparent); background:var(--afc-color-danger-soft); color:var(--afc-color-danger-ink); border-radius:8px; font-size:13px; line-height:1.55; margin:0 0 14px; overflow-wrap:anywhere; }
+.afc-message--warning { padding:10px 14px; border:1px solid color-mix(in srgb,var(--afc-color-warning) 28%,transparent); background:var(--afc-color-warning-soft); color:var(--afc-color-warning-ink); border-radius:8px; font-size:13px; line-height:1.55; margin:0 0 14px; overflow-wrap:anywhere; }
+.afc-message--success { padding:10px 14px; border:1px solid color-mix(in srgb,var(--afc-color-success) 28%,transparent); background:var(--afc-color-success-soft); color:var(--afc-color-success-ink); border-radius:8px; font-size:13px; line-height:1.55; margin:0 0 14px; overflow-wrap:anywhere; }
+.afc-message--info { padding:10px 14px; border:1px solid color-mix(in srgb,var(--afc-color-info) 28%,transparent); background:var(--afc-color-info-soft); color:var(--afc-color-info-ink); border-radius:8px; font-size:13px; line-height:1.55; margin:0 0 14px; overflow-wrap:anywhere; }
+
+.afc-page-title { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+.afc-page-title p { margin-top:4px; color:var(--afc-muted); font-size:13px; }
+.afc-card { background:var(--afc-surface); border:1px solid var(--afc-border); border-radius:12px; padding:20px 24px; margin-bottom:16px; }
 .afc-card h2 { margin-bottom:16px; }
 .afc-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:24px; }
-.afc-stat { border:1px solid var(--afc-border); border-radius:14px; background:var(--afc-surface); padding:20px; }
-.afc-stat p { color:var(--afc-muted); font-size:12px; } .afc-stat strong { display:block; font-size:30px; font-weight:500; margin-top:12px; }
+.afc-stat { border:1px solid var(--afc-border); border-radius:12px; background:var(--afc-surface); padding:18px 20px; border-top:3px solid var(--afc-color-primary); }
+.afc-stat p { color:var(--afc-muted); font-size:13px; } .afc-stat strong { display:block; font-size:28px; font-weight:600; margin-top:8px; font-family:var(--afc-font-numeric); }
 .afc-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
 .afc-table-wrap { width:100%; overflow:auto; }
 
 .afc-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }
 .afc-form-grid label { display:flex; flex-direction:column; gap:7px; font-size:13px; }
 .afc-empty { padding:40px 20px; text-align:center; color:var(--afc-muted); }
- .afc-admin-login { display:grid; place-items:center; padding:48px 24px; background:var(--afc-surface); }
-.afc-login-container { width:100%; max-width:400px; }
-.afc-login-container>header { text-align:center; margin-bottom:44px; }
-.afc-login-container>header img { width:88px; height:88px; margin:0 auto 20px; }
-.afc-login-container>header h1 { font-size:24px; font-weight:500; letter-spacing:-.03em; }
-.afc-login-intro { text-align:center; margin-bottom:28px; }
-.afc-login-intro h2 { font-size:22px; font-weight:600; margin-bottom:8px; }
-.afc-login-container form { display:grid; gap:28px; }
-.afc-auth-text-link { display:block; margin:28px auto 0; padding:4px 0; color:var(--afc-color-muted); background:none; border:0; border-radius:0; font:inherit; font-size:14px; cursor:pointer; }
-.afc-auth-text-link:hover { color:var(--afc-color-ink); text-decoration:underline; text-underline-offset:4px; }
-.afc-auth-text-link:focus-visible { outline:2px solid currentColor; outline-offset:6px; }
-.afc-auth-text-link:disabled { opacity:.5; cursor:default; }
-.afc-registration-form .afc-auth-text-link { margin:4px auto 0; }
+/* Sign-in, registration and password screens. */
+.afc-auth { display:grid; grid-template-columns:minmax(280px,42%) minmax(0,1fr); min-height:100dvh; background:var(--afc-surface); }
+.afc-auth-brand { position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:center; min-width:0; padding:clamp(24px,4vw,56px); color:#fff; background:#0d5c3e; }
+.afc-auth-brand::after { content:''; position:absolute; right:-18%; bottom:-22%; width:72%; aspect-ratio:1; border-radius:50%; border:56px solid rgb(255 255 255 / .06); }
+.afc-auth-logo { display:block; flex:none; background:currentColor; mask:url('/brand/afc-logo-green.svg') center/contain no-repeat; }
+.afc-auth-brand__mark { width:clamp(128px,10vw,176px); aspect-ratio:1; margin-bottom:24px; }
+.afc-auth-brand__name { font-size:clamp(26px,2.3vw,32px); font-weight:700; letter-spacing:.04em; }
+.afc-auth-brand__en { margin-top:8px; font-size:14px; letter-spacing:.08em; opacity:.72; }
+.afc-auth-panel { display:flex; align-items:safe center; justify-content:center; min-width:0; padding:clamp(24px,5vh,48px) clamp(20px,3vw,40px); }
+.afc-auth-card { width:100%; max-width:380px; }
+.afc-auth-card--wide { max-width:600px; }
+.afc-auth-heading { margin-bottom:28px; }
+.afc-auth-heading__logo { display:none; width:80px; height:80px; margin-bottom:16px; }
+.afc-auth-heading h1 { font-size:24px; font-weight:700; letter-spacing:0; }
+.afc-auth-heading p { margin-top:8px; color:var(--afc-muted); font-size:14px; }
+.afc-auth-form { display:grid; gap:18px; }
+.afc-auth-form--grid { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:16px; align-items:start; }
+.afc-auth-form--grid .afc-auth-wide { grid-column:1/-1; }
+.afc-auth-form .afc-error { margin:0; }
+.afc-auth-form>.afc-button { margin-top:4px; }
+.afc-auth-switch { margin-top:24px; text-align:center; color:var(--afc-muted); font-size:14px; }
+.afc-auth-link { padding:0; border:0; background:none; color:var(--afc-color-primary-ink); font:inherit; font-weight:500; cursor:pointer; }
+.afc-auth-link:hover { text-decoration:underline; text-underline-offset:3px; }
+.afc-auth-link:disabled { opacity:.5; cursor:default; }
+.afc-auth-loading { display:grid; place-items:center; min-height:100dvh; color:var(--afc-muted); }
+/* Live password policy checklist. */
+.afc-password-field { display:grid; gap:8px; }
+.afc-password-rules { display:grid; gap:4px; margin:0; padding:0; list-style:none; font-size:12px; }
+.afc-password-rule { display:grid; grid-template-columns:15px minmax(0,1fr); align-items:start; gap:6px; line-height:18px; color:var(--afc-muted); }
+.afc-password-rule svg { margin-top:1.5px; }
+.afc-password-rule--ok { color:var(--afc-color-success-ink); }
+.afc-password-rule--error { color:var(--afc-color-danger-ink); }
+.afc-password-categories { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.afc-password-categories>span { padding:0 6px; border-radius:4px; line-height:18px; color:var(--afc-muted); background:var(--afc-color-neutral-soft); }
+.afc-password-categories>span.is-on { color:var(--afc-color-success-ink); background:var(--afc-color-success-soft); }
+.afc-password-match { display:flex; align-items:center; gap:6px; margin:0; font-size:12px; }
+.afc-password-match--ok { color:var(--afc-color-success-ink); }
+.afc-password-match--error { color:var(--afc-color-danger-ink); }
+@media(max-width:860px) {
+ .afc-auth { grid-template-columns:1fr; }
+ .afc-auth-brand { display:none; }
+ .afc-auth-heading__logo { display:block; }
+ .afc-auth-form--grid { grid-template-columns:1fr; }
+}
 @media(max-width:900px) {
- .afc-sidebar-island { visibility:hidden; transform:translateX(calc(-100% - 24px)); max-width:calc(100vw - 40px); transition:transform .2s ease,visibility .2s; }
- .afc-sidebar-island.is-open { visibility:visible; transform:none; }
+ .afc-sidebar { visibility:hidden; transform:translateX(-100%); max-width:calc(100vw - 40px); transition:transform .2s ease,visibility .2s; }
+ .afc-sidebar.is-open { visibility:visible; transform:none; box-shadow:var(--afc-shadow-lg); }
  .afc-admin-workspace { margin-left:0; }
- .afc-page-header { height:64px; padding:0 20px; }
- .afc-admin-workspace--application { --afc-app-height:calc(100dvh - 64px); }
+ .afc-page-header { padding:0 16px; }
+ .afc-admin-workspace--application { --afc-app-height:calc(100dvh - 56px); }
  .afc-admin-main { padding:12px 20px 32px; }
  .afc-page-header .afc-mobile-toggle { display:inline-flex; }
  .afc-mobile-backdrop { display:block; position:fixed; inset:0; z-index:25; border:0; background:rgb(0 0 0 / .2); }
@@ -116,7 +158,7 @@
 }
 @media(max-width:540px) { .afc-admin-main { padding:12px 16px 24px; } .afc-card { padding:18px; } .afc-settings-layout { grid-template-columns:1fr; gap:16px; } .afc-settings-layout nav { flex-direction:row; flex-wrap:wrap; } .afc-dialog-content { padding:18px; } .afc-admin h1 { font-size:23px; } }
 @media(prefers-reduced-motion:reduce) { .afc-admin *, .afc-admin *::before, .afc-admin *::after { transition:none; scroll-behavior:auto; } }
-.afc-admin .admin-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.afc-admin .admin-card{background:var(--afc-surface);border:1px solid var(--afc-border);border-radius:16px;padding:24px;margin-block:20px}.afc-admin .admin-card h2{font-size:16px;font-weight:600;margin-bottom:12px}.afc-admin .admin-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.afc-admin .admin-metrics strong{display:block;font-size:32px;margin-top:16px}.afc-admin .admin-app-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px}.afc-admin .admin-app-grid .admin-card{margin:0}.afc-admin .admin-actions,.afc-admin .admin-links{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}.afc-admin .admin-status{font-size:12px;background:var(--afc-sidebar);padding:4px 10px;border-radius:20px;white-space:nowrap}.afc-admin .admin-form{display:grid;gap:18px}.afc-admin .admin-form label:not(.afc-switch){display:grid;gap:8px;font-size:13px}.afc-admin .afc-admin-main>h1{font-size:26px;font-weight:600;margin-bottom:12px}@media(max-width:720px){.afc-admin .admin-metrics{grid-template-columns:1fr;gap:0}.afc-admin .admin-card{padding:18px}}
+.afc-admin .admin-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.afc-admin .admin-card{background:var(--afc-surface);border:1px solid var(--afc-border);border-radius:12px;padding:24px;margin-block:20px}.afc-admin .admin-card h2{font-size:16px;font-weight:600;margin-bottom:12px}.afc-admin .admin-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.afc-admin .admin-metrics strong{display:block;font-size:32px;margin-top:16px}.afc-admin .admin-app-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px}.afc-admin .admin-app-grid .admin-card{margin:0}.afc-admin .admin-actions,.afc-admin .admin-links{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}.afc-admin .admin-status{font-size:12px;background:var(--afc-sidebar);padding:4px 10px;border-radius:12px;white-space:nowrap}.afc-admin .admin-form{display:grid;gap:18px}.afc-admin .admin-form label:not(.afc-switch){display:grid;gap:8px;font-size:13px}.afc-admin .afc-admin-main>h1{font-size:26px;font-weight:600;margin-bottom:12px}@media(max-width:720px){.afc-admin .admin-metrics{grid-template-columns:1fr;gap:0}.afc-admin .admin-card{padding:18px}}
 .developer-heading>div:first-child{min-width:0}.developer-heading p{margin-top:6px}.developer-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.developer-summary{margin-bottom:18px;color:var(--afc-muted)}.developer-app-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,390px),1fr));align-items:start;gap:16px}.afc-admin .developer-app-card{margin:0;min-width:0}.developer-app-card>header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:18px}.developer-app-card>header h2{margin-bottom:2px!important}.developer-app-card>header p,.developer-app-card>p{overflow-wrap:anywhere}.developer-capability-list{list-style:none;margin:0;padding:0;display:grid;gap:14px}.developer-capability-list>li{border-top:1px solid var(--afc-border);padding-top:14px;min-width:0}.developer-capability-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}.developer-capability-title>div{display:grid;gap:3px;min-width:0}.developer-capability-title code,.developer-capability-list dd code{overflow-wrap:anywhere}.developer-capability-title>span{font-size:12px;color:var(--afc-muted);white-space:nowrap}.developer-capability-list .afc-details{grid-template-columns:72px minmax(0,1fr);gap:6px 12px;font-size:12px}.developer-capability-list pre{max-width:100%;margin:14px 0 0;padding:12px;border:1px solid var(--afc-border);border-radius:10px;background:var(--afc-page);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.developer-platform{margin-top:30px}.developer-platform>p{margin:6px 0 16px}.developer-platform .admin-card h3{overflow-wrap:anywhere}
 .afc-admin .admin-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:20px}.afc-admin .admin-tabs [aria-pressed=true]{background:var(--afc-active)}
 .afc-admin .admin-station-list{max-height:min(48dvh,440px);overflow-y:auto;border:1px solid var(--afc-border);border-radius:12px}.afc-admin .admin-station-option{display:flex!important;grid-template-columns:none!important;align-items:center;gap:12px!important;padding:12px 14px;border-bottom:1px solid var(--afc-border);cursor:pointer}.afc-admin .admin-station-option:last-child{border-bottom:0}.afc-admin .admin-station-option:hover{background:var(--afc-hover)}.afc-admin .admin-station-option input{width:16px;height:16px;flex:none}.afc-admin .admin-station-option span{display:grid;gap:2px;min-width:0}.afc-admin .admin-station-option strong{font-weight:500}.afc-admin .admin-station-option small{color:var(--afc-muted)}.afc-admin .admin-station-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -136,13 +178,15 @@
 
 .app-toolbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .app-name-cell{display:grid;gap:3px;min-width:120px}.app-name-cell strong{font-weight:600}.app-name-cell span{font-size:12px}
-.employee-app-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px}.employee-app-link{display:flex;align-items:center;gap:14px;padding:20px;border:1px solid var(--afc-border);border-radius:16px;background:var(--afc-surface)}.employee-app-link>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}.employee-app-link:hover{background:var(--afc-hover)}.employee-app-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--afc-sidebar);font-size:18px}.employee-app-link .afc-muted{font-size:12px;overflow-wrap:anywhere}.employee-application{min-width:0}.employee-message-list article{padding:20px 0;border-bottom:1px solid var(--afc-border)}.employee-message-list p{margin:8px 0}
+.employee-app-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px}.employee-app-link{display:flex;align-items:center;gap:14px;padding:20px;border:1px solid var(--afc-border);border-radius:12px;background:var(--afc-surface)}.employee-app-link>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}.employee-app-link:hover{background:var(--afc-hover)}.employee-app-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--afc-sidebar);font-size:18px}.employee-app-link .afc-muted{font-size:12px;overflow-wrap:anywhere}.employee-application{min-width:0}.employee-message-list article{padding:20px 0;border-bottom:1px solid var(--afc-border)}.employee-message-list p{margin:8px 0}
 .afc-admin .admin-heading{flex-wrap:wrap}.afc-admin .admin-form{min-width:0}.afc-admin .afc-details{min-width:0}.afc-admin .afc-details dd{min-width:0}
 
 .app-package-upload{min-width:0}.app-package-filename{display:block;min-width:0;overflow-wrap:anywhere;color:inherit;font-size:inherit}.app-package-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 
 .afc-setting-row > .afc-select-wrap { width: min(75%, 360px); flex: 0 1 360px; }
-.afc-dialog .admin-form + .admin-form { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--afc-border); }
+.afc-dialog .admin-form + .admin-form { margin-top: 28px; padding-top: 24px; }
+.afc-dialog .afc-settings-content { background:transparent; }
+.afc-dialog .afc-settings-content>a, .afc-dialog .afc-setting-row { border-bottom:0; }
 
 
 .afc-profile-dialog > .afc-dialog__header { position:absolute; inset:0 0 auto; padding:22px 16px 0 20px; pointer-events:none; z-index:1; }
@@ -150,11 +194,11 @@
 .afc-profile-dialog > .afc-dialog__header .afc-dialog__heading h2 { font-size:16px; color:var(--afc-muted); }
 .afc-profile-dialog > .afc-dialog__body { padding:0; }
 .afc-profile-dialog > .afc-dialog__body:last-child { padding-bottom:0; }
-.afc-profile-layout { display:grid; grid-template-columns:164px minmax(0,1fr); gap:0; min-height:440px; }
-.afc-profile-nav { display:flex; flex-direction:column; gap:6px; border-right:1px solid var(--afc-border); padding:70px 12px 24px; }
-.afc-profile-nav .afc-button { justify-content:flex-start; white-space:nowrap; padding-inline:12px; border-radius:10px; min-height:42px; }
+.afc-profile-layout { display:grid; grid-template-columns:var(--afc-dialog-sidebar-width,164px) minmax(0,1fr); gap:0; min-height:440px; }
+.afc-profile-nav { display:flex; flex-direction:column; gap:6px; padding:70px 12px 24px; }
+.afc-profile-nav .afc-button { justify-content:flex-start; white-space:nowrap; padding-inline:12px; border-radius:var(--afc-radius-control); min-height:42px; }
 .afc-profile-nav .afc-button[aria-current="page"] { background:var(--afc-color-primary-soft); color:var(--afc-color-ink); }
-.afc-profile-content { min-width:0; padding:22px 24px 24px; background:var(--afc-page); }
+.afc-profile-content { min-width:0; padding:22px 24px 24px; }
 .afc-profile-section-title { font-size:16px; font-weight:600; min-height:24px; margin:0 40px 26px 0; }
 .afc-profile-content .afc-details { grid-template-columns:64px minmax(0,1fr); gap:12px; }
 .afc-profile-actions { display:flex; justify-content:flex-end; padding-top:8px; }
@@ -163,8 +207,11 @@
 .afc-profile-dialog.afc-sidebar-dialog .afc-profile-nav { overflow:hidden; flex:0 0 auto; }
 .afc-profile-dialog.afc-sidebar-dialog .afc-profile-content { overflow-y:auto; min-height:0; }
 @media(max-width:560px) {
+ .afc-admin .afc-dialog.afc-profile-dialog { background:var(--afc-color-paper); }
+ .afc-profile-dialog .afc-profile-content,
+ .afc-profile-dialog > .afc-dialog__footer { background:var(--afc-color-canvas); }
  .afc-profile-layout { grid-template-columns:minmax(0,1fr); }
- .afc-profile-nav { flex-direction:row; border-right:0; border-bottom:1px solid var(--afc-border); padding:66px 14px 12px; }
+ .afc-profile-nav { flex-direction:row; padding:66px 14px 12px; }
  .afc-profile-content { padding:20px 14px; }
  .afc-profile-dialog.afc-sidebar-dialog .afc-profile-nav { overflow-x:auto; }
  .afc-profile-dialog.afc-sidebar-dialog .afc-profile-nav .afc-button { flex-shrink:0; }
@@ -266,15 +313,8 @@
 
 .developer-toolbar{justify-content:flex-end}.developer-toolbar .afc-filter-bar-wrapper{max-width:100%}
 
-/* The application owns its heading; only the mobile navigation control needs a host row. */
-@media(min-width:901px){
- .afc-admin-workspace--application { --afc-app-height:100dvh; }
- .afc-admin-workspace--application>.afc-page-header { display:none; }
-}
-
-.afc-page-header-actions{margin-left:auto;display:flex;align-items:center}
-@media(min-width:901px){.afc-admin-workspace--dashboard>.afc-page-header{height:40px;max-width:1600px;margin:auto}.afc-admin-workspace--dashboard>.afc-page-header>span{display:none}.afc-admin-workspace--dashboard .afc-admin-main{padding-top:0}}
-@media(max-width:900px){.afc-page-header .dashboard-settings-trigger{width:44px;height:44px}.afc-admin-workspace--dashboard .afc-admin-main{padding-top:0}}
+/* Keep the same section header and content offset on dashboard and application pages. */
+@media(max-width:900px){.afc-page-header .dashboard-settings-trigger{width:44px;height:44px}}
 /* Application model v2 package preview */
 .mopkg-preview{display:grid;gap:16px;min-width:0}
 .mopkg-preview-head{display:flex;gap:14px;align-items:flex-start;min-width:0}
@@ -299,3 +339,20 @@
 .app-v2-error{display:grid;justify-items:start;gap:12px;padding:24px 0;color:var(--afc-ink)}
 
 .app-process-logs{margin:0;max-height:420px;overflow:auto;padding:12px;border-radius:8px;background:var(--afc-color-surface-muted,#f4f4f5);font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;}
+
+/* Notifications panel (administrator and employee). */
+.afc-notification-list { list-style:none; margin:0; padding:0; }
+.afc-notification-list>li { border-bottom:1px solid var(--afc-border); }
+.afc-notification-list>li:last-child { border-bottom:0; }
+.afc-notification-row { display:grid; grid-template-columns:8px minmax(0,1fr); gap:12px; padding:14px 12px; border-radius:8px; }
+a.afc-notification-row:hover { background:var(--afc-hover); }
+a.afc-notification-row:focus-visible { outline:2px solid var(--afc-color-primary); outline-offset:2px; }
+.afc-notification-dot { width:8px; height:8px; margin-top:7px; border-radius:50%; }
+.afc-notification-list>li.is-unread .afc-notification-dot { background:var(--afc-color-primary); }
+.afc-notification-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.afc-notification-head strong { font-size:14px; font-weight:600; }
+.afc-notification-list>li:not(.is-unread) .afc-notification-head strong { font-weight:500; color:var(--afc-muted); }
+.afc-notification-head time { flex:none; font-size:12px; color:var(--afc-muted); }
+.afc-notification-content p { margin-top:4px; font-size:13px; color:var(--afc-muted); line-height:1.55; }
+.afc-notification-actions { display:flex; gap:16px; padding:0 12px 14px 32px; font-size:13px; }
+.afc-notification-empty { padding:40px 0; text-align:center; color:var(--afc-muted); }

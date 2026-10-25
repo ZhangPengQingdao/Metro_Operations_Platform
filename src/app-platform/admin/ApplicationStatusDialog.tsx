@@ -23,7 +23,7 @@ export function ApplicationStatusDialog({appId,onClose,onChange}:{appId:string;o
    <dl className="afc-details"><dt>应用</dt><dd>{runtime.installation.manifest.name}</dd><dt>当前版本</dt><dd>{runtime.installation.manifest.version}</dd><dt>运行状态</dt><dd>{applicationStatus(runtime.installation,runtime.serving)}</dd>
     {process&&<><dt>后端进程</dt><dd>{processStates[process.state]??process.state}{process.startedAt?` · 启动于 ${new Date(process.startedAt).toLocaleString('zh-CN')}`:''}</dd><dt>自动重启</dt><dd>{process.restarts} 次</dd>{process.lastExit&&<><dt>上次退出</dt><dd>{new Date(process.lastExit.at).toLocaleString('zh-CN')} · {process.lastExit.signal??`退出码 ${process.lastExit.code}`}</dd></>}</>}
     <dt>平台能力</dt><dd>{runtime.installation.grants.filter(g=>g.status==='active'&&g.permissionCode.startsWith('platform.')).length} 项已批准</dd></dl>
-   {runtime.installation.enabled&&!runtime.serving&&<><p className="afc-muted">应用已启用但没有在运行。查看“最近日志”了解原因，修正后可重新启动；不会重放任何业务操作。</p><div className="admin-actions"><Button disabled={busy} onClick={()=>void restart()}>{busy?'正在启动…':'重新启动'}</Button></div></>}
+   {runtime.installation.enabled&&!runtime.serving&&<><p className="afc-muted">应用未在运行，可查看最近日志后重新启动。</p><div className="admin-actions"><Button disabled={busy} onClick={()=>void restart()}>{busy?'正在启动…':'重新启动'}</Button></div></>}
   </>}
   {runtime&&section==='logs'&&(process?.logs.length?<pre className="app-process-logs">{process.logs.join('\n')}</pre>:<p className="afc-muted">暂无日志。</p>)}
  </SidebarDialog>;

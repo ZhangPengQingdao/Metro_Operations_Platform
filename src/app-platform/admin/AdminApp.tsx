@@ -1,4 +1,5 @@
 import {readThemePreference} from '../identity/theme';
+import {NotificationList} from '../host/NotificationList';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
 import DeveloperPage from './DeveloperPage';
@@ -49,17 +50,17 @@ function AppsPage(){
 
  </>;
 }
-function NotificationsPanel(){const {data,error}=useRead<{notifications:{id:string;title:string;description:string;path:string}[]}>('/notifications');return <><FailureNotifications error={error}/>{data?.notifications.map(item=><section className="admin-card" key={item.id}><h3>{item.title}</h3><p>{item.description}</p><Link to="/admin/apps">查看应用</Link></section>)}{data?.notifications.length===0&&<p className="afc-muted">暂无需要处理的应用通知。</p>}</>;}
+function NotificationsPanel({onNavigate}:{onNavigate:()=>void}){const {data,error}=useRead<{notifications:{id:string;title:string;description:string;path:string}[]}>('/notifications');return <><FailureNotifications error={error}/>{!error&&<NotificationList items={data?data.notifications.map(item=>({id:item.id,title:item.title,body:item.description,unread:true,href:'/admin/apps'})):null} emptyText="暂无待处理通知" onNavigate={onNavigate}/>}</>;}
 function FailureNotifications({error}:{error:string}){return error?<ErrorNotice error={error}/>:null;}
 export default function AdminApp(){
  const location=useLocation(),navigate=useNavigate();const [user,setUser]=useState<AdminUser|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
  useEffect(()=>{const expire=()=>setUser(null);window.addEventListener('afc-admin-session-expired',expire);return()=>window.removeEventListener('afc-admin-session-expired',expire);},[]);
  useEffect(()=>{let active=true;adminRequest<AdminUser>('/auth/me').then(value=>{if(active)setUser(value);}).catch(e=>{if(active&&!(e instanceof AdminRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
  async function logout(){await adminRequest('/auth/logout',{method:'POST'});setUser(null);navigate('/login');}
- if(loading)return <div className="afc-admin afc-theme-neutral" data-theme={readThemePreference()}><p role="status">正在检查管理员会话…</p></div>;
+ if(loading)return <div className="afc-admin afc-theme-neutral afc-auth-loading" data-theme={readThemePreference()}><p role="status">正在加载…</p></div>;
  if(!user)return <Navigate to="/login" replace/>;
  if(user.passwordChangeRequired)return <PasswordChangeRequired kind="admin" onChanged={()=>{setUser(null);navigate('/login',{replace:true});}}/>;
  if(location.pathname==='/admin/login'||location.pathname==='/admin/updates'||location.pathname==='/admin/audit')return <Navigate to="/admin" replace/>;
  const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts/registrations'?<RegistrationReview/>:path==='/admin/accounts/employees'?<EmployeeAccounts/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/developer'?<DeveloperPage/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
- return <AdminShell user={user} applications={[]} onLogout={logout} profileContent={<ProfileSections basic={<dl className="afc-details"><dt>账号</dt><dd>{user.username}</dd><dt>名称</dt><dd>{user.displayName}</dd></dl>} password={<PasswordPanel onChanged={()=>{setUser(null);navigate('/login');}}/>}/>} notificationsContent={<NotificationsPanel/>}>{content}</AdminShell>;
+ return <AdminShell user={user} applications={[]} onLogout={logout} profileContent={<ProfileSections basic={<dl className="afc-details"><dt>账号</dt><dd>{user.username}</dd><dt>名称</dt><dd>{user.displayName}</dd></dl>} password={<PasswordPanel onChanged={()=>{setUser(null);navigate('/login');}}/>}/>} notificationsContent={onNavigate=><NotificationsPanel onNavigate={onNavigate}/>}>{content}</AdminShell>;
 }
