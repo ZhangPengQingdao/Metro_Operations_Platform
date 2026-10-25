@@ -1,5 +1,7 @@
 """Disposable Docker-only Linux integration: final image, fresh DB, migrations, admin login, proxy."""
-import json,os,pathlib,secrets,subprocess,tempfile,time,urllib.request,uuid
+import importlib.util,json,os,pathlib,secrets,subprocess,tempfile,time,urllib.request,uuid
+installer_spec=importlib.util.spec_from_file_location('updater',pathlib.Path(__file__).resolve().parents[2]/'deploy/updater.py')
+installer=importlib.util.module_from_spec(installer_spec);installer_spec.loader.exec_module(installer)
 root=pathlib.Path(tempfile.mkdtemp(prefix='mop-linux-smoke-'));suffix=uuid.uuid4().hex[:12];network='mop-test-'+suffix
 containers=[]
 def run(*args,check=True):
@@ -84,7 +86,6 @@ try:
  with urllib.request.urlopen(req) as response:assert response.status==200
 
  # Validate the installer's actual generated Caddy configuration, not a test-only proxy.
- import updater as installer
  installer.atomic(root/'config.json',{'domain':'ops.example.com','socketGid':0,'proxyMode':'external','httpPort':18080,'applications':True})
  release=root/'release';release.mkdir()
  images={name:json.loads(run('docker','image','inspect',ref).stdout)[0]['Id'] for name,ref in [('api','mop-api:test'),('web','mop-web:test'),('database',postgres)]}

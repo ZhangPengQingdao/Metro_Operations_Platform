@@ -55,10 +55,12 @@ test('independent materials service uses declarative schema and rolls back stock
 async function buildMaterialsPackage(){
  const {execFile}=await import('node:child_process'),{promisify}=await import('node:util'),{fileURLToPath}=await import('node:url');
  const app=fileURLToPath(new URL('../../applications/materials/',import.meta.url)),cli=fileURLToPath(new URL('../../packages/platform-cli/dist/cli.mjs',import.meta.url));
+ const manifest=JSON.parse(await readFile(new URL('../../applications/materials/app.json',import.meta.url),'utf8'));
  await promisify(execFile)(process.execPath,[cli,'build'],{cwd:app});
- const bytes=await readFile(new URL('../../applications/materials/dist/materials-0.3.0.mopkg',import.meta.url));
+ const bytes=await readFile(new URL(`../../applications/materials/dist/${manifest.id}-${manifest.version}.mopkg`,import.meta.url));
  const {inspectMopkg,readMopkg}=await import('@metro/platform-sdk/mopkg'),{projectV2Manifest}=await import('../src/app-platform/v2/projection.ts'),{createHash}=await import('node:crypto');
  const inspection=inspectMopkg(bytes),files=readMopkg(bytes);
+ assert.equal(inspection.manifest?.version,manifest.version,'inspect the package just built, not a cached older version');
  return {inspection,files,projection:projectV2Manifest(inspection.manifest!,inspection,path=>createHash('sha256').update(files.get(path)!).digest('hex'))};
 }
 
