@@ -38,7 +38,7 @@ const page = await files.list({entityType: 'record', entityId});      // {attach
 await files.save(uploaded.attachmentId);                               // 或 files.download() 取 Blob
 ```
 
-支持 Word、Excel、PDF、ZIP 和图片，单文件不超过 50MiB，单记录最多 500 个。应用须：
+支持 Word、Excel、PDF、ZIP/RAR/7z/GZIP、图片和视频，单文件不超过 200MiB，单记录最多 500 个。应用须：
 
 1. 在 `platformAccess` 申请 `attachments.create`、`attachments.read`；
 2. 提供 `authorize-attachment` 接口（可用 `@metro/platform-sdk/app-files-backend` 的 `createAppAttachmentAuthorizationHandler({authorizeUpload, authorizeRead})`），核对记录存在、员工有权，返回 `{organizationId: 记录所属组织}`。
@@ -48,3 +48,14 @@ await files.save(uploaded.attachmentId);                               // 或 fi
 ## 留证照片
 
 `createAppImageClient`（页面）与 `createManagedAppImageStore`（接口）提供压缩、分块、关联、校验和读取：应用声明自己的 `photo-begin/part/finish/read` 接口，用 `createAppImageMigrationOperations` 声明私有表，并把 `requireReady`/`link` 与业务写入放入同一事务。原图最多 8MiB，输出 JPEG 最多 220KB，每块 11000 字节，最多 20 块。它不是跨应用的公共图片仓库。
+
+
+## 后端核验和 ZIP 导出（1.3.0）
+
+应用后端可用 `createPlatformAttachmentClient(gateway).list({entityType,entityId,organizationId,availableOnly:true})` 查询当前记录的有效附件。需 `attachments.read`，由宿主绑定来源应用，返回元数据和 nextCursor，不返回存储路径。应用须先校验员工及记录业务权限。`afterId` 翻页；`availableOnly` 排除已缺失的存储对象，适用于完成前核验。
+
+页面用 `files.saveArchive({fileName,batch,records:[{entityType,entityId,fileName}]})` 打包。单条 batch=false，批量 batch=true 时各记录单独成 ZIP，再组成外层 ZIP。必须在 `authorize-attachment` 显式处理 action=export，或为 SDK 授权工厂提供 authorizeExport；缺失此授权时拒绝，不默认沿用 read。V2 回调可声明具体权限，也可使用由应用内核验的业务入口。
+
+平台按记录和文件逐次复核授权，最多 100 条记录、1000 个文件、ZIP 总长 2 GiB，文件缺失或读取失败不能算成功。ZIP 采用存储模式保持原件字节，不解压用户压缩包。浏览器支持文件系统保存 API 时流式落盘，否则有界 Blob 回退最多 256 MiB。
+
+原件上传经过平台流式存储及 200 MiB 上限，格式基础特征校验不等同正文解析。实际支持扩展名以 SDK 的 APP_ATTACHMENT_EXTENSIONS 为准。图片／视频不转码。

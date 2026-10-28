@@ -27,7 +27,7 @@ export interface AppAttachment { attachmentId: string; fileName: string; content
 /**
  * Original files attached to a business record (`entityType` + `entityId`). The app must provide an
  * `authorize-attachment` API that returns `{organizationId}` for the record, and request
- * `attachments.create` / `attachments.read` in app.json. Files up to 50MB: Word, Excel, PDF, ZIP and images.
+ * `attachments.create` / `attachments.read` in app.json. Originals up to 200 MiB, including videos.
  */
 export interface AppFiles {
   upload(file: Blob, target: { entityType: string; entityId: string; fileName?: string; intentId?: string }, options?: { signal?: AbortSignal }): Promise<AppAttachment>;
@@ -35,6 +35,8 @@ export interface AppFiles {
   download(attachmentId: string, options?: { signal?: AbortSignal }): Promise<{ blob: Blob; fileName: string }>;
   /** Downloads and hands the file to the browser's save dialog. */
   save(attachmentId: string): Promise<void>;
+  /** The app must explicitly authorize `action: 'export'` for every record. Server streams a lossless ZIP. */
+  saveArchive?(input:{fileName:string;batch:boolean;records:readonly {entityType:string;entityId:string;fileName:string}[]},options?:{signal?:AbortSignal}):Promise<void>;
 }
 
 /** Supplied by the platform shell. Server-side authorization still applies to every call. */

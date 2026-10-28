@@ -21,3 +21,12 @@ export function createPeopleDirectoryOperation(people:Pick<PeopleDirectoryReposi
   resolveResultResources:async(_context,value)=>{const page=result.parse(value);return [{organizationUnitId:page.organizationUnitId},...page.rows.map(row=>({organizationUnitId:row.organizationUnitId,ownerPersonId:row.id}))];},
  };
 }
+
+/** A bounded organization tree for choosing a responsible person's workgroup within a department. */
+export function createWorkgroupDirectoryOperation(people:Pick<PeopleDirectoryRepository,'listOrganizationUnits'>):AppGatewayOperation{
+ const input=z.object({organizationUnitId:z.string().uuid()}).strict();
+ return {name:'platform.people.workgroups',permissionCode:'platform.people.read',mode:'read',validateParams:value=>input.safeParse(value).success,
+  resolveResources:async(_context,value)=>[{organizationUnitId:(value as z.infer<typeof input>).organizationUnitId}],
+  async execute(_context,value){const root=(value as z.infer<typeof input>).organizationUnitId,units=await people.listOrganizationUnits(),byId=new Map(units.map(unit=>[unit.id,unit]));if(byId.get(root)?.status!=='active')throw new GatewayError('ACCESS_DENIED',403);const rows=units.filter(unit=>{if(unit.status!=='active'||unit.unitType!=='workgroup')return false;let current:typeof unit|undefined=unit;const seen=new Set<string>();while(current&&!seen.has(current.id)){if(current.status!=='active')return false;if(current.id===root)return true;seen.add(current.id);current=current.parentId?byId.get(current.parentId):undefined;}return false;}).map(unit=>({id:unit.id,name:unit.name}));if(rows.length>128)throw new GatewayError('INVALID_RESULT');return {rows};},
+  validateResult:value=>!!value&&typeof value==='object'&&'rows' in value&&Array.isArray(value.rows)};
+}

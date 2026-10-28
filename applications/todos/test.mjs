@@ -218,3 +218,15 @@ test('任务列表不读取子项明细，单项任务最多五十个对象',asy
  const query=seen.at(-1);assert.ok(query.pageSize>=20);assert.ok(!query.columns.includes('items'));
  await assert.rejects(()=>service.createTask(taskInput(ids.orgA,'station',Array.from({length:51},()=>id())),worker),/INVALID_INPUT/);
 });
+
+test('unified todo agent returns only scoped records through the existing read service',async()=>{
+ const gateway=memoryGateway(),service=createTodosService(gateway);
+ await service.createTask({...taskInput(),title:'本班巡检'},worker);
+ await service.createTask({...taskInput(ids.orgB,'person',[ids.carol]),title:'他班内部任务'},department);
+ const handlerFor=actor=>createTodosHandlers({invoke:(op,p,s)=>op==='platform.tools.call'?service['tool-list-todos'](p.arguments,actor,s).then(result=>({ok:true,result})):gateway.invoke(op,p,s)}).get('agent-todos');
+ const handler=handlerFor(worker),input={message:'查看未完成待办',history:[],today:'2026-10-27'};
+ const reply=await handler.execute(input,undefined,worker);
+ assert.equal(reply.ok,true);assert.match(reply.result.text,/本班巡检/);assert.doesNotMatch(reply.result.text,/他班内部任务/);
+ const completed=await handler.execute({...input,message:'查看已完成待办'},undefined,worker);assert.match(completed.result.text,/当前没有/);
+ const denied=await handlerFor(employee(ids.alice,[])).execute(input,undefined,employee(ids.alice,[]));assert.equal(denied.ok,false);assert.equal(denied.error.code,'ACCESS_DENIED');
+});

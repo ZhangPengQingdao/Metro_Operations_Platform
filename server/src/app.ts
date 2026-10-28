@@ -1,3 +1,5 @@
+import {KnowledgeIndexer} from './platform/knowledge/indexer.js';
+import {ChatService} from './platform/chat/index.js';
 import {startMaintenanceControl} from './app-platform/updates/control.js';
 import {registerAppSubmissionRoutes} from './app-platform/submissions/routes.js';
 import {registerRegistrationRoutes} from './platform/employee-identity/registration.js';
@@ -33,6 +35,7 @@ export async function buildApp(){
  const sites=resolvePlatformSites(origin,process.env.ADMIN_PUBLIC_BASE_URL),adminOrigin=sites.admin;
  app.get('/api/platform/sites',async(_req,reply)=>{reply.header('Cache-Control','no-store');return sites;});
  registerAdminIdentityRoutes(app,{origin:adminOrigin,service:identity});
+ let indexPaused=false,indexJobAbort=new AbortController(),indexWork:Promise<void>|undefined;
  const file=process.env.MOP_APP_MANAGEMENT_CONFIG;
  const management=file?await createAppManagement(file,origin):undefined;
  if(management)app.addHook('onClose',async()=>management.close());
@@ -40,16 +43,38 @@ export async function buildApp(){
   if(management?.maintenanceActive()&&!['/api/health/live','/api/health/ready','/api/admin/updates/status'].includes(request.url.split('?')[0]))return reply.code(503).send({error:'PLATFORM_MAINTENANCE',message:'平台正在更新维护，请稍后重试。'});
  });
  if(process.env.MOP_MAINTENANCE_SOCKET&&management){
-  const control=await startMaintenanceControl({socketPath:process.env.MOP_MAINTENANCE_SOCKET,pool,status:management.maintenanceStatus,prepare:management.prepareMaintenance,restore:management.restoreMaintenance});
+  const control=await startMaintenanceControl({socketPath:process.env.MOP_MAINTENANCE_SOCKET,pool,status:management.maintenanceStatus,prepare:async(context,taskId)=>{
+   indexPaused=true;indexJobAbort.abort();await indexWork;
+   try{return await management.prepareMaintenance(context,taskId);}
+   finally{indexPaused=management.maintenanceActive();}
+  },restore:async(context,taskId)=>{
+   try{return await management.restoreMaintenance(context,taskId);}
+   finally{indexPaused=management.maintenanceActive();}
+  }});
   app.addHook('onClose',async()=>control.close());
  }
  const resolveContext=(request:import('fastify').FastifyRequest)=>createAdministratorContext(request,identity);
  registerPlatformUpdateRoutes(app,{origin:adminOrigin,pool,resolveAdmin:resolveContext,socketPath:process.env.MOP_UPDATER_SOCKET});
  const employeeIdentity=new EmployeeIdentityService(pool);
+ const chat=new ChatService({pool,
+  capabilities:personId=>management?management.employeeAgentCapabilities(async()=>({source:'session',userId:personId})):Promise.resolve([]),
+  invoke:(personId,capability,input,signal)=>management!.invokeEmployeeAgent(capability,async()=>({source:'session',userId:personId}),input,signal),
+  report:error=>app.log.error(error,'Conversation failed')});
+ await chat.initialize();
+ const indexer=new KnowledgeIndexer(pool),indexAbort=new AbortController();
+ let indexTimer:ReturnType<typeof setTimeout>|undefined;
+ const indexTick=async()=>{
+  try{if(!indexPaused&&!management?.maintenanceActive()){indexJobAbort=new AbortController();await indexer.runOnce(AbortSignal.any([indexAbort.signal,indexJobAbort.signal]));}}
+  catch{app.log.error('Knowledge indexing database operation failed');}
+  finally{if(!indexAbort.signal.aborted)indexTimer=setTimeout(()=>{indexWork=indexTick();},2000);}
+ };
+ app.addHook('onReady',async()=>{indexWork=indexTick();});
+ app.addHook('onClose',async()=>{indexAbort.abort();clearTimeout(indexTimer);await indexWork;});
+ app.addHook('onClose',async()=>chat.close());
  registerAppSubmissionRoutes(app,{pool,origin,adminOrigin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
  await registerRegistrationRoutes(app,{origin,adminOrigin,pool,resolveAdmin:resolveContext});
  registerUnifiedLogin(app,{origin,adminOrigin,pool,admin:identity,employee:employeeIdentity});
- registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management});
+ registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management,chat});
  await registerAdminConsoleRoutes(app,{origin:adminOrigin,identity,pool,management,
   lifecycle:management?{getHost:management.getHost}:undefined});
  return app;

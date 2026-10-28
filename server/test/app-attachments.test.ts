@@ -26,7 +26,7 @@ function context(appId='sample',granted=true):PlatformActorContext {
 }
 const selected=(name:string,bytes:Uint8Array)=>Object.assign(new Blob([bytes]),{name});
 
-test('50 MiB file contract accepts Word, Excel, PDF and ZIP signatures and rejects spoofing',()=>{
+test('200 MiB file contract accepts Word, Excel, PDF and ZIP signatures and rejects spoofing',()=>{
  assert.equal(SDK_ATTACHMENT_MAX_BYTES,APP_ATTACHMENT_MAX_BYTES);
  const entries:[string,number[],string?][]=[['a.doc',[0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]],['a.xls',[0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]],
   ['a.docx',[0x50,0x4b,0x03,0x04],'word/document.xml'],['a.xlsx',[0x50,0x4b,0x03,0x04],'xl/workbook.xml'],['a.pdf',[0x25,0x50,0x44,0x46,0x2d]],['a.zip',[0x50,0x4b,0x03,0x04]]];

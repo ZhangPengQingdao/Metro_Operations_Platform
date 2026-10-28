@@ -1,4 +1,4 @@
-import type {AppDataCount,AppDataListOptions,AppDataRead} from './app-gateway.js';
+import type {AppDataFilter,AppDataListOptions,AppDataRead} from './app-gateway.js';
 
 export interface AppDashboardSnapshot {
  version:'1.0';
@@ -45,12 +45,16 @@ export async function readAppDashboard(options:{
  const trend=options.trend;
  if(trend&&(!Number.isInteger(trend.days)||trend.days<1||trend.days>31))throw Error('INVALID_DASHBOARD_TREND');
  const from=trend?new Date(Date.parse(today)-(trend.days-1)*86400000).toISOString().slice(0,10):'';
- const base={table:options.table,...options.scope,filters:options.filters};
- const total:AppDataCount={...base,kind:'count'};
- const operations:AppDataRead[]=[total,{...total,filters:[...options.filters,...options.done]},
-  {...base,columns:options.previewColumns,filters:[...options.filters,...(options.previewFilters??[])],pageSize:1,order:{column:'created_at',direction:'desc'}}];
- if(options.excluded)operations.push({...total,filters:[...options.filters,...options.excluded]});
- if(trend&&!options.excluded)operations.push({...base,kind:'daily_count',column:trend.column,from,days:trend.days});
+ // Advanced IPC preserves object aliases; the gateway accepts a JSON tree only.
+ // Give every query independent filter/scope objects, including nested contains values.
+ const copyFilters=(filters:readonly AppDataFilter[])=>filters.map(filter=>'contains' in filter
+  ?{column:filter.column,contains:filter.contains.map(value=>({...value}))}:{...filter});
+ const base=(extra:readonly AppDataFilter[]=[])=>({table:options.table,
+  ...(options.scope.anyOf?{anyOf:options.scope.anyOf.map(copyFilters)}:{}),filters:copyFilters([...options.filters,...extra])});
+ const operations:AppDataRead[]=[{...base(),kind:'count'},{...base(options.done),kind:'count'},
+  {...base(options.previewFilters),columns:[...options.previewColumns],pageSize:1,order:{column:'created_at',direction:'desc'}}];
+ if(options.excluded)operations.push({...base(options.excluded),kind:'count'});
+ if(trend&&!options.excluded)operations.push({...base(),kind:'daily_count',column:trend.column,from,days:trend.days});
  const result=await options.readBatch(operations,signal) as {results:({count:number}|{rows:Record<string,unknown>[]} | {days:{day:string;count:number}[]})[]};
  const counts=result.results.slice(0,2).map(r=>(r as {count:number}).count);
  const all=counts[0]!,done=counts[1]!,excluded=options.excluded?(result.results[3] as {count:number}).count:0;
@@ -63,7 +67,7 @@ export async function readAppDashboard(options:{
   })};
  if(trend){
   // Excluded-state apps already use all four batch slots; read the small series sequentially.
-  const trendResult=options.excluded?await options.readBatch([{...base,kind:'daily_count',column:trend.column,from,days:trend.days}],signal) as {results:{days:{day:string;count:number}[]}[]}:undefined;
+  const trendResult=options.excluded?await options.readBatch([{...base(),kind:'daily_count',column:trend.column,from,days:trend.days}],signal) as {results:{days:{day:string;count:number}[]}[]}:undefined;
   const rows=trendResult?trendResult.results[0]!.days:(result.results[3] as {days:{day:string;count:number}[]}).days;
   const points=Array.from({length:trend.days},(_,index)=>({date:new Date(Date.parse(from)+index*86400000).toISOString().slice(0,10),value:0}));
   const byDay=new Map(points.map(point=>[point.date,point]));

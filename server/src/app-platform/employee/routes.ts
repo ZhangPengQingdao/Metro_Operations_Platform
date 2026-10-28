@@ -1,6 +1,7 @@
 import type {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
+import {ChatError,ChatService,chatMessageInput} from '../../platform/chat/index.js';
 import {EmployeeIdentityService,EmployeeIdentityError,EMPLOYEE_SESSION_COOKIE} from '../../platform/employee-identity/index.js';
 import type {PlatformAdministratorContext} from '../../platform/context/index.js';
 import type {AppManagement} from '../management/service.js';
@@ -14,9 +15,11 @@ import {createLocalStorageAdapter,type StorageAdapter} from '../../core/storage/
 import {createPostgresAttachmentRepository,AttachmentError,type AttachmentRepository} from '../../platform/attachments/index.js';
 import {createPostgresPeopleDirectoryRepository} from '../../platform/people/index.js';
 import {getDatabasePool,type QueryableClient} from '../../core/database/index.js';
+import {Readable} from 'node:stream';
+import {zipStream,zipSize,type ZipEntry} from './zip-stream.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;chat?:ChatService;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -37,6 +40,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error&&typeof error==='object'&&'statusCode' in error&&error.statusCode===413)return reply.code(413).send({error:'FILE_TOO_LARGE'});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
+   if(error instanceof ChatError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof GatewayError)return reply.code(error.statusCode).send({version:'1.0',error:{code:error.code,writeOutcome:error.writeOutcome}});
    if(error instanceof AppV2CallError)return reply.code(error.statusCode).send({error:{code:error.code,writeOutcome:error.writeOutcome}});
    if(error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
@@ -71,6 +75,14 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.post<{Params:{id:string}}>('/notifications/:id/read',{bodyLimit:1024},async req=>options.service.markNotificationRead(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.params.id));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
   async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
+  if(options.chat){
+   const chat=options.chat;
+   scoped.get('/chat/capabilities',async req=>({capabilities:await chat.capabilities(await ownerId(req))}));
+   scoped.get('/chats',async req=>({sessions:await chat.list(await ownerId(req))}));
+   scoped.get<{Params:{id:string}}>('/chats/:id',async req=>chat.read(await ownerId(req),z.string().uuid().parse(req.params.id)));
+   scoped.post('/chats/messages',{bodyLimit:8192},async(req,reply)=>{const input=chatMessageInput.parse(req.body);return reply.code(202).send(await chat.send(await ownerId(req),input));});
+   scoped.post<{Params:{id:string;requestId:string}}>('/chats/:id/runs/:requestId/cancel',{bodyLimit:1024},async req=>{const p=z.object({id:z.string().uuid(),requestId:z.string().uuid()}).parse(req.params);return chat.cancel(await ownerId(req),p.id,p.requestId);});
+  }
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-authorization',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.snapshot(req.params.appId,await ownerId(req));});
   scoped.get<{Params:{appId:string}}>('/apps/:appId/business-directory',async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');return options.business.directory(req.params.appId,await ownerId(req),req.query);});
   scoped.post<{Params:{appId:string}}>('/apps/:appId/business-authorization',{bodyLimit:65536},async req=>{if(!options.business)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');const result=await options.business.change(req.params.appId,await ownerId(req),req.body);options.management?.invalidateEmployeeSessions();return result;});
@@ -112,13 +124,14 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    const input=z.object({apiId:z.string().min(1).max(100),method:z.enum(['GET','POST','PUT','PATCH','DELETE']),path:z.string().min(1).max(512),payload:z.unknown().refine(value=>value!==undefined)}).strict().parse(req.body);
    return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>resolveRequestIdentity(req),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
   });
-  scoped.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:APP_ATTACHMENT_MAX_BYTES},(_req,body,done)=>done(null,body));
+  scoped.addContentTypeParser('application/octet-stream',(_req,body,done)=>done(null,body));
   let activeUploads=0;
   const uploads=new WeakSet<FastifyRequest>();
   const admitUpload=async(req:FastifyRequest)=>{
    if(req.headers.origin!==options.origin)throw new EmployeeIdentityError(403,'EMPLOYEE_ORIGIN_DENIED');
    const account=await options.service.authenticate(req.cookies[EMPLOYEE_SESSION_COOKIE],true);
    if(!account||account.passwordChangeRequired)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+   if(Number(req.headers['content-length']??0)>APP_ATTACHMENT_MAX_BYTES)throw new AppAttachmentError('FILE_TOO_LARGE');
    if(activeUploads>=2)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
    activeUploads++;uploads.add(req);
   };
@@ -129,14 +142,14 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const input=z.object({entityType:z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),entityId:z.string().uuid(),intentId:z.string().uuid(),fileName:z.string().min(1).max(180)}).strict().parse(req.query);
    const admission=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
-   const bytes=req.body;if(!Buffer.isBuffer(bytes))throw new AppAttachmentError('INVALID_FILE');
+   const stream=req.body;if(!(stream instanceof Readable))throw new AppAttachmentError('INVALID_FILE');
    const authorize=()=>options.management!.authorizeEmployeeAttachment(req.params.appId,()=>resolveRequestIdentity(req),admission,{action:'upload',entityType:input.entityType,entityId:input.entityId,requestId:input.intentId});
    const first=await authorize(),client=await attachmentBackend.connect();
    try{
     let firstUsed=false;
     const transfer=createAppAttachmentTransfer({storage:attachmentBackend.storage,repository:attachmentBackend.repository(client),directory:attachmentBackend.directory(client),
      authorize:async()=>{const result=firstUsed?await authorize():first;firstUsed=true;return {organizationId:result.organizationId};}});
-    return await transfer.upload(first.context,{appId:req.params.appId,entityType:input.entityType,entityId:input.entityId,intentId:input.intentId,fileName:input.fileName,bytes});
+    return await transfer.upload(first.context,{appId:req.params.appId,entityType:input.entityType,entityId:input.entityId,intentId:input.intentId,fileName:input.fileName,stream});
    }finally{client.release();}
   });
   scoped.get<{Params:{appId:string}}>('/apps/:appId/attachments',async req=>{
@@ -171,6 +184,43 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
      .header('X-Mop-Attachment-Name',encodeURIComponent(file.fileName));
     return reply.send(file.stream);
    }finally{client.release();}
+  });
+  let activeArchives=0;
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/attachments-archive',{bodyLimit:32768},async(req,reply)=>{
+   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
+   if(activeArchives>=2)throw new EmployeeIdentityError(429,'EMPLOYEE_RATE_LIMIT');
+   const safe=z.string().min(1).max(180).regex(/^[^\\/\u0000-\u001f\u007f<>:"|?*]+\.zip$/);
+   const input=z.object({fileName:safe,batch:z.boolean(),records:z.array(z.object({entityType:z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),entityId:z.string().uuid(),fileName:safe}).strict()).min(1).max(100)}).strict().parse(req.body);
+   if(!input.batch&&input.records.length!==1||new Set(input.records.map(row=>row.entityId)).size!==input.records.length||new Set(input.records.map(row=>row.fileName)).size!==input.records.length)throw new AppAttachmentError('INVALID_FILE');
+   const admission=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
+   activeArchives++;let released=false;const release=()=>{if(!released){released=true;activeArchives--;}};
+   const controller=new AbortController();req.raw.once('aborted',()=>controller.abort());reply.raw.once('close',()=>{controller.abort();release();});
+   try{
+    const groups:ZipEntry[]=[],single:ZipEntry[]=[];let totalBytes=0,fileCount=0;
+    for(const target of input.records){
+     const authorize=()=>options.management!.authorizeEmployeeAttachment(req.params.appId,()=>resolveRequestIdentity(req),admission,{action:'export',entityType:target.entityType,entityId:target.entityId,requestId:target.entityId});
+     const first=await authorize(),client=await attachmentBackend.connect();
+     try{
+      const repository=attachmentBackend.repository(client),files=await repository.listAttachments({sourceAppId:req.params.appId,sourceEntityType:target.entityType,sourceEntityId:target.entityId,lifecycle:'active',limit:500});
+      if(!files.length)throw new AppAttachmentError('ATTACHMENT_UNAVAILABLE');const entries:ZipEntry[]=[],used=new Set<string>();
+      for(const row of files){
+       if(row.ownerOrganizationUnitId!==first.organizationId||row.storageKind!=='app-attachments')throw new AppAttachmentError('ACCESS_DENIED');
+       totalBytes+=row.sizeBytes;if(++fileCount>1000||totalBytes>2*1024*1024*1024)throw new AppAttachmentError('ATTACHMENT_LIMIT');
+       if(!await attachmentBackend.storage.exists(row.storageKind,row.storageFileName))throw new AppAttachmentError('ATTACHMENT_UNAVAILABLE');
+       let fileName=row.originalFileName;if(used.has(fileName))fileName=`${row.id}-${fileName}`;used.add(fileName);
+       entries.push({name:fileName,size:row.sizeBytes,async open(){
+        const connection=await attachmentBackend.connect();try{const live=await authorize();const transfer=createAppAttachmentTransfer({storage:attachmentBackend.storage,repository:attachmentBackend.repository(connection),directory:attachmentBackend.directory(connection),authorize:async()=>({organizationId:(await authorize()).organizationId})});return (await transfer.read(live.context,req.params.appId,row.id)).stream;}finally{connection.release();}
+       }});
+      }
+      if(!(await first.context.authorize('platform.attachments.read',{organizationUnitId:first.organizationId})).allowed)throw new AppAttachmentError('ACCESS_DENIED');
+      if(input.batch)groups.push({name:target.fileName,size:zipSize(entries),open:async()=>zipStream(entries,controller.signal)});else single.push(...entries);
+     }finally{client.release();}
+    }
+    const entries=input.batch?groups:single,size=zipSize(entries);if(size>2*1024*1024*1024)throw new AppAttachmentError('ATTACHMENT_LIMIT');
+    const stream=zipStream(entries,controller.signal);stream.once('close',release);stream.once('error',release);
+    reply.header('Content-Type','application/zip').header('Content-Length',size).header('X-Content-Type-Options','nosniff').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(input.fileName)}`).header('X-Mop-Attachment-Name',encodeURIComponent(input.fileName));
+    return reply.send(stream);
+   }catch(error){release();throw error;}
   });
  },{prefix:'/api/employee'});
  app.register(async scoped=>{

@@ -2,6 +2,9 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {Readable,Transform} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
+import {createWriteStream} from 'node:fs';
 import { getCoreConfig } from '../config/index.js';
 
 export type StorageNamespace = string;
@@ -43,6 +46,8 @@ export interface StorageAdapter {
     bytes: Buffer,
     options?: { exclusive?: boolean; contentType?: string; now?: Date }
   ): Promise<StorageObjectMetadata>;
+  /** Bounded original-file ingestion. Adapters without streaming support must reject large streams. */
+  writeObjectStream?(kind:StorageNamespace,fileName:string,stream:Readable,options:{maxBytes:number;contentType?:string}):Promise<StorageObjectMetadata>;
   createObjectReadStream(kind: StorageNamespace, fileName: string): NodeJS.ReadableStream;
   exists(kind: StorageNamespace, fileName: string): Promise<boolean>;
   deleteObject(kind: StorageNamespace, fileName: string): Promise<void>;
@@ -251,6 +256,15 @@ export function createLocalStorageAdapter(options: { rootDir?: string } = {}): S
         contentType: options.contentType
       };
     },
+    async writeObjectStream(kind,fileName,stream,options){
+      const target=filePath(kind,fileName);await fs.mkdir(folderPath(kind),{recursive:true});
+      let sizeBytes=0;const hash=createHash('sha256');
+      const meter=new Transform({transform(chunk:Buffer,_encoding,callback){sizeBytes+=chunk.length;if(sizeBytes>options.maxBytes){callback(Object.assign(Error('FILE_TOO_LARGE'),{code:'FILE_TOO_LARGE'}));return;}hash.update(chunk);callback(null,chunk);}});
+      const output=createWriteStream(target,{flags:'wx'});let created=false;output.once('open',()=>{created=true;});
+      try{await pipeline(stream,meter,output);}
+      catch(error){if(created)await fs.rm(target,{force:true});throw error;}
+      return {kind,fileName,sizeBytes,sha256:hash.digest('hex'),createdAt:new Date().toISOString(),contentType:options.contentType};
+    },
     createObjectReadStream(kind, fileName) {
       return createReadStream(filePath(kind, fileName));
     },
@@ -349,7 +363,8 @@ export function createMemoryStorageAdapter(
       };
     },
     createObjectReadStream(kind, fileName) {
-      return createReadStream(this.filePath(kind, fileName));
+      const bytes=objects.get(key(kind,fileName));
+      return bytes?Readable.from([bytes]):Readable.from((async function*(){throw Error('STORAGE_OBJECT_MISSING');})());
     },
     async exists(kind, fileName) {
       assertSafeStorageNamespace(kind);

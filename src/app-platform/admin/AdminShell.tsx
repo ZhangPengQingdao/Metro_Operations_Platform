@@ -2,7 +2,7 @@ import {ApplicationIcon} from '../host/ApplicationIcon';
 import {readThemePreference,saveThemePreference} from '../identity/theme';
 import {SettingsSections} from './SettingsSections';
 import React, {useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode} from 'react';
-import {NavLink, useLocation} from 'react-router-dom';
+import {NavLink, useLocation, useNavigate} from 'react-router-dom';
 import {PlatformIcon,IconButton,Select,Dialog,Button,type PlatformIconName} from '../../components/ui';
 
 export interface AdminUser {id: string; username: string; displayName: string; passwordChangeRequired?: boolean}
@@ -37,11 +37,11 @@ export function AdminDialog({title, children, onClose, className}: {title: strin
 }
 
 export function AdminShell({mode='admin',user, applications, children, onLogout, profileContent, settingsContent, notificationsContent, notificationCount=0, headerActions}: AdminShellProps) {
-  const {pathname} = useLocation();
+  const {pathname} = useLocation(),navigate=useNavigate();
   const base=mode==='admin'?'/admin':'/employee';
   const dashboardCanvas=mode==='employee'&&(pathname==='/employee'||pathname==='/employee/');
   const applicationCanvas=pathname.startsWith(`${base}/app/`);
-  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
+  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/chat',label:'新建对话',icon:'plus' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -94,7 +94,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
           {!rail && <IconButton size="sm" type="button" label={secondary ? "返回一级菜单" : "收起侧边栏"} onClick={() => {if(secondary)setNavigationMode('primary');else setCollapsed(true);}}><PlatformIcon name={secondary ? "arrowLeft" : "panelLeft"} size={18}/></IconButton>}
         </div>
         {secondary && app ? <nav key="secondary" className="afc-sidebar-nav afc-sidebar-nav--secondary" aria-label={`${app.name}导航`}>{appMenu.map(item => <NavLink key={item.id} to={item.path} end className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>)}</nav> : <nav key="primary" className="afc-sidebar-nav afc-sidebar-nav--primary" aria-label={mode==='admin'?'管理功能':'工作导航'}>
-          {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
+          {primary.map(({path, label, icon}) => <NavLink key={path} to={path} end={path === base} onClick={event => {if(path==='/employee/chat'&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();setMobileOpen(false);navigate(path,{state:{newChat:Date.now()}});return;}if(path === base ? pathname === path : pathname === path || pathname.startsWith(`${path}/`)) toggleNavigation(event);}} aria-label={label} title={rail ? label : undefined} className={({isActive}) => `afc-nav-link${isActive ? ' is-active' : ''}`}><PlatformIcon name={icon} size={20}/>{!rail && <span>{label}</span>}</NavLink>)}
           {applications.length > 0 && <div className="afc-app-links">{!rail && <p>应用</p>}{applications.map(item => <NavLink key={item.id} to={applicationNavigation(`${base}/app/${encodeURIComponent(item.id)}`, [item],base)?.navigation[0]?.path || `${base}/app/${encodeURIComponent(item.id)}`} aria-label={item.name} onClick={event => {if(app?.id===item.id)toggleNavigation(event);}} title={rail ? item.name : undefined} className={`afc-nav-link${app?.id===item.id ? ' is-active' : ''}`}><ApplicationIcon appId={item.id} iconUrl={item.iconUrl} color={item.color}/>{!rail && <span>{item.name}</span>}</NavLink>)}</div>}
         </nav>}
         <div className="afc-sidebar-bottom">

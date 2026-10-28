@@ -14,6 +14,7 @@ import {createPeopleDirectoryOperation} from '../src/app-platform/gateway/people
 import {createOrganizationContextOperation} from '../src/app-platform/gateway/organization-context.ts';
 import {createAiCompletionOperation} from '../src/app-platform/gateway/ai.ts';
 import {createWebhookOperation} from '../src/app-platform/gateway/webhook.ts';
+import {createToolOperations} from '../src/app-platform/gateway/tools.ts';
 import {createSignatureGatewayOperations} from '../src/app-platform/gateway/signatures.ts';
 const documentation:AppApiDocumentation={description:'Record lookup',input:{type:'object',properties:{id:{type:'string'}},required:['id'],additionalProperties:false},output:{type:'object',properties:{title:{type:'string'}},required:['title'],additionalProperties:false},examples:[{title:'Read',params:{id:'id'},result:{title:'Title'}}],errors:[]};
 test('API contract metadata validates examples and rejects unsafe or excessive schema',()=>{
@@ -32,7 +33,7 @@ test('directory typed client delegates without identity overrides or automatic r
 });
 test('public reference operation names, permissions and modes agree with registered adapters',()=>{
  const deps={locations:{},assets:{},listLocations:async()=>[],listAssets:async()=>[],listResponsibleStations:async()=>({})} as any;
- const ops=[...createDirectoryGatewayOperations(deps),createPeopleDirectoryOperation({} as any),createOrganizationContextOperation({} as any),createAiCompletionOperation(),createWebhookOperation(),...createSignatureGatewayOperations({} as any),...createNotificationGatewayOperations({} as any)];
+ const ops=[...createToolOperations({} as any),...createDirectoryGatewayOperations(deps),createPeopleDirectoryOperation({} as any),createOrganizationContextOperation({} as any),createAiCompletionOperation(),createWebhookOperation(),...createSignatureGatewayOperations({} as any),...createNotificationGatewayOperations({} as any)];
  for(const operation of ops){const reference=PLATFORM_APP_OPERATIONS.find(item=>item.id===operation.name);assert.ok(reference,operation.name);assert.equal(reference.permission,operation.permissionCode);assert.equal(reference.mode,operation.mode);}
 });
 test('general and legacy notifications use different operations and never retry',async()=>{

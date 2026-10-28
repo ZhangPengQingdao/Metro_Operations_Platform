@@ -1,5 +1,9 @@
+import {AppToolService,type ToolBinding} from '../tools/index.js';
+import {createToolOperations} from '../gateway/tools.js';
 import {readEmployeeDashboard} from '../employee/dashboard.js';
-import {randomUUID} from 'node:crypto';
+import type {ChatCapability} from '../../platform/chat/index.js';
+import type {AppAgentInput} from '@metro/platform-sdk/app-agent';
+import {randomUUID,createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {PlatformMaintenance} from '../updates/maintenance.js';
 import {getDatabasePool} from '../../core/database/index.js';
@@ -49,7 +53,25 @@ export async function createAppManagement(configFile:string,origin:string){
  const lookups=new PostgresAppRegistryRepository(pool);
  const findInstallation=(appId:string)=>lookups.findByAppId(appId);
  const data=new AppDataServiceV2({pool,findInstallation});
- const gateway=createManagementGateway(pool,data.operations());
+ const tools=new AppToolService({
+  async catalog({appId,personId}){
+   const admission=await admitEmployee(appId,async()=>({source:'session',userId:personId}));
+   const installation=admission.installation,manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
+   const requestId=randomUUID();
+   const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId},requestId,traceId:requestId});
+   const result:ToolBinding[]=[];
+   for(const tool of manifest?.tools??[])if(await apiAuthorization.authorize(actor,`app.${appId}.${tool.permission}`))result.push({...tool,installationId:installation.id,revision:installation.revision});
+   return result;
+  },
+  async invoke({appId,personId},tool,args,signal){
+   assertOpen();
+   const resolveIdentity=async()=>({source:'session' as const,userId:personId}),admission=await admitEmployee(appId,resolveIdentity);
+   if(admission.installation.id!==tool.installationId||admission.installation.revision!==tool.revision)throw new GatewayError('ACCESS_DENIED',403);
+   const api=admission.installation.manifest.api.find(api=>api.id===tool.apiId)!;
+   return apps.host(appId).invokeEmployeeApi(employeeApi(appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:args},signal);
+  }
+ });
+ const gateway=createManagementGateway(pool,[...data.operations(),...createToolOperations(tools)]);
  const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
  const apps=createAppRuntimeV2({root:join(config.artifactRoot,'v2'),registry,pool,gateway,api:apiAuthorization,findInstallation,
   listInstallations:()=>lookups.list(1000),platformVersion:()=>getCoreConfig().runtime.releaseVersion.value,maintenanceBlocked:()=>maintenanceBlocked});
@@ -125,15 +147,49 @@ export async function createAppManagement(configFile:string,origin:string){
    return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
     invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{}})});
   },
+  async employeeAgentCapabilities(resolveIdentity:ResolveIdentity){
+   assertOpen();
+   const identity=await resolveIdentity(),capabilities:ChatCapability[]=[];
+   if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
+   const candidates=await employeeAccess.candidates(identity.userId);
+   for(const {appId} of candidates){
+    let admission;
+    try{admission=await admitEmployee(appId,async()=>identity);}
+    catch(error){if(error instanceof GatewayError||error instanceof AppManagementError||error instanceof EmployeeIdentityError&&[403,404].includes(error.statusCode))continue;throw error;}
+    const installation=admission.installation,manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
+    if(!manifest?.agents?.length)continue;
+    const requestId=randomUUID();
+    const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId},requestId,traceId:requestId});
+    const accessKey=createHash('sha256').update(JSON.stringify({revision:installation.revision,business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
+    for(const agent of manifest.agents){
+     const page=manifest.pages.find(page=>page.path===agent.page)!;
+     if(!await apiAuthorization.authorize(actor,`app.${appId}.${agent.permission}`))continue;
+     if(page.permission&&page.permission!==agent.permission&&!await apiAuthorization.authorize(actor,`app.${appId}.${page.permission}`))continue;
+     capabilities.push({...agent,accessKey,key:`${installation.id}:${agent.id}`,appId,appName:manifest.name,revision:installation.revision});
+    }
+   }
+   return capabilities;
+  },
+  async invokeEmployeeAgent(capability:ChatCapability,resolveIdentity:ResolveIdentity,input:AppAgentInput,signal:AbortSignal){
+   assertOpen();
+   const admission=await admitEmployee(capability.appId,resolveIdentity),installation=admission.installation;
+   const manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
+   const agent=manifest?.agents?.find(agent=>`${installation.id}:${agent.id}`===capability.key);
+   if(!agent||installation.revision!==capability.revision)throw new GatewayError('ACCESS_DENIED',403);
+   const api=installation.manifest.api.find(api=>api.id===agent.apiId)!;
+   const result=await apps.host(capability.appId).invokeEmployeeApi(employeeApi(capability.appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:input},signal);
+   if(!result||typeof result!=='object'||Array.isArray(result)||!('ok' in result)||result.ok!==true)throw new GatewayError('INVALID_RESULT',502);
+   return (result as {result:unknown}).result;
+  },
   async invokeEmployeeApi(appId:string,resolveIdentity:ResolveIdentity,request:{apiId:string;method:string;path:string;payload:unknown},admissionKey:string){
    assertOpen();const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),request);
   },
   async authorizeEmployeeAttachment(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string,
-   request:{action:'upload'|'read';entityType:string;entityId:string;attachmentId?:string;requestId:string}){
+   request:{action:'upload'|'read'|'export';entityType:string;entityId:string;attachmentId?:string;requestId:string}){
    assertOpen();
    const first=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(first,admissionKey);
-   const route=first.installation.manifest.api.find(api=>api.id==='authorize-attachment'&&api.method==='POST'&&api.businessPermission);
+   const route=first.installation.manifest.api.find(api=>api.id==='authorize-attachment'&&api.method==='POST'&&(api.businessPermission||api.businessEntry));
    if(!route)throw new GatewayError('ACCESS_DENIED',403);
    const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    const result=await host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),{apiId:route.id,method:'POST',path:route.path,payload:request});

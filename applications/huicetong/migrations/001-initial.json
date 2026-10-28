@@ -3,7 +3,7 @@
   "operations": [
     {
       "kind": "createTable",
-      "table": "plan_cycles",
+      "table": "work_records",
       "columns": [
         {
           "name": "id",
@@ -13,209 +13,6 @@
         {
           "name": "organization_id",
           "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "year",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "month",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "fill_deadline",
-          "type": "date",
-          "nullable": true
-        },
-        {
-          "name": "created_by",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "updated_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "revision",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "intent_id",
-          "type": "uuid",
-          "nullable": false
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "category_nodes",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "parent_id",
-          "type": "uuid",
-          "nullable": true
-        },
-        {
-          "name": "level",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "name",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "sort",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "enabled",
-          "type": "boolean",
-          "nullable": false
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "updated_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "revision",
-          "type": "integer",
-          "nullable": false
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "plan_items",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "cycle_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "category_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "root_name",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "parent_name",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "category_name",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "content",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "quality_standard",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "start_date",
-          "type": "date",
-          "nullable": false
-        },
-        {
-          "name": "end_date",
-          "type": "date",
-          "nullable": false
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "source",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "supervision_entry_id",
-          "type": "uuid",
-          "nullable": true
-        },
-        {
-          "name": "escalated",
-          "type": "boolean",
-          "nullable": false
-        },
-        {
-          "name": "remark",
-          "type": "text",
-          "nullable": true
-        },
-        {
-          "name": "lead_person_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "assignees",
-          "type": "jsonb",
           "nullable": false
         },
         {
@@ -239,253 +36,13 @@
           "nullable": false
         },
         {
-          "name": "intent_id",
-          "type": "uuid",
-          "nullable": false
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "plan_item_assignees",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "item_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "person_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "person_organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "person_name",
+          "name": "kind",
           "type": "text",
           "nullable": false
         },
         {
-          "name": "is_lead",
-          "type": "boolean",
-          "nullable": false
-        },
-        {
-          "name": "sort",
-          "type": "integer",
-          "nullable": false
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "review_records",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "cycle_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "item_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "reviewer_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "action",
+          "name": "number",
           "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "comment",
-          "type": "text",
-          "nullable": true
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "completion_records",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "item_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "summary",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "submitted_by",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "submitted_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "confirmed_by",
-          "type": "uuid",
-          "nullable": true
-        },
-        {
-          "name": "confirmed_at",
-          "type": "timestamptz",
-          "nullable": true
-        },
-        {
-          "name": "reject_comment",
-          "type": "text",
-          "nullable": true
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "change_records",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "nullable": false
-        },
-        {
-          "name": "cycle_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "item_id",
-          "type": "uuid",
-          "nullable": true
-        },
-        {
-          "name": "type",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "payload",
-          "type": "jsonb",
-          "nullable": false
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "requested_by",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "reviewed_by",
-          "type": "uuid",
-          "nullable": true
-        },
-        {
-          "name": "countersigned_by",
-          "type": "uuid",
-          "nullable": true
-        }
-      ],
-      "primaryKey": [
-        "id"
-      ]
-    },
-    {
-      "kind": "createTable",
-      "table": "recurring_templates",
-      "columns": [
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "organization_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "category_id",
-          "type": "uuid",
           "nullable": false
         },
         {
@@ -499,19 +56,64 @@
           "nullable": false
         },
         {
-          "name": "assignees",
-          "type": "jsonb",
-          "nullable": false
-        },
-        {
-          "name": "lead_person_id",
+          "name": "responsible_id",
           "type": "uuid",
           "nullable": false
         },
         {
-          "name": "escalated",
-          "type": "boolean",
+          "name": "responsible_organization_id",
+          "type": "uuid",
           "nullable": false
+        },
+        {
+          "name": "responsible_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "month",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "year",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "start_month",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "end_month",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "original_text",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "annual_id",
+          "type": "uuid",
+          "nullable": true
         },
         {
           "name": "remark",
@@ -519,18 +121,28 @@
           "nullable": true
         },
         {
-          "name": "enabled",
+          "name": "latest_progress",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "review_comment",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "deleted",
           "type": "boolean",
           "nullable": false
         },
         {
-          "name": "sort",
-          "type": "integer",
-          "nullable": false
-        },
-        {
-          "name": "revision",
-          "type": "integer",
+          "name": "intent_id",
+          "type": "uuid",
           "nullable": false
         }
       ],
@@ -540,7 +152,7 @@
     },
     {
       "kind": "createTable",
-      "table": "supervision_entries",
+      "table": "work_events",
       "columns": [
         {
           "name": "id",
@@ -549,6 +161,16 @@
         },
         {
           "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "record_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
           "type": "uuid",
           "nullable": false
         },
@@ -558,34 +180,19 @@
           "nullable": false
         },
         {
-          "name": "cycle_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "meeting_date",
-          "type": "date",
-          "nullable": false
-        },
-        {
-          "name": "meeting_title",
+          "name": "action",
           "type": "text",
           "nullable": false
         },
         {
-          "name": "raw_text",
+          "name": "summary",
           "type": "text",
           "nullable": false
         },
         {
-          "name": "item_id",
-          "type": "uuid",
+          "name": "details",
+          "type": "jsonb",
           "nullable": true
-        },
-        {
-          "name": "registered_by",
-          "type": "uuid",
-          "nullable": false
         }
       ],
       "primaryKey": [
@@ -594,7 +201,7 @@
     },
     {
       "kind": "createTable",
-      "table": "language_patterns",
+      "table": "deadline_requests",
       "columns": [
         {
           "name": "id",
@@ -604,31 +211,6 @@
         {
           "name": "organization_id",
           "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "category_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "content_pattern",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "quality_pattern",
-          "type": "text",
-          "nullable": false
-        },
-        {
-          "name": "example",
-          "type": "text",
-          "nullable": true
-        },
-        {
-          "name": "enabled",
-          "type": "boolean",
           "nullable": false
         },
         {
@@ -645,6 +227,51 @@
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "record_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "old_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "new_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "review_comment",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "record_version",
+          "type": "integer",
+          "nullable": false
         }
       ],
       "primaryKey": [
@@ -653,7 +280,7 @@
     },
     {
       "kind": "createTable",
-      "table": "review_bindings",
+      "table": "corpus_terms",
       "columns": [
         {
           "name": "id",
@@ -666,18 +293,33 @@
           "nullable": false
         },
         {
-          "name": "category_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "person_id",
+          "name": "created_by",
           "type": "uuid",
           "nullable": false
         },
         {
           "name": "created_at",
           "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "term",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "deleted",
+          "type": "boolean",
           "nullable": false
         }
       ],
@@ -687,7 +329,7 @@
     },
     {
       "kind": "createTable",
-      "table": "audit_events",
+      "table": "corpus_examples",
       "columns": [
         {
           "name": "id",
@@ -700,44 +342,216 @@
           "nullable": false
         },
         {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false
         },
         {
-          "name": "entity_type",
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "content",
           "type": "text",
           "nullable": false
         },
         {
-          "name": "entity_id",
-          "type": "uuid",
-          "nullable": false
-        },
-        {
-          "name": "action",
+          "name": "quality_standard",
           "type": "text",
           "nullable": false
         },
         {
-          "name": "actor_id",
+          "name": "deleted",
+          "type": "boolean",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "reminder_settings",
+      "columns": [
+        {
+          "name": "id",
           "type": "uuid",
           "nullable": false
         },
         {
-          "name": "request_id",
+          "name": "organization_id",
           "type": "uuid",
           "nullable": false
         },
         {
-          "name": "before",
-          "type": "jsonb",
-          "nullable": true
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
         },
         {
-          "name": "after",
-          "type": "jsonb",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "webhook_url",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "advance_days",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "send_hour",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "overdue_every_days",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "reminder_deliveries",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "record_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "due_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "reminder_day",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "error",
+          "type": "text",
           "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "kind": "createTable",
+      "table": "annual_imports",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "version",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "imported",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "total",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false
         }
       ],
       "primaryKey": [
@@ -746,74 +560,84 @@
     },
     {
       "kind": "createIndex",
-      "table": "plan_cycles",
-      "name": "cycles_org_month_unique",
+      "table": "work_records",
+      "name": "work_records_8_idx",
       "columns": [
         "organization_id",
-        "year",
+        "kind",
         "month"
       ],
-      "unique": true
+      "unique": false
     },
     {
       "kind": "createIndex",
-      "table": "category_nodes",
-      "name": "categories_org_parent_idx",
+      "table": "work_records",
+      "name": "work_records_9_idx",
       "columns": [
-        "organization_id",
-        "parent_id",
-        "sort"
-      ]
-    },
-    {
-      "kind": "createIndex",
-      "table": "plan_items",
-      "name": "items_org_cycle_status_idx",
-      "columns": [
-        "organization_id",
-        "cycle_id",
+        "responsible_id",
+        "kind",
         "status"
-      ]
+      ],
+      "unique": false
     },
     {
       "kind": "createIndex",
-      "table": "plan_items",
-      "name": "items_org_category_idx",
+      "table": "work_records",
+      "name": "work_records_10_idx",
       "columns": [
-        "organization_id",
-        "category_id"
-      ]
-    },
-    {
-      "kind": "createIndex",
-      "table": "plan_item_assignees",
-      "name": "assignees_item_person_unique",
-      "columns": [
-        "item_id",
-        "person_id"
+        "number"
       ],
       "unique": true
     },
     {
       "kind": "createIndex",
-      "table": "review_bindings",
-      "name": "bindings_org_category_person_unique",
+      "table": "work_events",
+      "name": "work_events_11_idx",
       "columns": [
-        "organization_id",
-        "category_id",
-        "person_id"
+        "record_id",
+        "created_at"
       ],
-      "unique": true
+      "unique": false
     },
     {
       "kind": "createIndex",
-      "table": "audit_events",
-      "name": "audit_org_entity_idx",
+      "table": "deadline_requests",
+      "name": "deadline_requests_12_idx",
+      "columns": [
+        "record_id",
+        "status"
+      ],
+      "unique": false
+    },
+    {
+      "kind": "createIndex",
+      "table": "corpus_terms",
+      "name": "corpus_terms_13_idx",
       "columns": [
         "organization_id",
-        "entity_type",
-        "entity_id"
-      ]
+        "deleted"
+      ],
+      "unique": false
+    },
+    {
+      "kind": "createIndex",
+      "table": "corpus_examples",
+      "name": "corpus_examples_14_idx",
+      "columns": [
+        "organization_id",
+        "deleted"
+      ],
+      "unique": false
+    },
+    {
+      "kind": "createIndex",
+      "table": "reminder_deliveries",
+      "name": "reminder_deliveries_15_idx",
+      "columns": [
+        "organization_id",
+        "reminder_day"
+      ],
+      "unique": false
     }
   ]
 }

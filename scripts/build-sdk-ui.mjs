@@ -32,6 +32,10 @@ export declare const DatePicker:ComponentType<{value?:string;onChange?:(value:st
 export declare const TimePicker:ComponentType<{value?:string;onChange?:(value:string)=>void;placeholder?:string;disabled?:boolean;clearable?:boolean;minuteStep?:number;className?:string;size?:'sm'|'md'|'lg'}>;
 export declare const TagDropdownPicker:ComponentType<{items:{id:string;label:string;group?:string;badge?:string|number;disabled?:boolean}[];selectedIds:string[];onChange:(ids:string[])=>void;title?:string;buttonText?:string;buttonVariant?:'primary'|'secondary'|'soft'|'ghost'|'outline';emptyText?:string;disabled?:boolean;multiple?:boolean;align?:'left'|'right';showTagsBelow?:boolean;showTitle?:boolean;inline?:boolean;className?:string}>;
 export declare const Checkbox:ComponentType<Omit<InputHTMLAttributes<HTMLInputElement>,'type'>&{label?:ReactNode;description?:ReactNode;containerClassName?:string}>;
+export declare const Tabs:ComponentType<{value:string;onChange:(value:string)=>void;variant?:'line'|'pill';className?:string;children:ReactNode}>;
+export declare const TabList:ComponentType<{className?:string;children:ReactNode}>;
+export declare const TabTrigger:ComponentType<ButtonHTMLAttributes<HTMLButtonElement>&{value:string;badge?:ReactNode;icon?:ReactNode}>;
+export declare const TabContent:ComponentType<{value:string;className?:string;children:ReactNode}>;
 export declare const Switch:ComponentType<Omit<InputHTMLAttributes<HTMLInputElement>,'size'>&{label?:ReactNode;description?:ReactNode;size?:'sm'|'md'}>;
 export declare const HandwrittenSignaturePad:ComponentType<{signerName?:string;submitting?:boolean;strokeColor?:string;strokeWidth?:number;transparentBackground?:boolean;onCancel?:()=>void;onSubmit?:(blob:Blob,dataUrl:string)=>Promise<void>|void;onChange?:(hasInk:boolean)=>void;embedded?:boolean;showHeading?:boolean;showToolbar?:boolean;height?:string;className?:string}>;
 export declare const QuantityInput:ComponentType<Omit<InputHTMLAttributes<HTMLInputElement>,'value'|'onChange'|'min'|'max'|'type'>&{value:number|string;onValueChange:(value:string)=>void;min?:number;max?:number}>;

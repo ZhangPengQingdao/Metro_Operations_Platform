@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {runtimeCountInput,runtimeCountQuery,runtimeListInput,runtimeListQuery,runtimeListSelection,runtimeDailyCountInput,runtimeDailyCountQuery} from '../src/app-platform/v2/data-query.ts';
 import {isAppDashboardSnapshot,readAppDashboard} from '../../packages/platform-sdk/src/app-dashboard.ts';
+import {jsonSnapshot} from '../src/app-platform/gateway/model.ts';
 import {AppDataServiceV2} from '../src/app-platform/v2/data.ts';
 import {createFaultService} from '../../applications/faults/src/service.mjs';
 import {createMaintenanceService} from '../../applications/maintenance/src/service.mjs';
-import {createHuicetongService} from '../../applications/huicetong/src/service.mjs';
+import {createReformService} from '../../applications/huicetong/src/reform-service.mjs';
+const createHuicetongService=(gateway:any)=>createReformService(gateway).service;
 import {createTodosService} from '../../applications/todos/src/service.mjs';
 
 const id=(n:number)=>`61000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -46,22 +48,37 @@ for(const [appId,create] of [['faults',createFaultService],['maintenance',create
   let calls=0;
   const employee={personId:id(8),organizationUnitId:id(1),businessAuthorization:{revision:'1',organizations:[{id:id(1),name:'工班'}],grants:[{permission:`app.${appId}.read`,all:false,self:true,organizationIds:[id(1)]}]}};
   const gateway={async invoke(operation:string,params:any){calls++;assert.equal(operation,'platform.app_data.read_batch');
-   for(const op of params.operations)assert.deepEqual(op.anyOf,[[{column:'organization_id',value:id(1)}],[{column:'created_by',value:id(8)}]]);
+   // Advanced process IPC preserves object aliases; the real gateway requires a JSON tree.
+   jsonSnapshot({version:'1.0',operation,params},65536);
+   for(const op of params.operations)assert.deepEqual(op.anyOf,[[{column:'organization_id',value:id(1)}],...(appId==='huicetong'?[[{column:'responsible_id',value:id(8)}]]:[]),[{column:'created_by',value:id(8)}]]);
    if(params.operations.length===1){assert.equal(params.operations[0].kind,'daily_count');return {results:[{days:[]}]};}
    assert.ok(params.operations[2].columns.length>0);
    return {results:[{count:12},{count:4},{rows:[]},...(params.operations.length===4?[params.operations[3].kind==='daily_count'?{days:[]}:{count:2}]:[])]};
   }};
   const service=create(gateway),result=await service['dashboard-summary']({},employee);
-  assert.ok(isAppDashboardSnapshot(result));assert.equal(calls,['todos','huicetong'].includes(appId)?2:1);assert.equal(result.metrics[0].value,['todos','huicetong'].includes(appId)?6:8);
+  assert.ok(isAppDashboardSnapshot(result));assert.equal(calls,appId==='todos'?2:1);assert.equal(result.metrics[0].value,appId==='todos'?6:8);
   await assert.rejects(service['dashboard-summary']({personId:id(2)},employee),/INVALID_INPUT/);
   await assert.rejects(service['dashboard-summary']({}, {...employee,businessAuthorization:{...employee.businessAuthorization,grants:[]}}),/ACCESS_DENIED/);
-  assert.equal(calls,['todos','huicetong'].includes(appId)?2:1);
+  assert.equal(calls,appId==='todos'?2:1);
  });
 }
 test('dashboard helper rejects inconsistent statistics and never retries failed reads',async()=>{
  let calls=0;
  const options={readBatch:async()=>{calls++;return {results:[{count:1},{count:2},{rows:[]}]};},table:'records',scope:{},filters:[],done:[],previewColumns:['title'],labels:['待办','完成','总计'] as [string,string,string],unit:'项',preview:()=>({id:'x',title:'x'})};
  await assert.rejects(readAppDashboard(options),/INVALID_DASHBOARD_COUNTS/);assert.equal(calls,1);
+});
+test('dashboard requests expand reused nested filters into independent JSON values',async()=>{
+ const value={personId:id(8)},filter={column:'participants',contains:[value,value]};
+ const scope={anyOf:[[filter],[filter]]},filters=[filter];
+ await readAppDashboard({table:'records',scope,filters,done:filters,previewFilters:filters,previewColumns:['title'],
+  labels:['待办','完成','总计'],unit:'项',preview:()=>({id:'x',title:'x'}),
+  readBatch:async operations=>{
+   assert.equal(JSON.stringify(jsonSnapshot({operations},65536)),JSON.stringify({operations}));
+   for(const operation of operations){assert.deepEqual((operation as any).anyOf,scope.anyOf);}
+   return {results:[{count:1},{count:0},{rows:[]}]};
+  }});
+ assert.equal(filter.contains[0],value);
+ assert.equal(scope.anyOf[0]![0],filter);
 });
 
 test('dashboard preview accepts multiline business text as bounded single-line display text',async()=>{

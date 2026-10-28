@@ -142,6 +142,11 @@ export function createPlatformWebhookClient(gateway:Pick<ReturnType<typeof creat
  return Object.freeze({send(params:{url:string;message:string;messageType?:'text'|'markdown'},signal?:AbortSignal){return gateway.invoke('platform.webhook.send',params,signal);}});
 }
 
+/** App-backend metadata only. Source app is bound by the host, never supplied by the caller. */
+export function createPlatformAttachmentClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
+ return Object.freeze({list(params:{entityType:string;entityId:string;organizationId:string;afterId?:string;availableOnly?:boolean},signal?:AbortSignal){return gateway.invoke('platform.attachments.list',params,signal) as Promise<{attachments:{attachmentId:string;fileName:string;sizeBytes:number;contentType:string}[];nextCursor:string|null}>;}});
+}
+
 /** Bounded text generation through the host-configured model; credentials never enter the app. */
 export function createPlatformAiClient(gateway:Pick<ReturnType<typeof createAppGatewayClient>,'invoke'>){
  return Object.freeze({complete(params:{system:string;prompt:string},signal?:AbortSignal){return gateway.invoke('platform.ai.complete',params,signal) as Promise<{content:string}>;}});

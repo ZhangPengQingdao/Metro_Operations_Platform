@@ -1,10 +1,10 @@
 {
   "id": "todos",
   "name": "待办事项",
-  "version": "1.0.3",
+  "version": "1.2.0",
   "description": "工班待办、车站和人员子项、周期自动任务",
   "color": "#2563EB",
-  "platform": ">=0.30.0",
+  "platform": ">=1.6.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -72,7 +72,8 @@
   ],
   "platformAccess": [
     "people.read",
-    "locations.read"
+    "locations.read",
+    "tools.read"
   ],
   "pages": [
     {
@@ -131,10 +132,59 @@
       "id": "dashboard-summary",
       "permission": "read",
       "dashboard": true
+    },
+    {
+      "id": "agent-todos",
+      "permission": "read"
+    },
+    {
+      "id": "tool-list-todos",
+      "permission": "read"
     }
   ],
   "limits": {
     "memoryMiB": 128,
     "timeoutSeconds": 30
-  }
+  },
+  "agents": [
+    {
+      "id": "list-todos",
+      "name": "查看待办事项",
+      "description": "查看当前员工权限范围内最近的未完成或已完成待办。仅按这两种状态查询，不支持日期、人员筛选、统计或办理。",
+      "examples": [
+        "帮我看看当前有哪些未完成的待办。",
+        "查看最近已完成的待办事项。"
+      ],
+      "apiId": "agent-todos",
+      "permission": "read",
+      "page": "/"
+    }
+  ],
+  "tools": [
+    {
+      "id": "list-todos",
+      "name": "查询待办",
+      "description": "按状态查询当前员工权限范围内最近的20条待办。",
+      "apiId": "tool-list-todos",
+      "permission": "read",
+      "mode": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "maxLength": 9
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 # 运管开放平台
 
-Metro Operations Platform · 1.2.0
+Metro Operations Platform · 1.7.1
 
 内部运维应用平台：管理员控制台、员工工作台、组织/人员/车站/设备目录、授权审计、模型配置，以及单文件 `.mopkg` 应用的安装、升级与运行。业务功能以独立应用接入，复用平台的登录、人员、权限、数据存储和部署。
 
@@ -36,6 +36,9 @@ npm run version:check
 
 - [开发与目录结构](docs/development.md)
 - [应用接入](docs/applications.md)
+- [统一对话与应用编排](docs/developer/agents.md)
+- [应用知识库](docs/developer/knowledge.md)
+- [只读工具与 MCP](docs/developer/tools.md)
 - [应用管理与员工提交审核](docs/application-management-workflow.md)
 - [员工身份与目录接口](docs/employee-gateway.md)
 - [密码规则与首次登录改密](docs/password-policy.md)
@@ -57,3 +60,5 @@ SDK 位于 `packages/platform-sdk`，独立打包工具位于 `packages/platform
 员工自助注册、组织选择与管理员审核见 [员工注册](docs/employee-registration.md)。
 
 开发应用请从 [开发者指南](docs/developer/start.md) 开始：`mop-app init` 新建项目，`mop-app build` 生成一个 `.mopkg`。管理端开发者中心提供公开 SDK 参考和同版本 SDK/CLI、项目示例、文档与 Agent Skill 下载。业务应用位于 `applications/`。
+
+知识库向量索引与逐条语料接入见 [应用知识库](docs/developer/knowledge.md)，本轮验证见 [P3 验收记录](docs/acceptance-knowledge-p3.md)。

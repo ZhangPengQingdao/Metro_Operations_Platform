@@ -13,6 +13,7 @@ export {TagDropdownPicker} from './TagDropdownPicker';
 export {HandwrittenSignaturePad} from './HandwrittenSignaturePad';
 export {Checkbox} from './Checkbox';
 export {Switch} from './Switch';
+export {Tabs,TabList,TabTrigger,TabContent} from './Tabs';
 export {FilterBar} from './FilterBar';
 export {Table,TableHeader,TableBody,TableRow,TableHead,TableCell,TableActionButton} from './Table';
 export {DataList,TableActions,ListPagination} from './DataList';

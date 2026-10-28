@@ -1,10 +1,10 @@
 {
   "name": "metro-huicetong",
-  "version": "1.0.2",
+  "version": "2.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test.mjs",
+    "test": "node --test test.mjs audio-recorder.test.mjs speech-transcriber.test.mjs",
     "check": "node ../../packages/platform-cli/dist/cli.mjs check",
     "build": "node ../../packages/platform-cli/dist/cli.mjs build",
     "dev": "node ../../packages/platform-cli/dist/cli.mjs dev"

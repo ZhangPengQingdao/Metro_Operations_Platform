@@ -1,14 +1,14 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "1.0.2",
-  "description": "月度工作计划编制与督办",
+  "version": "2.4.0",
+  "description": "月度计划、上级督办、年度计划与AI语料管理",
   "color": "#059669",
-  "platform": ">=0.30.0",
+  "platform": ">=1.7.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
-      "name": "查看本部门计划",
+      "name": "查看月度计划",
       "scopes": [
         "self",
         "workgroup",
@@ -19,7 +19,7 @@
     },
     {
       "code": "fill",
-      "name": "填报本人计划",
+      "name": "提报月度计划",
       "scopes": [
         "self",
         "workgroup",
@@ -30,7 +30,7 @@
     },
     {
       "code": "review",
-      "name": "归口审核计划",
+      "name": "审核月度提报",
       "scopes": [
         "self",
         "workgroup",
@@ -40,8 +40,8 @@
       ]
     },
     {
-      "code": "manage",
-      "name": "管理周期与计划",
+      "code": "complete",
+      "name": "办理本人月度计划",
       "scopes": [
         "self",
         "workgroup",
@@ -51,11 +51,139 @@
       ]
     },
     {
-      "code": "sign",
-      "name": "部门负责人确认签发",
+      "code": "extend",
+      "name": "申请月度计划延期",
       "scopes": [
         "self",
         "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "extension_review",
+      "name": "审批部门延期",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "export",
+      "name": "导出月度计划表",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "attachment_export",
+      "name": "导出计划附件",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "supervision_read",
+      "name": "查看督办提醒",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "supervision_manage",
+      "name": "派发和维护督办",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "supervision_delete",
+      "name": "删除督办",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "supervision_complete",
+      "name": "办理本人督办",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "annual_read",
+      "name": "查看年度计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "annual_manage",
+      "name": "导入和维护年度计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "annual_complete",
+      "name": "完成本人年度计划",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "corpus",
+      "name": "维护AI语料库",
+      "scopes": [
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "settings",
+      "name": "维护部门群提醒设置",
+      "scopes": [
         "department",
         "organizations",
         "all"
@@ -66,166 +194,177 @@
     "people.read",
     "ai.complete",
     "attachments.create",
-    "attachments.read"
+    "attachments.read",
+    "webhook.send",
+    "knowledge.read",
+    "knowledge.write",
+    "tools.read"
   ],
   "pages": [
     {
       "path": "/",
-      "title": "计划提报",
+      "title": "月度计划",
       "permission": "read",
       "nav": true
     },
     {
-      "path": "/bindings",
+      "path": "/supervision",
+      "title": "督办提醒",
+      "permission": "supervision_read",
+      "nav": true
+    },
+    {
+      "path": "/annual",
+      "title": "年度计划",
+      "permission": "annual_read",
+      "nav": true
+    },
+    {
+      "path": "/corpus",
+      "title": "语料库",
+      "permission": "corpus",
+      "nav": true
+    },
+    {
+      "path": "/settings",
       "title": "基础配置",
-      "permission": "manage",
+      "permission": "settings",
       "nav": true
     }
   ],
   "api": [
     {
-      "id": "plan-suggest"
-    },
-    {
-      "id": "item-workflow",
-      "permission": "read"
-    },
-    {
-      "id": "completion-review"
-    },
-    {
-      "id": "authorize-attachment",
-      "permission": "read"
-    },
-    {
-      "id": "photo-begin"
-    },
-    {
-      "id": "photo-part"
-    },
-    {
-      "id": "photo-finish"
-    },
-    {
-      "id": "photo-read",
-      "permission": "read"
-    },
-    {
       "id": "session"
     },
     {
-      "id": "members",
-      "permission": "read"
+      "id": "members"
     },
     {
-      "id": "cycle-list",
-      "permission": "read"
+      "id": "record-list"
     },
     {
-      "id": "cycle-get",
-      "permission": "read"
+      "id": "record-get"
     },
     {
-      "id": "cycle-create",
-      "permission": "manage"
+      "id": "record-save"
     },
     {
-      "id": "cycle-submit-review",
-      "permission": "manage"
+      "id": "record-review"
     },
     {
-      "id": "cycle-return-draft",
-      "permission": "manage"
+      "id": "record-progress"
     },
     {
-      "id": "cycle-submit-countersign",
-      "permission": "manage"
+      "id": "record-delete"
     },
     {
-      "id": "cycle-signature-status",
-      "permission": "read"
+      "id": "extension-create"
     },
     {
-      "id": "cycle-confirm-signature",
-      "permission": "sign"
+      "id": "extension-review"
     },
     {
-      "id": "cycle-lock",
-      "permission": "manage"
+      "id": "annual-hints"
     },
     {
-      "id": "category-list",
-      "permission": "read"
+      "id": "annual-import"
     },
     {
-      "id": "category-upsert",
-      "permission": "manage"
+      "id": "corpus-list"
     },
     {
-      "id": "binding-list",
-      "permission": "read"
+      "id": "corpus-reindex"
     },
     {
-      "id": "binding-upsert",
-      "permission": "manage"
+      "id": "corpus-save"
     },
     {
-      "id": "binding-delete",
-      "permission": "manage"
+      "id": "plan-suggest"
     },
     {
-      "id": "item-list",
-      "permission": "read"
+      "id": "settings-get"
     },
     {
-      "id": "item-get",
-      "permission": "read"
+      "id": "settings-save"
     },
     {
-      "id": "item-create"
+      "id": "reminder-list"
     },
     {
-      "id": "item-update"
-    },
-    {
-      "id": "item-progress"
-    },
-    {
-      "id": "item-submit",
-      "permission": "fill"
-    },
-    {
-      "id": "item-review",
-      "permission": "review"
-    },
-    {
-      "id": "change-list",
-      "permission": "read"
-    },
-    {
-      "id": "change-create",
-      "permission": "manage"
-    },
-    {
-      "id": "change-review",
-      "permission": "review"
-    },
-    {
-      "id": "change-countersign",
-      "permission": "sign"
-    },
-    {
-      "id": "export-plan",
-      "permission": "read"
+      "id": "authorize-attachment"
     },
     {
       "id": "dashboard-summary",
       "permission": "read",
       "dashboard": true
+    },
+    {
+      "id": "agent-plan",
+      "permission": "fill"
+    },
+    {
+      "id": "tool-plan-reference",
+      "permission": "fill"
     }
   ],
   "limits": {
     "memoryMiB": 128,
     "timeoutSeconds": 30
-  }
+  },
+  "knowledgeBases": [
+    {
+      "id": "terms",
+      "name": "专有名词",
+      "retrieval": "exact",
+      "readPermission": "fill",
+      "writePermission": "corpus",
+      "selfRead": true
+    },
+    {
+      "id": "examples",
+      "name": "标准示例",
+      "retrieval": "similar",
+      "readPermission": "fill",
+      "writePermission": "corpus",
+      "selfRead": true
+    }
+  ],
+  "agents": [
+    {
+      "id": "monthly-plan",
+      "name": "整理月度计划",
+      "description": "根据员工原话和慧策通知识库整理一条月度计划草稿，缺少月份或信息时追问，不提交计划。",
+      "examples": [
+        "帮我整理一条下月计划：完成车站设备巡检，并完善巡检记录。",
+        "我想整理月度计划，请先帮我梳理需要补充的信息。"
+      ],
+      "apiId": "agent-plan",
+      "permission": "fill",
+      "page": "/"
+    }
+  ],
+  "tools": [
+    {
+      "id": "plan-reference",
+      "name": "检索计划参考",
+      "description": "从当前员工所属部门的计划知识库检索专有名词和标准示例。只返回有权使用的参考内容。",
+      "apiId": "tool-plan-reference",
+      "permission": "fill",
+      "mode": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
 }

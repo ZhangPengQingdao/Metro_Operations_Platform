@@ -15,8 +15,8 @@ export interface LocalFileOptions {
 }
 
 const MAX_READ_BYTES = 50 * 1024 * 1024;
-export const APP_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
-export const APP_ATTACHMENT_EXTENSIONS = Object.freeze(['.doc','.docx','.xls','.xlsx','.pdf','.zip'] as const);
+export const APP_ATTACHMENT_MAX_BYTES = 200 * 1024 * 1024;
+export const APP_ATTACHMENT_EXTENSIONS = Object.freeze(['.doc','.docx','.xls','.xlsx','.pdf','.zip','.rar','.7z','.gz','.jpg','.jpeg','.png','.gif','.webp','.bmp','.mp4','.m4v','.mov','.webm','.mkv','.avi'] as const);
 export const APP_IMAGE_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
 export const APP_IMAGE_MAX_BYTES = 220_000;
 /** Base64 plus managed-storage transaction metadata must fit its 16 KiB request limit. */

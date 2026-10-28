@@ -79,6 +79,7 @@ test('bounded immutable params/results and errors never leak implementation deta
  const f=await gatewayFixture({requestBytes:1024,resultBytes:64});
  f.setExecute(async(_ctx,p)=>{assert.ok(Object.isFrozen(p));return {large:'x'.repeat(100)};});await assert.rejects(f.call(),/PAYLOAD_TOO_LARGE/);
  f.setExecute(async()=>{throw new Error('credential-secret');});await assert.rejects(f.call(),error=>error instanceof GatewayError&&error.message==='GATEWAY_FAILED');
+ f.setExecute(async()=>{throw new GatewayError('KNOWLEDGE_EMBEDDING_UNAVAILABLE',502);});await assert.rejects(f.call(),error=>error instanceof GatewayError&&error.code==='KNOWLEDGE_EMBEDDING_UNAVAILABLE'&&error.statusCode===502);
  await assert.rejects(f.gateway.invokeService(f.r.appId,f.issued.credential,{...f.request,params:{target:'x'.repeat(2000)}}),/PAYLOAD_TOO_LARGE/);
 });
 test('timeouts retain slots until actual settlement and writes remain uncertain',async()=>{

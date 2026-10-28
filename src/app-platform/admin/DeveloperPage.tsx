@@ -10,8 +10,11 @@ import ui from '../../../docs/developer/ui-navigation.md?raw';
 import packaging from '../../../docs/developer/packaging.md?raw';
 import storage from '../../../docs/developer/storage-files.md?raw';
 import notifications from '../../../docs/developer/notifications.md?raw';
+import agents from '../../../docs/developer/agents.md?raw';
+import tools from '../../../docs/developer/tools.md?raw';
+import knowledge from '../../../docs/developer/knowledge.md?raw';
 const sections=[['start','开始开发'],['sdk','平台 SDK'],['guides','开发与改造'],['downloads','工具与下载']] as const;
-const guides=[{id:'identity',title:'身份与权限',content:identity},{id:'ui',title:'界面与导航',content:ui},{id:'storage',title:'存储与文件',content:storage},{id:'notifications',title:'通用通知',content:notifications},{id:'packaging',title:'打包与升级',content:packaging}];
+const guides=[{id:'identity',title:'身份与权限',content:identity},{id:'ui',title:'界面与导航',content:ui},{id:'storage',title:'存储与文件',content:storage},{id:'notifications',title:'通用通知',content:notifications},{id:'knowledge',title:'应用知识库',content:knowledge},{id:'agents',title:'统一对话与编排',content:agents},{id:'tools',title:'只读工具与 MCP',content:tools},{id:'packaging',title:'打包与升级',content:packaging}];
 function Code({children}:{children:string}) {return <pre className="developer-code"><code>{children}</code></pre>;}
 /** Render bundled documentation as text and code only; never interpret embedded HTML. */
 export function DeveloperDocument({content}:{content:string}) {

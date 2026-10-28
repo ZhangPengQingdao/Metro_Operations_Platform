@@ -1,0 +1,33 @@
+{
+  "migrationVersion": "1.0",
+  "operations": [
+    {
+      "kind": "addColumn",
+      "table": "corpus_terms",
+      "column": {
+        "name": "explanation",
+        "type": "text",
+        "nullable": true
+      }
+    },
+    {
+      "kind": "createTable",
+      "table": "number_counters",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "value",
+          "type": "integer",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    }
+  ]
+}

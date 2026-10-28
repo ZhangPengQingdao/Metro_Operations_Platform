@@ -130,6 +130,8 @@ export interface AppAttachmentAuthorizationOptions {
   authorizeUpload(employee:Employee,source:{entityType:string;entityId:string},signal?:AbortSignal):Promise<{organizationId:string}>;
   /** Check record visibility; the platform independently checks the attachment-to-record binding. */
   authorizeRead(employee:Employee,source:{entityType:string;entityId:string;attachmentId?:string},signal?:AbortSignal):Promise<{organizationId:string}>;
+  /** ZIP export is a separate business decision; absent means exports are denied. */
+  authorizeExport?(employee:Employee,source:{entityType:string;entityId:string},signal?:AbortSignal):Promise<{organizationId:string}>;
 }
 
 /** Handler for the manifest-declared POST authorize-attachment API. Never infer access from a file ID alone. */
@@ -137,11 +139,12 @@ export function createAppAttachmentAuthorizationHandler(options:AppAttachmentAut
   if(!options||typeof options.authorizeUpload!=='function'||typeof options.authorizeRead!=='function')fail('INVALID_ATTACHMENT_OPTIONS');
   return async(input:Record<string,unknown>,employee:Employee,signal?:AbortSignal)=>{
     if(!plain(input)||!keys(input,['action','entityType','entityId','attachmentId','requestId'])||
-      input.action!=='upload'&&input.action!=='read'||typeof input.entityType!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||
+      input.action!=='upload'&&input.action!=='read'&&input.action!=='export'||typeof input.entityType!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(input.entityType)||
       !uuid(input.entityId)||!uuid(input.requestId)||input.attachmentId!==undefined&&!uuid(input.attachmentId)||
       input.action==='upload'&&input.attachmentId!==undefined)fail('INVALID_INPUT');
     const source={entityType:input.entityType as string,entityId:input.entityId as string};
-    const access=input.action==='upload'?await options.authorizeUpload(employee,source,signal):await options.authorizeRead(employee,{...source,...(input.attachmentId?{attachmentId:input.attachmentId as string}:{})},signal);
+    if(input.action==='export'&&!options.authorizeExport)fail('ACCESS_DENIED');
+    const access=input.action==='export'?await options.authorizeExport!(employee,source,signal):input.action==='upload'?await options.authorizeUpload(employee,source,signal):await options.authorizeRead(employee,{...source,...(input.attachmentId?{attachmentId:input.attachmentId as string}:{})},signal);
     if(!uuid(access?.organizationId))fail('ACCESS_DENIED');
     return {organizationId:access.organizationId};
   };

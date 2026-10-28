@@ -70,6 +70,18 @@ function createFiles(appId: string, admissionKey: string): AppFiles {
       link.href = url; link.download = fileName; document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
+    async saveArchive(input,options){
+      type PickerWindow=Window&{showSaveFilePicker?:(input:{suggestedName:string})=>Promise<{createWritable():Promise<WritableStream<Uint8Array>>}>};
+      const picker=(window as PickerWindow).showSaveFilePicker;
+      // Open the picker in the user gesture before waiting on any network calls.
+      const handle=picker?await picker.call(window,{suggestedName:input.fileName}):null;
+      const response=await fetch(`/api/employee/apps/${appId}/attachments-archive`,{method:'POST',credentials:'same-origin',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(input),signal:options?.signal});
+      if(!response.ok)await fail(response);
+      if(handle&&response.body){const writable=await handle.createWritable();await response.body.pipeTo(writable,{signal:options?.signal});return;}
+      // Browsers without a disk writer have a deliberately bounded Blob fallback.
+      if(Number(response.headers.get('Content-Length')??Infinity)>256*1024*1024){await response.body?.cancel();throw Error('当前浏览器无法保存超过 256 MiB 的压缩包，请减少选择或使用支持文件保存的浏览器');}
+      const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=input.fileName;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    },
   };
 }
 

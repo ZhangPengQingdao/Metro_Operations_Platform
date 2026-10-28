@@ -461,3 +461,5 @@ export async function testExternalProviderConnection(
 }
 
 export {getPublicAiRuntimeConfig,saveAiRuntimeConfig,resolveExternalProviderConfig,resolveExternalConnectionConfig,AiRuntimeConfigError} from './config.js';
+
+export {encryptApiKey,decryptApiKey,maskApiKey} from "./config.js";

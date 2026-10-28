@@ -49,11 +49,11 @@ export class AppGateway {
    * Application model v2: the platform itself runs the app process, so no credential is presented.
    * The service identity comes from the registry record at call time; grants and audit are unchanged.
    */
-  invokeHosted(appId:string,serviceIdentity:()=>Promise<string>,request:unknown,signal?:AbortSignal,resolveEmployee?:()=>Promise<PlatformPersonActorContext>):Promise<AppGatewayResponse> {
+  invokeHosted(appId:string,serviceIdentity:()=>Promise<string>,request:unknown,signal?:AbortSignal,resolveEmployee?:()=>Promise<PlatformPersonActorContext>,readOnly=false):Promise<AppGatewayResponse> {
     return this.invoke(appId,async()=>parseGatewayRequest(request,this.admission.limits.requestBytes),async()=>{
       const serviceIdentityId=await serviceIdentity();
       return {actorType:'service' as const,trustedIdentity:{source:'service' as const},execution:{type:'service' as const,appId,serviceIdentityId}};
-    },signal,undefined,resolveEmployee);
+    },signal,undefined,resolveEmployee,readOnly);
   }
   /** Host-only entry point: identity MUST come from verified L1 session/Bridge composition. */
   invokeDelegated(appId:string,trustedIdentity:TrustedActorIdentity,request:unknown,signal?:AbortSignal):Promise<AppGatewayResponse> {
@@ -71,7 +71,7 @@ export class AppGateway {
       return {actorType:'person' as const,trustedIdentity:identity,execution:{type:'application' as const,appId}};
     },signal);
   }
-  private async invoke(appId:string,readInput:(signal:AbortSignal)=>Promise<unknown>,identity:()=>Promise<Omit<Parameters<PlatformActorContextResolver['resolve']>[0],'requestId'|'traceId'>>,signal?:AbortSignal,assertAdmission?:()=>Promise<void>,resolveEmployee?:()=>Promise<PlatformPersonActorContext>):Promise<AppGatewayResponse> {
+  private async invoke(appId:string,readInput:(signal:AbortSignal)=>Promise<unknown>,identity:()=>Promise<Omit<Parameters<PlatformActorContextResolver['resolve']>[0],'requestId'|'traceId'>>,signal?:AbortSignal,assertAdmission?:()=>Promise<void>,resolveEmployee?:()=>Promise<PlatformPersonActorContext>,readOnly=false):Promise<AppGatewayResponse> {
     this.admission.preauth();
     if(typeof appId!=='string'||!/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(appId)||appId.length>100) throw new GatewayError('INVALID_REQUEST');
     const releaseSlot=this.admission.enter();
@@ -119,7 +119,7 @@ export class AppGateway {
       const input=await readInput(controller.signal);check();
       const request=parseGatewayRequest(input,this.admission.limits.requestBytes);
       const operation=this.operations.get(request.operation);
-      if(!operation) throw new GatewayError('OPERATION_DENIED',403);
+      if(!operation||readOnly&&operation.mode==='write') throw new GatewayError('OPERATION_DENIED',403);
       trace.operation=operation.name;
       const fresh=async()=>{
         const guard=async()=>{check();try{await assertAdmission?.();}catch{throw new GatewayError('ACCESS_DENIED',403);}check();};
@@ -139,7 +139,7 @@ export class AppGateway {
       trace.actorId=context.actorType==='person'?context.person.id:context.execution.serviceIdentityId;
       this.admission.authenticated(appId,context.actorType==='person'?context.person.id:'service');
       if(!operation.validateParams(request.params)) throw new GatewayError('INVALID_PARAMS');
-      routingAudit=operation.auditMetadata?.(request.params)??{};
+      routingAudit={...operation.auditMetadata?.(request.params),...(context.employeeActor?{employeeActorId:context.employeeActor.person.id}:{})};
       const authorize=async(refresh=true)=>{
         if(refresh)context=await fresh();check();
         const resources=await operation.resolveResources(context,request.params);check();

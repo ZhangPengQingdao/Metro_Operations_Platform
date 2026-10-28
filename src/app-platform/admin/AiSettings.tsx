@@ -1,3 +1,4 @@
+import {EmbeddingSettings} from './EmbeddingSettings';
 import React,{useEffect,useState} from 'react';
 import {Button,Input} from '../../components/ui';
 import {adminRequest} from './client';
@@ -14,11 +15,11 @@ export function AiSettings({onSaved,onBusy}:{onSaved?:()=>void;onBusy?:(busy:boo
    if(action==='test'){const next=await adminRequest<{latency_ms:number}>('/ai/test',{method:'POST',body});setStatus(`连接正常 · ${next.latency_ms} ms`);}
   }catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy('');onBusy?.(false);}
  }
- return <section><form autoComplete="off" className="admin-form" onSubmit={e=>{e.preventDefault();void run('save');}}>
+ return <section><h3>聊天模型</h3><form autoComplete="off" className="admin-form" onSubmit={e=>{e.preventDefault();void run('save');}}>
   <label>服务地址<Input required name="ai-provider-endpoint" autoComplete="off" type="url" placeholder="https://api.example.com/v1" maxLength={500} value={endpoint} onChange={e=>{setEndpoint(e.target.value);setModels([]);setStatus('');}} disabled={!!busy}/></label>
   <label>API Key<Input name="ai-provider-key" type="password" autoComplete="new-password" placeholder={config?.external.has_api_key?'已保存 · 留空保留':'请输入 API Key'} value={apiKey} onChange={e=>setKey(e.target.value)} disabled={!!busy}/></label>
   <label>模型<Input required list="admin-ai-models" placeholder="模型 ID" value={model} onChange={e=>setModel(e.target.value)} disabled={!!busy}/><datalist id="admin-ai-models">{models.map(id=><option value={id} key={id}/>)}</datalist></label>
   {error&&<p className="afc-error" role="alert">{error}</p>}{status&&<p role="status">{status}</p>}
   <div className="admin-actions"><Button variant="secondary" disabled={!!busy||!endpoint} onClick={()=>void run('models')}>获取模型</Button><Button variant="secondary" disabled={!!busy||!endpoint||!model} onClick={()=>void run('test')}>测试连接</Button><Button type="submit" loading={busy==='save'} disabled={!!busy||!endpoint||!model}>保存</Button></div>
- </form></section>;
+ </form><EmbeddingSettings disabled={!!busy&&busy!=='embedding'} onBusy={value=>{setBusy(value?'embedding':'');onBusy?.(value);}}/></section>;
 }

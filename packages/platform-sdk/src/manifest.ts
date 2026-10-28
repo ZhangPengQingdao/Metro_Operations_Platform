@@ -1,9 +1,10 @@
+import {isAppToolInputSchema,type AppToolDefinition} from './app-tools.js';
 /** Application model v2 manifest (app.json). Shared by the CLI and the platform; validation grants nothing. */
 export const APP_MANIFEST_V2_FILE = 'app.json' as const;
 
 /** Platform capabilities an application may request; each maps to `platform.<code>`. Application data access is implied by migrations. */
 export const APP_PLATFORM_ACCESS = [
-  'people.read', 'locations.read', 'assets.read', 'ai.complete',
+  'people.read', 'locations.read', 'assets.read', 'ai.complete', 'knowledge.read', 'knowledge.write', 'tools.read',
   'attachments.create', 'attachments.read', 'notifications.create', 'notifications.manage',
   'signatures.create', 'signatures.read', 'signatures.sign', 'webhook.send',
 ] as const;
@@ -15,6 +16,24 @@ export interface AppPermissionV2 { code: string; name: string; scopes?: AppDataS
 export interface AppPageV2 { path: string; title: string; permission?: string; nav?: boolean }
 export interface AppApiV2 { id: string; permission?: string; dashboard?: boolean }
 export interface AppLimitsV2 { memoryMiB?: number; timeoutSeconds?: number }
+export interface AppKnowledgeBaseV2 {
+  id: string;
+  name: string;
+  retrieval: 'exact' | 'similar';
+  readPermission: string;
+  writePermission: string;
+  /** Allow a self-scoped reader to retrieve shared knowledge in their own organization ancestry. */
+  selfRead?: boolean;
+}
+export interface AppAgentV2 {
+  id: string;
+  name: string;
+  description: string;
+  examples: string[];
+  apiId: string;
+  permission: string;
+  page: string;
+}
 export interface AppManifestV2 {
   id: string;
   name: string;
@@ -28,6 +47,9 @@ export interface AppManifestV2 {
   platformAccess: AppPlatformAccess[];
   pages: AppPageV2[];
   api: AppApiV2[];
+  knowledgeBases?: AppKnowledgeBaseV2[];
+  agents?: AppAgentV2[];
+  tools?: AppToolDefinition[];
   limits?: AppLimitsV2;
 }
 export interface AppManifestIssueV2 { path: string; message: string }
@@ -38,7 +60,7 @@ const CODE = /^[a-z][a-z0-9_-]*$/;
 const SEMVER = /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const PAGE_SEGMENT = /^(?:[a-z0-9][a-z0-9_-]*|:[a-z][a-zA-Z0-9]*)$/;
 const COMPARATOR = /^(>=|<=|>|<|=)?(.+)$/;
-const KEYS = ['id', 'name', 'version', 'description', 'color', 'platform', 'permissions', 'platformAccess', 'pages', 'api', 'limits'];
+const KEYS = ['id', 'name', 'version', 'description', 'color', 'platform', 'permissions', 'platformAccess', 'pages', 'api', 'limits', 'knowledgeBases', 'agents', 'tools'];
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown, max: number): value is string =>
@@ -164,6 +186,56 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
     if (api.some(item => record(item) && item.permission === undefined) && !codes.size) fail('api', '未声明权限的接口表示“有本应用任一权限即可调用”，需要至少声明一个权限');
   }
 
+  if (value.tools !== undefined) {
+    const ids=new Set<string>(),handlers=new Set<string>();
+    if(!Array.isArray(value.tools)||value.tools.length>16)fail('tools','工具最多16项');
+    else value.tools.forEach((tool:unknown,index)=>{
+      const path=`tools[${index}]`;
+      if(!record(tool)||Object.keys(tool).some(key=>!['id','name','description','apiId','permission','mode','inputSchema'].includes(key))){fail(path,'工具字段无效');return;}
+      if(typeof tool.id!=='string'||tool.id.length>64||!ID.test(tool.id)||ids.has(tool.id))fail(path,'工具ID无效或重复');else ids.add(tool.id);
+      if(!text(tool.name,64)||!text(tool.description,500)||tool.mode!=='read')fail(path,'工具名称、说明或只读模式无效');
+      if(!declared(tool.permission))fail(path,'工具权限未声明');
+      const entry=Array.isArray(api)?api.find(item=>record(item)&&item.id===tool.apiId):undefined;
+      if(!entry||typeof entry.permission!=='string'||typeof tool.permission!=='string'||appPermissionCode(value.id as string,entry.permission)!==appPermissionCode(value.id as string,tool.permission)||handlers.has(String(tool.apiId)))fail(path,'需引用具有相同权限的独立API');
+      handlers.add(String(tool.apiId));
+      if(Array.isArray(value.agents)&&value.agents.some(agent=>record(agent)&&agent.apiId===tool.apiId))fail(path,'编排入口不能同时作为工具');
+      if(!isAppToolInputSchema(tool.inputSchema))fail(path,'工具参数应为有界、封闭的标量对象');
+    });
+  }
+
+  if (value.agents !== undefined) {
+    const ids = new Set<string>();
+    if (!Array.isArray(value.agents) || value.agents.length > 8) fail('agents', '智能能力最多8项');
+    else value.agents.forEach((agent: unknown, index) => {
+      const path = `agents[${index}]`;
+      if (!record(agent) || Object.keys(agent).some(key=>!['id','name','description','examples','apiId','permission','page'].includes(key))) {fail(path,'智能能力字段无效');return;}
+      if (typeof agent.id !== 'string' || agent.id.length > 64 || !ID.test(agent.id) || ids.has(agent.id)) fail(`${path}.id`,'能力ID无效或重复');
+      else ids.add(agent.id);
+      if (!text(agent.name,32) || !text(agent.description,300)) fail(path,'名称或说明无效');
+      if (!Array.isArray(agent.examples) || !agent.examples.length || agent.examples.length > 4 || agent.examples.some(example=>!text(example,300))) fail(`${path}.examples`,'示例应为1–4条，每条最多300字符');
+      if (!declared(agent.permission)) fail(`${path}.permission`,'权限未声明');
+      const apiEntry=Array.isArray(api)?api.find(item=>record(item)&&item.id===agent.apiId):undefined;
+      if (!apiEntry || typeof apiEntry.permission!=='string' || typeof agent.permission!=='string' || appPermissionCode(value.id as string,apiEntry.permission)!==appPermissionCode(value.id as string,agent.permission)) fail(`${path}.apiId`,'智能能力必须引用具有相同权限的已声明接口');
+      if (!Array.isArray(pages) || !pages.some(page=>record(page)&&page.path===agent.page&&!String(page.path).includes(':'))) fail(`${path}.page`,'需引用无参数的应用页面');
+    });
+  }
+
+  if (value.knowledgeBases !== undefined) {
+    const bases = value.knowledgeBases, ids = new Set<string>();
+    if (!Array.isArray(bases) || bases.length > 16) fail('knowledgeBases', '知识库应为不超过16项的数组');
+    else bases.forEach((base: unknown, index) => {
+      const path = `knowledgeBases[${index}]`;
+      if (!record(base) || Object.keys(base).some(key => !['id','name','retrieval','readPermission','writePermission','selfRead'].includes(key))) { fail(path, '知识库声明字段无效'); return; }
+      if (typeof base.id !== 'string' || base.id.length > 64 || !ID.test(base.id) || ids.has(base.id)) fail(`${path}.id`, '知识库ID无效或重复');
+      else ids.add(base.id);
+      if (!text(base.name, 64)) fail(`${path}.name`, '知识库名称为1–64个字符');
+      if (!['exact','similar'].includes(base.retrieval as string)) fail(`${path}.retrieval`, '检索方式应为exact或similar');
+      for (const key of ['readPermission','writePermission']) if (!declared(base[key])) fail(`${path}.${key}`, '权限未声明');
+      if (base.selfRead !== undefined && typeof base.selfRead !== 'boolean') fail(`${path}.selfRead`, '应为布尔值');
+    });
+    if (!Array.isArray(access) || !access.includes('knowledge.read') || !access.includes('knowledge.write')) fail('knowledgeBases', '知识库需要knowledge.read和knowledge.write平台能力');
+  }
+
   if (value.limits !== undefined) {
     const limits = value.limits;
     if (!record(limits) || Object.keys(limits).some(key => !['memoryMiB', 'timeoutSeconds'].includes(key))) fail('limits', '应只包含 memoryMiB、timeoutSeconds');
@@ -184,6 +256,9 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
     platformAccess: [...access as AppPlatformAccess[]],
     pages: (pages as AppPageV2[]).map(p => ({ path: p.path, title: p.title, ...(p.permission !== undefined ? { permission: short(p.permission) } : {}), ...(p.nav !== undefined ? { nav: p.nav } : {}) })),
     api: (api as AppApiV2[]).map(a => ({ id: a.id, ...(a.permission !== undefined ? { permission: short(a.permission) } : {}), ...(a.dashboard ? { dashboard: true } : {}) })),
+    ...(value.knowledgeBases !== undefined ? { knowledgeBases: (value.knowledgeBases as AppKnowledgeBaseV2[]).map(base => ({...base, readPermission: short(base.readPermission), writePermission: short(base.writePermission)})) } : {}),
+    ...(value.agents !== undefined ? {agents: (value.agents as AppAgentV2[]).map(agent=>({...agent,permission:short(agent.permission),examples:[...agent.examples]}))} : {}),
+    ...(value.tools !== undefined ? {tools:(value.tools as AppToolDefinition[]).map(tool=>({...tool,permission:short(tool.permission),inputSchema:structuredClone(tool.inputSchema)}))} : {}),
     ...(value.limits !== undefined ? { limits: { ...value.limits as AppLimitsV2 } } : {}),
   };
   return { ok: true, manifest };

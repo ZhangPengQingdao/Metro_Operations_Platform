@@ -1,3 +1,4 @@
+import {ChatPage} from './ChatPage';
 import {EmployeeDashboard} from './EmployeeDashboard';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {PasswordInput,PasswordConfirmInput} from '../identity/PasswordInput';
@@ -21,7 +22,7 @@ export default function EmployeeApp(){
  const [dashboardSettingsOpen,setDashboardSettingsOpen]=useState(false);
  const closeDashboardSettings=useCallback(()=>setDashboardSettingsOpen(false),[]);
  const [owned,setOwned]=useState<ManagedApplication[]>([]);
- const {pathname,search}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[unreadNotifications,setUnreadNotifications]=useState(0);
+ const {pathname,search,key:locationKey}=useLocation(),navigate=useNavigate();const [account,setAccount]=useState<Account|null>(null),[loading,setLoading]=useState(true),[apps,setApps]=useState<App[]>([]),[appsLoaded,setAppsLoaded]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[unreadNotifications,setUnreadNotifications]=useState(0);
  useEffect(()=>setDashboardSettingsOpen(false),[pathname]);
  const activeApp=pathname.startsWith('/employee/app/')&&!/^\/employee\/app\/[^/]+\/~management$/.test(pathname);
  const activeAppId=activeApp?pathname.split('/')[3]:null;
@@ -38,7 +39,7 @@ export default function EmployeeApp(){
  const applications:AdminApplication[]=apps.map(app=>({id:app.appId,name:app.name,iconUrl:`/api/employee/apps/${app.appId}/icon`,color:app.v2.color,navigation:(app.navigation.length?app.navigation:app.routes.slice(0,1).map(route=>({id:route.id,routeId:route.id,label:app.name}))).flatMap(item=>{const route=app.routes.find(r=>r.id===item.routeId);return route?[{id:item.id,label:item.label,path:`/employee/app/${app.appId}${route.path==='/'?'':route.path}`}]:[]})}));
  return <AdminShell mode="employee" headerActions={(pathname==='/employee'||pathname==='/employee/')?<IconButton className="dashboard-settings-trigger" label="首页设置" title="首页设置" aria-haspopup="dialog" disabled={!appsLoaded||dashboardBusy||dashboardSettingsOpen} onClick={()=>setDashboardSettingsOpen(true)}><PlatformIcon name="cog" size={21}/></IconButton>:undefined} user={{id:account.id,username:account.username,displayName:account.name??account.username}} applications={applications} onLogout={logout} profileContent={(onSaved,onBusy)=><EmployeeProfile onSaved={onSaved} onBusy={onBusy}/>} notificationsContent={onNavigate=><EmployeeMessages onNavigate={onNavigate}/>} notificationCount={unreadNotifications}>
  {error&&<p role="alert" className="afc-error">{error}</p>}
- {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
+ {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname==='/employee/chat'||pathname.startsWith('/employee/chat/')?<ChatPage key={`${account.id}:${locationKey}`} name={account.name??account.username}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
  {activeEntry&&<AppPageV2 key={`${account.id}:${activeEntry.appId}`} app={{appId:activeEntry.appId,name:activeEntry.name,runtimeRevision:activeEntry.runtimeRevision,v2:activeEntry.v2}} path={pathname.slice(`/employee/app/${activeEntry.appId}`.length)||'/'} onNavigate={openAppPath}/>}
  {activeAppId&&!activeEntry&&<p role="status">{appsLoaded?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
  </AdminShell>;

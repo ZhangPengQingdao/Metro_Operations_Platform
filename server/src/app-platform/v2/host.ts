@@ -1,3 +1,4 @@
+import {matchesAppToolInput} from '@metro/platform-sdk/app-tools';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { parseAppBackendEmployeeContext, type AppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
@@ -39,7 +40,7 @@ export class AppHostV2 {
   private process: AppProcessV2 | null = null;
   private active: AppInstallation | null = null;
   /** Employee actor for each in-flight call, so the app's platform calls run with that employee bound. */
-  private readonly employees = new Map<string, PlatformPersonActorContext>();
+  private readonly employees = new Map<string, {actor:PlatformPersonActorContext;signal?:AbortSignal;readOnly:boolean}>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: AppHostV2Options) {}
@@ -150,9 +151,11 @@ export class AppHostV2 {
     const employee = parseAppBackendEmployeeContext({ version: '1.0', personId: actor.person.id, organizationUnitId: actor.person.organization.id, requestId, traceId: requestId, permissions, ...(business ? { businessAuthorization: business } : {}) });
     let payload: GatewayJson;
     try { payload = jsonSnapshot(request.payload, 60 * 1024); } catch { throw new AppV2CallError('INVALID_PAYLOAD', 400); }
+    const tool=installation.runtime?.model==='v2'?installation.runtime.manifest.tools?.find(tool=>tool.apiId===api.id):undefined;
+    if(tool&&!matchesAppToolInput(tool.inputSchema,payload))throw new AppV2CallError('INVALID_PARAMS',400);
     const process = this.process;
     if (!process) throw new AppV2CallError('APP_NOT_RUNNING', 503);
-    this.employees.set(requestId, actor as PlatformPersonActorContext);
+    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly:!!tool});
     try {
       return jsonSnapshot(await process.call(api.handler, payload, employee, signal, requestId), 256 * 1024);
     } catch (error) {
@@ -187,7 +190,7 @@ export class AppHostV2 {
   private async platform(operation: string, params: unknown, callId: string | undefined): Promise<unknown> {
     const employee = callId ? this.employees.get(callId) : undefined;
     if (callId && !employee) throw new GatewayError('ACCESS_DENIED', 403);
-    const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, undefined, employee ? async () => employee : undefined);
+    const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, employee?.signal, employee ? async () => employee.actor : undefined,employee?.readOnly);
     return response.result;
   }
 }
