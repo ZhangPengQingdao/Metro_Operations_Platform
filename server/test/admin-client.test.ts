@@ -16,3 +16,14 @@ test('intentional abort is preserved',async t=>{
  t.mock.method(globalThis,'fetch',async()=>{throw failure;});
  await assert.rejects(adminRequest('/apps',{signal:controller.signal}),error=>error===failure);
 });
+test('obsolete admin auth responses cannot expire a newer session or publish stale data',async t=>{
+ for(const status of [200,401]){
+  const controller=new AbortController();
+  t.mock.method(globalThis,'fetch',async()=>{controller.abort();return new Response('{}',{status});});
+  await assert.rejects(adminRequest('/auth/me',{signal:controller.signal}),{name:'AbortError'});
+  t.mock.restoreAll();
+ }
+ const controller=new AbortController();
+ t.mock.method(globalThis,'fetch',async()=>({ok:true,status:200,json:async()=>{controller.abort();return {id:'obsolete'};}} as Response));
+ await assert.rejects(adminRequest('/auth/me',{signal:controller.signal}),{name:'AbortError'});
+});

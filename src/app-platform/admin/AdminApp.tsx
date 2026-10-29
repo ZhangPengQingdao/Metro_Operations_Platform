@@ -54,10 +54,19 @@ function NotificationsPanel({onNavigate}:{onNavigate:()=>void}){const {data,erro
 function FailureNotifications({error}:{error:string}){return error?<ErrorNotice error={error}/>:null;}
 export default function AdminApp(){
  const location=useLocation(),navigate=useNavigate();const [user,setUser]=useState<AdminUser|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
- useEffect(()=>{const expire=()=>setUser(null);window.addEventListener('afc-admin-session-expired',expire);return()=>window.removeEventListener('afc-admin-session-expired',expire);},[]);
- useEffect(()=>{let active=true;adminRequest<AdminUser>('/auth/me').then(value=>{if(active)setUser(value);}).catch(e=>{if(active&&!(e instanceof AdminRequestError&&e.status===401))setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
+ const [sessionAttempt,setSessionAttempt]=useState(0);
+ useEffect(()=>{
+  const controller=new AbortController();setLoading(true);setError('');
+  const expire=()=>{controller.abort();setUser(null);setError('');setLoading(false);};
+  window.addEventListener('afc-admin-session-expired',expire);
+  adminRequest<AdminUser>('/auth/me',{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setUser(value);})
+   .catch(e=>{if(!controller.signal.aborted&&!(e instanceof AdminRequestError&&e.status===401))setError(e instanceof Error?e.message:'登录状态暂时无法读取。');})
+   .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+  return()=>{controller.abort();window.removeEventListener('afc-admin-session-expired',expire);};
+ },[sessionAttempt]);
  async function logout(){await adminRequest('/auth/logout',{method:'POST'});setUser(null);navigate('/login');}
  if(loading)return <div className="afc-admin afc-theme-neutral afc-auth-loading" data-theme={readThemePreference()}><p role="status">正在加载…</p></div>;
+ if(error)return <main className="afc-admin afc-theme-neutral afc-auth-loading" data-theme={readThemePreference()}><p role="alert">{error}</p><Button onClick={()=>setSessionAttempt(value=>value+1)}>重试读取登录状态</Button></main>;
  if(!user)return <Navigate to="/login" replace/>;
  if(user.passwordChangeRequired)return <PasswordChangeRequired kind="admin" onChanged={()=>{setUser(null);navigate('/login',{replace:true});}}/>;
  if(location.pathname==='/admin/login'||location.pathname==='/admin/updates'||location.pathname==='/admin/audit')return <Navigate to="/admin" replace/>;

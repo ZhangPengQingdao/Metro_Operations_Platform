@@ -32,6 +32,9 @@ test('employee self profile and password: identity fields protected, unverified 
  const {token}=await service.login({username:'employee',password:'Employee-test-password1'});
  const origin='http://127.0.0.1:3102';await app.register(cookie);registerEmployeeRoutes(app,{origin,service,resolveAdmin:async()=>actor});await app.ready();
  const headers={origin,cookie:`${EMPLOYEE_SESSION_COOKIE}=${token}`};
+ const session=await app.inject({url:'/api/employee/auth/me',headers});
+ assert.equal(session.statusCode,200);assert.equal(session.json().name,'Employee');assert.equal(session.json().personId,person);
+ assert.equal('password_hash' in session.json(),false);
  const layoutUrl='/api/employee/dashboard-layout';
  const layout={version:1,cards:['faults','todos'],charts:['faults:series'],shortcuts:['todos']};
  const saveLayout=(payload:object,h=headers)=>app.inject({method:'PUT',url:layoutUrl,headers:h,payload});

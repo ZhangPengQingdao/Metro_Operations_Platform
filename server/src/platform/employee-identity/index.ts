@@ -24,11 +24,11 @@ CREATE TABLE IF NOT EXISTS platform_employee_sessions(
 CREATE INDEX IF NOT EXISTS platform_employee_sessions_account ON platform_employee_sessions(account_id);`;
 export const employeeIdentityMigration:MigrationDefinition={id:'platform-employee-identity-expand',title:'Independent employee accounts and sessions',ownerTaskId:'PLATFORM-L4-015',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-056'],sourceTables:[],targetTables:['platform_employee_accounts','platform_employee_sessions'],dependsOn:['platform-people-directory-expand'],recoveryNotes:'Additive schema only; never bootstrap employees or copy administrator accounts.',async run({client}){await client.query(EMPLOYEE_IDENTITY_SQL);}};
 export class EmployeeIdentityError extends Error{constructor(readonly statusCode:number,readonly code:string){super(code);}}
-export interface EmployeeAccount{id:string;personId:string;username:string;status:'active'|'disabled';passwordChangeRequired?:boolean}
-type Row={id:string;person_id:string;username:string;password_hash:string;status:'active'|'disabled';password_change_required?:boolean};
+export interface EmployeeAccount{id:string;personId:string;username:string;name?:string;status:'active'|'disabled';passwordChangeRequired?:boolean}
+type Row={id:string;person_id:string;username:string;name?:string;password_hash:string;status:'active'|'disabled';password_change_required?:boolean};
 const username=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$/).transform(v=>v.toLowerCase());
 const password=passwordSchema;
-const publicAccount=(row:Row):EmployeeAccount=>({id:row.id,personId:row.person_id,username:row.username,status:row.status,...(row.password_change_required?{passwordChangeRequired:true}:{})});
+const publicAccount=(row:Row):EmployeeAccount=>({id:row.id,personId:row.person_id,username:row.username,status:row.status,...(row.name!==undefined?{name:row.name}:{}),...(row.password_change_required?{passwordChangeRequired:true}:{})});
 const digest=(value:string)=>createHash('sha256').update(value).digest('hex');
 const activePerson=`SELECT p.id FROM platform_people p JOIN platform_organization_units o ON o.id=p.organization_unit_id JOIN platform_positions pos ON pos.id=p.position_id
  WHERE p.id=$1 AND p.employment_status='active' AND o.status='active' AND pos.status='active'`;
@@ -81,7 +81,7 @@ export class EmployeeIdentityService{
  async authenticate(token?:string,allowPasswordChange=false):Promise<EmployeeAccount|null>{
   if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
   return this.read(async db=>{
-   const [row]=await rows<Row>(db,`SELECT a.*,s.password_change_required FROM platform_employee_sessions s
+   const [row]=await rows<Row>(db,`SELECT a.*,p.name,s.password_change_required FROM platform_employee_sessions s
     JOIN platform_employee_accounts a ON a.id=s.account_id
     JOIN platform_people p ON p.id=a.person_id
     JOIN platform_organization_units o ON o.id=p.organization_unit_id

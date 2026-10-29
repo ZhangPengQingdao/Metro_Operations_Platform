@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { CheckCircle, Warning, WarningCircle, Info, X } from "@phosphor-icons/react";
 
 export type ToastType = "success" | "warning" | "danger" | "info";
@@ -42,6 +42,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const warning = useCallback((msg: string, dur?: number) => show(msg, "warning", dur), [show]);
   const error = useCallback((msg: string, dur?: number) => show(msg, "danger", dur), [show]);
   const info = useCallback((msg: string, dur?: number) => show(msg, "info", dur), [show]);
+  const value = useMemo(() => ({ show, success, warning, error, info }), [show, success, warning, error, info]);
 
   const toastIcons: Record<ToastType, React.ReactNode> = {
     success: <CheckCircle size={18} weight="fill" />,
@@ -51,7 +52,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <ToastContext.Provider value={{ show, success, warning, error, info }}>
+    <ToastContext.Provider value={value}>
       {children}
       <div className="afc-toast-container" aria-live="polite">
         {toasts.map((t) => (

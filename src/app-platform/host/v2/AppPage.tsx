@@ -90,7 +90,7 @@ const messageFor = (error: unknown) =>
   : error instanceof Error && error.message === 'INVALID_APP_MODULE' ? '应用页面文件无效，请联系应用开发者重新打包。'
   : '应用页面暂时无法打开。';
 
-class AppErrorBoundary extends React.Component<{ children: React.ReactNode; onRetry(): void }, { failed: boolean }> {
+export class AppErrorBoundary extends React.Component<{ children: React.ReactNode; onRetry(): void }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   componentDidCatch(error: unknown) { console.error('应用页面出错', error); }
@@ -102,19 +102,28 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode; onRe
 
 /** Renders a v2 application page in place, inside the platform shell (same origin, no iframe). */
 export function AppPageV2({ app, path, onNavigate }: { app: AppV2Entry; path: string; onNavigate(path: string): void }) {
+  const [attempt, setAttempt] = useState(0);
+  // A route/version change must never mount the previous page with its old admission.
+  const key = JSON.stringify([app.appId, app.v2.sha256, app.runtimeRevision, path, attempt]);
+  return <AppPageSession key={key} app={app} path={path} onNavigate={onNavigate} onRetry={() => setAttempt(value => value + 1)} />;
+}
+
+function AppPageSession({ app, path, onNavigate, onRetry }: { app: AppV2Entry; path: string; onNavigate(path: string): void; onRetry(): void }) {
   const toast = useToast();
-  const [loaded, setLoaded] = useState<Loaded | null>(null), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
+  const [loaded, setLoaded] = useState<Loaded | null>(null), [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<{ title: string; message?: string; confirmLabel?: string; danger?: boolean; resolve(value: boolean): void } | null>(null);
+  // Navigating away also cancels a pending confirmation instead of leaving its caller waiting.
+  useEffect(() => () => confirmation?.resolve(false), [confirmation]);
 
   useEffect(() => {
     const controller = new AbortController();
     setError('');
     employeeRequest<Session>(`/apps/${app.appId}/v2-session?path=${encodeURIComponent(path)}`, { signal: controller.signal })
-      .then(async session => { ensureStylesheet(app.appId, session.cssUrl); return { session, definition: await loadDefinition(session.moduleUrl) }; })
+      .then(async session => { controller.signal.throwIfAborted(); ensureStylesheet(app.appId, session.cssUrl); return { session, definition: await loadDefinition(session.moduleUrl) }; })
       .then(value => { if (!controller.signal.aborted) setLoaded(value); })
       .catch(reason => { if (!controller.signal.aborted) { setLoaded(null); setError(messageFor(reason)); } });
     return () => controller.abort();
-  }, [app.appId, app.v2.sha256, app.runtimeRevision, path, attempt]);
+  }, [app.appId, app.v2.sha256, app.runtimeRevision, path]);
 
   const session = loaded?.session;
   const runtime = useMemo<AppRuntime | null>(() => {
@@ -146,13 +155,13 @@ export function AppPageV2({ app, path, onNavigate }: { app: AppV2Entry; path: st
   }, [session, onNavigate, toast]);
   const settle = useCallback((value: boolean) => setConfirmation(current => { current?.resolve(value); return null; }), []);
 
-  if (error) return <section className="app-v2" data-app={app.appId}><div className="app-v2-error" role="alert"><p>{error}</p><Button variant="secondary" onClick={() => setAttempt(value => value + 1)}>重新加载</Button></div></section>;
+  if (error) return <section className="app-v2" data-app={app.appId}><div className="app-v2-error" role="alert"><p>{error}</p><Button variant="secondary" onClick={onRetry}>重新加载</Button></div></section>;
   if (!loaded || !runtime) return <section className="app-v2" data-app={app.appId} aria-busy="true"><p className="app-v2-loading" role="status">正在打开{app.name}…</p></section>;
   const Page = loaded.definition.pages[loaded.session.route.pattern];
   return <section className="app-v2" data-app={app.appId}>
     <header className="app-v2-heading"><h1>{loaded.session.route.title}</h1></header>
     {Page
-      ? <AppErrorBoundary key={`${loaded.session.sha256}:${path}`} onRetry={() => setAttempt(value => value + 1)}><AppRuntimeProvider runtime={runtime}><Page params={loaded.session.route.params} /></AppRuntimeProvider></AppErrorBoundary>
+      ? <AppErrorBoundary onRetry={onRetry}><AppRuntimeProvider runtime={runtime}><Page params={loaded.session.route.params} /></AppRuntimeProvider></AppErrorBoundary>
       : <div className="app-v2-error" role="alert"><p>应用没有提供此页面，请联系应用开发者。</p></div>}
     <ConfirmDialog isOpen={!!confirmation} title={confirmation?.title ?? '操作确认'} message={confirmation?.message ?? ''} confirmText={confirmation?.confirmLabel ?? '确定'}
       variant={confirmation?.danger ? 'danger' : 'primary'} onClose={() => settle(false)} onConfirm={() => settle(true)} />

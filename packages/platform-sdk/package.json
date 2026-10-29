@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-sdk",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Public contracts and application SDK for Metro Operations Platform.",
   "type": "module",
   "sideEffects": false,
