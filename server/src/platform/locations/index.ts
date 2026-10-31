@@ -57,13 +57,23 @@ export class LocationDirectoryService {
     return this.repository.updateLocationDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
   }
 
-  async updateLineDetails(id: string, input: Partial<Pick<Line, 'name' | 'shortName' | 'status'>>) {
-    const patch: Partial<Pick<Line, 'name' | 'shortName' | 'status'>> = {};
+  async updateLineDetails(id: string, input: Partial<Pick<Line, 'name' | 'shortName' | 'lineNumber' | 'status'>>) {
+    const patch: Partial<Pick<Line, 'name' | 'shortName' | 'lineNumber' | 'status'>> = {};
     if (input.name !== undefined) patch.name = normalizeText(input.name, 'name', 100);
     if (input.shortName !== undefined) patch.shortName = normalizeOptionalText(input.shortName, 100);
+    if (input.lineNumber !== undefined) patch.lineNumber = normalizeLineNumber(input.lineNumber);
     if (input.status !== undefined) { if (!['active','inactive'].includes(input.status)) throw new LocationDirectoryError('INVALID_STATUS','状态无效'); patch.status = input.status; }
     if (!Object.keys(patch).length) throw new LocationDirectoryError('EMPTY_DIRECTORY_UPDATE', '请填写需要更新的字段');
-    return this.repository.updateLineDetails(normalizeUuid(id, 'record id'), patch, this.clock().toISOString());
+    const lineId = normalizeUuid(id, 'record id');
+    if (patch.lineNumber) {
+      const duplicate = await this.repository.findLineByLineNumber(patch.lineNumber);
+      if (duplicate && duplicate.id !== lineId) throw new LocationDirectoryError('DUPLICATE_LINE_NUMBER', `线路编号已存在: ${patch.lineNumber}`);
+    }
+    const now = this.clock().toISOString();
+    const { lineNumber: nextLineNumber, ...basePatch } = patch;
+    const updated = await this.repository.updateLineDetails(lineId, basePatch, now);
+    if (nextLineNumber !== undefined) return this.repository.setLineNumber(lineId, nextLineNumber, now);
+    return updated;
   }
 
   async createLocation(input: CreateLocationInput): Promise<Location> {
@@ -127,17 +137,24 @@ export class LocationDirectoryService {
     if (await this.repository.findLineByCode(code)) {
       throw new LocationDirectoryError('DUPLICATE_LINE_CODE', `线路编码已存在: ${code}`);
     }
+    const lineNumber = normalizeLineNumber(input.lineNumber);
+    if (lineNumber && await this.repository.findLineByLineNumber(lineNumber)) {
+      throw new LocationDirectoryError('DUPLICATE_LINE_NUMBER', `线路编号已存在: ${lineNumber}`);
+    }
     const now = this.clock().toISOString();
-    return this.repository.createLine({
+    const created = await this.repository.createLine({
       id: normalizeUuid(input.id ?? this.createId(), 'line id'),
       code,
       name: normalizeText(input.name, 'line name', 100),
       shortName: normalizeOptionalText(input.shortName, 100),
+      lineNumber,
       status: input.status ?? 'active',
       sortOrder: normalizeSortOrder(input.sortOrder),
       createdAt: now,
       updatedAt: now
     });
+    if (lineNumber) return this.repository.setLineNumber(created.id, lineNumber, now);
+    return created;
   }
 
   async linkStationToLine(input: LinkStationToLineInput): Promise<LineStation> {
@@ -379,6 +396,16 @@ function normalizeLineCode(value: string) {
   const normalized = value.trim().toUpperCase();
   if (!/^[A-Z0-9][A-Z0-9._:-]{0,49}$/.test(normalized)) {
     throw new LocationDirectoryError('INVALID_LINE_CODE', '线路编码必须是稳定 ASCII 编码');
+  }
+  return normalized;
+}
+
+function normalizeLineNumber(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/.test(normalized)) {
+    throw new LocationDirectoryError('INVALID_LINE_NUMBER', '线路编号须为 1–50 位字母、数字、点、下划线或连字符，以字母或数字开头');
   }
   return normalized;
 }

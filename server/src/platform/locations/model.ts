@@ -29,6 +29,7 @@ export interface Line {
   code: string;
   name: string;
   shortName: string | null;
+  lineNumber?: string | null;
   status: LocationRecordStatus;
   sortOrder: number;
   createdAt: string;
@@ -102,6 +103,7 @@ export interface CreateLineInput {
   code: string;
   name: string;
   shortName?: string | null;
+  lineNumber?: string | null;
   status?: LocationRecordStatus;
   sortOrder?: number;
 }
