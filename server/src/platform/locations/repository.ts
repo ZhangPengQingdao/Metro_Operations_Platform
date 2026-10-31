@@ -306,7 +306,7 @@ export function createPostgresLocationDirectoryRepository(client: QueryableClien
            line.id AS line_record_id, line.code AS line_code, line.name AS line_name,
            line.short_name AS line_short_name, line.status AS line_status, line.sort_order AS line_sort_order,
            line.created_at AS line_created_at, line.updated_at AS line_updated_at,
-           relation.id AS relation_id, relation.line_id, relation.station_id, relation.station_code,
+           relation.id AS relation_id, relation.line_id, relation.station_id, relation.station_code, to_jsonb(relation)->>'station_number' AS station_number,
            relation.sort_order AS relation_sort_order, relation.status AS relation_status,
            relation.created_at AS relation_created_at, relation.updated_at AS relation_updated_at
          FROM platform_line_stations relation
@@ -407,7 +407,7 @@ async function loadProfiles(client: QueryableClient, locations: readonly Locatio
          line.id AS line_record_id, line.code AS line_code, line.name AS line_name,
          line.short_name AS line_short_name, line.status AS line_status, line.sort_order AS line_sort_order,
          line.created_at AS line_created_at, line.updated_at AS line_updated_at,
-         relation.id AS relation_id, relation.line_id, relation.station_id, relation.station_code,
+         relation.id AS relation_id, relation.line_id, relation.station_id, relation.station_code, to_jsonb(relation)->>'station_number' AS station_number,
          relation.sort_order AS relation_sort_order, relation.status AS relation_status,
          relation.created_at AS relation_created_at, relation.updated_at AS relation_updated_at
        FROM platform_line_stations relation
@@ -495,6 +495,7 @@ function mapLineStation(row: unknown): LineStation {
     lineId: requiredString(value.line_id),
     stationId: requiredString(value.station_id),
     stationCode: requiredString(value.station_code),
+    stationNumber: optionalString(value.station_number),
     sortOrder: Number(value.sort_order),
     status: requiredString(value.status) as LineStation['status'],
     createdAt: toIsoString(value.created_at),
@@ -548,6 +549,7 @@ function mapStationLineMembership(row: unknown): StationLineMembership {
       lineId: requiredString(value.line_id),
       stationId: requiredString(value.station_id),
       stationCode: requiredString(value.station_code),
+      stationNumber: optionalString(value.station_number),
       sortOrder: Number(value.relation_sort_order),
       status: requiredString(value.relation_status) as LineStation['status'],
       createdAt: toIsoString(value.relation_created_at),
