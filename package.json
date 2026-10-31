@@ -1,7 +1,7 @@
 {
   "name": "metro-operations-platform",
   "private": true,
-  "version": "1.7.2",
+  "version": "1.8.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -24,7 +24,7 @@
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/noto-sans-sc": "^5.2.9",
-    "@metro/platform-sdk": "1.7.2",
+    "@metro/platform-sdk": "1.8.0",
     "@phosphor-icons/react": "^2.1.10",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",

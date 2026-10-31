@@ -202,6 +202,12 @@
 .afc-profile-section-title { font-size:16px; font-weight:600; min-height:24px; margin:0 40px 26px 0; }
 .afc-profile-content .afc-details { grid-template-columns:64px minmax(0,1fr); gap:12px; }
 .afc-profile-actions { display:flex; justify-content:flex-end; padding-top:8px; }
+.admin-model-settings .afc-tab-list { overflow-x:auto; }
+.admin-model-settings .afc-tab-trigger { flex-shrink:0; white-space:nowrap; }
+.admin-model-panel { padding-top:20px; }
+.admin-model-results { margin:0; padding-left:20px; display:grid; gap:12px; }
+.admin-model-results small { display:block; color:var(--afc-color-muted); }
+.afc-admin .admin-model-description { margin-bottom:24px; color:var(--afc-color-muted); line-height:1.7; }
 .afc-profile-dialog.afc-sidebar-dialog > .afc-dialog__body { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
 .afc-profile-dialog.afc-sidebar-dialog .afc-profile-layout { flex:1 1 auto; min-height:0; }
 .afc-profile-dialog.afc-sidebar-dialog .afc-profile-nav { overflow:hidden; flex:0 0 auto; }
