@@ -13,3 +13,7 @@ export const appAiPermissionMigration:MigrationDefinition={id:'app-gateway-ai-pe
  await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000006','platform.ai.complete','调用平台配置的模型','应用使用受限文本补全，模型凭据不进入沙箱','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
 }};
 
+
+export const appAsrPermissionMigration:MigrationDefinition={id:'app-asr-transcribe-permission',title:'Application recording transcription permission',ownerTaskId:'PLATFORM-L4-018',phase:'expand',layer:'L3',dataRows:[],migrationRows:['MIG-076'],sourceTables:[],targetTables:['platform_permissions'],dependsOn:['platform-authorization-expand'],recoveryNotes:'Adds a permission definition only.',async run({client}){
+ await client.query(`INSERT INTO platform_permissions(id,code,name,description,status,created_at,updated_at) VALUES ('49000000-0000-4000-8000-000000000076','platform.asr.transcribe','转写会议录音','通过平台语音模型转写员工选择的音频','active',now(),now()) ON CONFLICT(code) DO NOTHING`);
+}};

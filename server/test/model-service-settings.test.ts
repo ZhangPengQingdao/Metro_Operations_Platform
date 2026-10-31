@@ -137,6 +137,8 @@ test('admin model routes require admin and same origin, save with audit and test
   const chunks:Buffer[]=[];req.on('data',chunk=>chunks.push(chunk));req.on('end',async()=>{
    if(gate){entered++;if(entered===2)onEntered();await gate;}
    bodies.push(Buffer.concat(chunks).toString());res.setHeader('Content-Type','application/json');
+   if(req.url==='/submit'){res.setHeader('X-Api-Status-Code','20000000');res.end('{}');return;}
+   if(req.url==='/query'){res.setHeader('X-Api-Status-Code','20000000');res.end(JSON.stringify({result:{text:'豆包异步识别测试'}}));return;}
    res.end(JSON.stringify(req.url==='/rerank'?{results:[{index:0,relevance_score:0.9},{index:1,relevance_score:0.2}]}:{text:'真实 HTTP 测试'}));
   });
  });
@@ -149,7 +151,7 @@ test('admin model routes require admin and same origin, save with audit and test
  registerAdminIdentityRoutes(app,{origin:'https://platform.example',service:identity});
  await registerAdminConsoleRoutes(app,{origin:'https://platform.example',identity,pool:f.pool});
  try{
-  for(const path of ['/rerank','/asr']){
+  for(const path of ['/rerank','/asr','/streaming-asr']){
    assert.equal((await app.inject({url:'/api/admin'+path})).statusCode,401);
    assert.equal((await app.inject({method:'POST',url:'/api/admin'+path+'/test',headers:{origin:'https://platform.example'},payload:{}})).statusCode,401);
   }
@@ -181,5 +183,22 @@ test('admin model routes require admin and same origin, save with audit and test
   assert.equal((await probe()).statusCode,429);
   release();assert.ok((await Promise.all(pending)).every(response=>response.statusCode===200));gate=undefined;
   assert.equal((await probe()).statusCode,200,'test slots must be released');
+  env.MOP_ASR_ALLOWED_ENDPOINTS.push(base+'/submit',base+'/query');
+  const voice={protocol:'doubao-asr',endpoint:base+'/submit',model:'bigmodel',resourceId:'volc.seedasr.auc',timeoutMs:5000,apiKey:'fixture-voice-key'};
+  assert.equal((await app.inject({method:'POST',url:'/api/admin/asr/query',headers:{origin:'https://platform.example'},payload:{...voice,taskId:randomUUID()}})).statusCode,401);
+  assert.equal((await app.inject({method:'POST',url:'/api/admin/asr/query',headers:{...headers,origin:'https://evil.example'},payload:{...voice,taskId:randomUUID()}})).statusCode,403);
+  const submitted=await app.inject({method:'POST',url:'/api/admin/asr/test',headers,payload:{...voice,urlAudio:{url:'https://example.com/test.mp3',format:'mp3'}}});
+  assert.equal(submitted.statusCode,200,submitted.body);assert.equal(submitted.json().pending,true);
+  const queried=await app.inject({method:'POST',url:'/api/admin/asr/query',headers,payload:{...voice,taskId:submitted.json().taskId}});
+  assert.equal(queried.statusCode,200,queried.body);assert.equal(queried.json().text,'豆包异步识别测试');
+  assert.equal((await readModelServiceConfig(f.db,'asr'))!.model,input.model,'query and submit must not save the draft');
+  const streamInput={protocol:'doubao-streaming',endpoint:'wss://8.8.8.8/asr',model:'bigmodel',resourceId:'volc.seedasr.sauc.duration',apiKey:'fixture-stream-key',requestId:randomUUID()};
+  assert.equal((await app.inject({method:'POST',url:'/api/admin/streaming-asr/save',headers:{...headers,origin:'https://evil.example'},payload:streamInput})).statusCode,403);
+  const streamSave=await app.inject({method:'POST',url:'/api/admin/streaming-asr/save',headers,payload:streamInput});
+  assert.equal(streamSave.statusCode,200,streamSave.body);assert.equal(streamSave.json().protocol,'doubao-streaming');
+  assert.ok(!streamSave.body.includes('fixture-stream-key'));
+  assert.equal((await app.inject({url:'/api/admin/streaming-asr',headers})).json().resourceId,'volc.seedasr.sauc.duration');
+  const badStream=await app.inject({method:'POST',url:'/api/admin/streaming-asr/test',headers,payload:{...streamInput,requestId:undefined,audio:{format:'wav',data:Buffer.from('invalid wav').toString('base64')}}});
+  assert.equal(badStream.statusCode,400);assert.equal(badStream.json().error,'ASR_STREAM_AUDIO_INVALID');
  }finally{await app.close();await new Promise<void>(resolve=>provider.close(()=>resolve()));await f.close();}
 });

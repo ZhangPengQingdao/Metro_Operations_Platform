@@ -5,6 +5,8 @@
 .hct-actions,.hct-footer,.hct-upload-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .hct-muted{color:var(--afc-color-muted);font-size:13px;line-height:1.7}
 .hct-alert{border:1px solid var(--afc-color-danger);background:var(--afc-color-danger-soft);color:var(--afc-color-danger-ink);padding:10px 14px;border-radius:8px;overflow-wrap:anywhere;font-size:13px;line-height:1.7}
+.hct-session-error{display:grid;gap:8px}
+.hct-session-error>.afc-button{justify-self:start}
 .hct-section{margin-top:28px}.hct-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.hct-wide{grid-column:1/-1}.hct-form textarea,.hct textarea.afc-control{width:100%;min-height:90px;resize:vertical;line-height:1.7}.hct-fields{border:0;padding:0;margin:0;min-width:0}.hct-footer{justify-content:flex-end;width:100%}
 .hct-wrap{min-width:180px;max-width:340px;white-space:normal!important;overflow-wrap:anywhere}.hct-number{display:block;white-space:normal;overflow-wrap:anywhere;color:var(--afc-color-muted);max-width:100%;margin-top:6px;font-size:12px;line-height:1.5}
 .hct-overdue{display:block;color:var(--afc-color-danger-ink);margin-top:5px;font-size:12px}
@@ -95,3 +97,12 @@
 .hct table[data-kind=supervision] .hct-quality-cell{min-width:150px;max-width:220px}
 .hct table[data-kind=supervision] .hct-progress-cell{min-width:120px;max-width:160px}
 .hct table[data-kind=supervision] .hct-remark-cell{min-width:76px;max-width:120px}
+
+.hct-source{display:grid;gap:12px}.hct-source-choice{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;padding:26px;border-radius:12px;background:var(--afc-color-primary-soft);color:var(--afc-color-primary);font-weight:600;cursor:pointer}
+.hct-source-choice input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.hct-source-choice:focus-within{outline:2px solid var(--afc-color-primary)}
+.hct-draft+.hct-draft{border-top:1px solid var(--afc-color-line);margin-top:20px;padding-top:16px}
+.hct-draft header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.hct-draft header strong{color:var(--afc-color-primary);font-size:14px}
+.hct-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}.hct-draft-grid textarea{min-height:64px;width:100%;resize:vertical}
+.hct-draft details{margin-top:10px;color:var(--afc-color-muted);font-size:13px}.hct-draft summary{cursor:pointer}.hct-draft details[open] summary{margin-bottom:6px}
+.hct-notes{width:100%;min-height:150px;resize:vertical}.hct-upload-label+.afc-field,.hct-audio-preview+.afc-field{margin-top:16px}
+@media(max-width:600px){.hct-draft-grid{grid-template-columns:1fr}.hct-list-toolbar>.afc-filter-bar-wrapper{max-width:100%}}

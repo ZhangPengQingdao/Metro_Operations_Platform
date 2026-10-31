@@ -138,3 +138,42 @@ test('embedding allowlist environment accepts deployment endpoints and rejects u
  assert.equal(valid.status,0,valid.stderr);assert.equal(JSON.parse(valid.stdout).length,2);
  for(const value of ['ftp://embedding.internal/model','http://user:password@embedding.internal/v1/embeddings','http://embedding.internal/v1/embeddings?key=x','http://embedding.internal/v1/embeddings#part'])assert.notEqual(run(value).status,0);
 });
+
+test('Ark embedding protocol uses multimodal request and response; normalization and legacy defaults remain compatible',async()=>{
+ const {embeddingSchema,normalizeEmbeddingEndpoint}=await import('../src/core/integrations/embeddings/index.ts');
+ assert.equal(normalizeEmbeddingEndpoint('https://ark.example/api/v3','volcengine-ark'),'https://ark.example/api/v3/embeddings/multimodal');
+ assert.equal(normalizeEmbeddingEndpoint('https://ark.example/api/v3/embeddings/multimodal','volcengine-ark'),'https://ark.example/api/v3/embeddings/multimodal');
+ assert.equal(normalizeEmbeddingEndpoint('https://ark.example/api/v3/embeddings','volcengine-ark'),'https://ark.example/api/v3/embeddings/multimodal');
+ assert.equal(normalizeEmbeddingEndpoint('https://model.example','openai'),'https://model.example/v1/embeddings');
+ assert.equal(embeddingSchema.safeParse({protocol:'unknown'}).success,false);
+ assert.equal(publicEmbeddingConfig(null).protocol,'openai');
+ const {env}=await import('../src/config/env.ts');const previous=env.AI_PROVIDER_ENCRYPTION_KEY;env.AI_PROVIDER_ENCRYPTION_KEY='a'.repeat(64);
+ try{
+  const config:EmbeddingConfig={protocol:'volcengine-ark',enabled:true,revision:randomUUID(),model:'doubao-embedding-vision-251215',endpoint:'https://ark.example/api/v3/embeddings/multimodal',dimensions:2,timeoutMs:5000,apiKey:encryptApiKey('fixture-ark-key'),apiKeyMask:'masked'};
+  const vector=await embedText(config,'知识库检修',signal,{safety:async()=>{},fetch:async(url,options)=>{
+   assert.equal(url,config.endpoint);assert.equal((options!.headers as Record<string,string>).Authorization,'Bearer fixture-ark-key');
+   assert.deepEqual(JSON.parse(options!.body as string),{model:config.model,input:[{type:'text',text:'知识库检修'}],encoding_format:'float'});
+   return Response.json({data:{embedding:[3,4]}});
+  }});assert.deepEqual(vector,[0.6,0.8]);
+  for(const data of [null,[],[{embedding:[3,4]}],{embedding:[0,0]},{embedding:[1]},{embedding:['3',4]}])
+   await assert.rejects(embedText(config,'检修',signal,{safety:async()=>{},fetch:async()=>Response.json({data})}),{code:'EMBEDDING_VECTOR_INVALID'});
+ }finally{env.AI_PROVIDER_ENCRYPTION_KEY=previous;}
+});
+
+test('embedding protocol is persisted, legacy revisions are retained, and changing protocol requires a key and reindexes',async()=>{
+ const f=await fixture();const {env}=await import('../src/config/env.ts');const previous=env.AI_PROVIDER_ENCRYPTION_KEY;env.AI_PROVIDER_ENCRYPTION_KEY='a'.repeat(64);
+ const {saveEmbeddingConfig,readEmbeddingConfig}=await import('../src/core/integrations/embeddings/index.ts');
+ const pool={...f.db,connect:async()=>f.db},input={enabled:false,endpoint:'https://model.example/v1/embeddings',model:'small',dimensions:2,timeoutMs:5000,apiKey:'fixture-only-key'};
+ try{
+  await saveEmbeddingConfig(pool,input,async()=>{});
+  await f.pg.query("UPDATE system_configs SET value=value-'protocol' WHERE key='embedding_runtime_global'");
+  const legacy=(await readEmbeddingConfig(f.db))!;
+  assert.equal(publicEmbeddingConfig(legacy).protocol,'openai');
+  await saveEmbeddingConfig(pool,{...input,protocol:'openai',apiKey:undefined},async()=>{});
+  assert.equal((await readEmbeddingConfig(f.db))!.revision,legacy.revision);
+  await assert.rejects(saveEmbeddingConfig(pool,{...input,protocol:'volcengine-ark',apiKey:undefined},async()=>{}),{code:'EMBEDDING_KEY_REQUIRED'});
+  await saveEmbeddingConfig(pool,{...input,protocol:'volcengine-ark'},async()=>{});
+  const ark=(await readEmbeddingConfig(f.db))!;assert.equal(ark.protocol,'volcengine-ark');assert.notEqual(ark.revision,legacy.revision);
+  assert.ok(ark.endpoint.endsWith('/embeddings/multimodal'));assert.ok(!ark.endpoint.endsWith('/multimodal/embeddings'));
+ }finally{env.AI_PROVIDER_ENCRYPTION_KEY=previous;await f.pg.close();}
+});

@@ -46,7 +46,7 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
    if(operation==='platform.knowledge.list')return knowledge.list(knowledgeScope,input);
    if(operation.startsWith('platform.app_data.'))return data.execute(context,installation,operation.slice('platform.app_data.'.length) as any,input,signal);
    if(operation==='platform.people.organization_context')return {organizations:[{id:team,unitType:'workgroup'},{id:org,unitType:'department'}]};
-   if(operation==='platform.people.members')return {rows:[{id:person,name:'张三',organizationUnitId:team}]};
+   if(operation==='platform.people.assignees')return {rows:[{id:person,name:'张三',organizationUnitId:team}]};
    if(operation==='platform.attachments.list')return {attachments:[{attachmentId:randomUUID()}]};throw Error(operation);
   }};
   const employee={personId:person,organizationUnitId:team,businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'}],grants:['read','fill','review','complete','corpus','settings'].map(code=>({permission:`app.huicetong.${code}`,all:false,self:false,organizationIds:[org,team]}))}};
@@ -55,6 +55,9 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
   await service['record-review']({id,requestId:randomUUID(),expectedVersion:1,action:'approve'},employee);
   await service['record-progress']({id,requestId:randomUUID(),expectedVersion:2,summary:'完成',complete:true},employee);
   const page=await service['record-list']({organizationId:org,kind:'monthly',month:'2026-10'},employee);assert.equal(page.rows[0].status,'completed');assert.equal(page.rows[0].number,'月001');
+  const responsibleTeamViewer={...employee,businessAuthorization:{...employee.businessAuthorization,grants:[{permission:'app.huicetong.read',all:false,self:false,organizationIds:[team]}]}};
+  const summary=await service['dashboard-summary']({},responsibleTeamViewer);
+  assert.equal(summary.completion.total,1);assert.equal(summary.completion.completed,1);
   const term=await service['corpus-save']({id:randomUUID(),requestId:randomUUID(),organizationId:org,kind:'term',term:'AFC',explanation:'自动售检票系统'},employee);
   assert.equal((await service['corpus-list']({organizationId:org},employee)).terms.find((row:any)=>row.id===term.id).explanation,'自动售检票系统');
   assert.ok(!('original_text' in page.rows[0]));assert.equal((await service['record-get']({id},employee)).events.rows.length,3);

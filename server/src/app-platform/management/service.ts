@@ -185,6 +185,18 @@ export async function createAppManagement(configFile:string,origin:string){
    assertOpen();const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),request);
   },
+  async authorizeEmployeeTranscription(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string){
+   assertOpen();
+   const admission=await admitEmployee(appId,resolveIdentity);assertEmployeeAdmissionKey(admission,admissionKey);
+   const route=admission.installation.manifest.api.find(api=>api.id==='authorize-transcription'&&api.method==='POST'&&api.businessPermission);
+   const host=apps.findHost(appId),serviceIdentityId=admission.installation.serviceIdentityId;
+   if(!host||!route||!serviceIdentityId||!admission.installation.manifest.permissions.requested.includes('platform.asr.transcribe'))throw new GatewayError('ACCESS_DENIED',403);
+   const result=await host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),{apiId:route.id,method:'POST',path:route.path,payload:{}});
+   if(!result||typeof result!=='object'||!('ok' in result)||result.ok!==true||!result.result||typeof result.result!=='object'||!('allowed' in result.result)||result.result.allowed!==true)throw new GatewayError('ACCESS_DENIED',403);
+   const requestId=randomUUID();
+   const service=await apiAuthorization.contextResolver.resolve({actorType:'service',trustedIdentity:{source:'service'},execution:{type:'service',appId,serviceIdentityId},requestId,traceId:requestId});
+   if(!(await service.authorize('platform.asr.transcribe',{})).allowed)throw new GatewayError('ACCESS_DENIED',403);
+  },
   async authorizeEmployeeAttachment(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string,
    request:{action:'upload'|'read'|'export';entityType:string;entityId:string;attachmentId?:string;requestId:string}){
    assertOpen();

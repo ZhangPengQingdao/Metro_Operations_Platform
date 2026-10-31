@@ -1,10 +1,10 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "月度计划、上级督办、年度计划与AI语料管理",
   "color": "#059669",
-  "platform": ">=1.7.0 <2.0.0",
+  "platform": ">=1.10.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -31,6 +31,17 @@
     {
       "code": "review",
       "name": "审核月度提报",
+      "scopes": [
+        "self",
+        "workgroup",
+        "department",
+        "organizations",
+        "all"
+      ]
+    },
+    {
+      "code": "approved_delete",
+      "name": "删除已审核月度计划",
       "scopes": [
         "self",
         "workgroup",
@@ -198,7 +209,8 @@
     "webhook.send",
     "knowledge.read",
     "knowledge.write",
-    "tools.read"
+    "tools.read",
+    "asr.transcribe"
   ],
   "pages": [
     {
@@ -305,6 +317,14 @@
     {
       "id": "tool-plan-reference",
       "permission": "fill"
+    },
+    {
+      "id": "supervision-extract",
+      "permission": "supervision_manage"
+    },
+    {
+      "id": "authorize-transcription",
+      "permission": "supervision_manage"
     }
   ],
   "limits": {

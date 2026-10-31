@@ -51,6 +51,11 @@ function createFiles(appId: string, admissionKey: string): AppFiles {
     return { blob: await response.blob(), fileName: decodeURIComponent(response.headers.get('X-Mop-Attachment-Name') ?? 'file') };
   };
   return {
+    async transcribe(file,format,options){
+      const response=await fetch(`/api/employee/apps/${appId}/transcription?format=${encodeURIComponent(format)}`,{method:'POST',credentials:'same-origin',headers:{...headers,'Content-Type':'application/octet-stream'},body:file,signal:options?.signal});
+      if(!response.ok)await fail(response);
+      return response.json();
+    },
     async upload(file, target, options) {
       const query = new URLSearchParams({ entityType: target.entityType, entityId: target.entityId, intentId: target.intentId ?? crypto.randomUUID(), fileName: target.fileName ?? (file instanceof File ? file.name : 'file') });
       const response = await fetch(`/api/employee/apps/${appId}/attachments?${query}`, { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'Content-Type': 'application/octet-stream' }, body: file, ...(options?.signal ? { signal: options.signal } : {}) });

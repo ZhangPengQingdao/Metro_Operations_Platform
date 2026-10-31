@@ -88,7 +88,7 @@ export type AppDataMutation =
   | {action:'insert';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>}
   | {action:'update';table:string;id:string;values:Readonly<Record<string,AppGatewayJson>>;expected:Readonly<Record<string,AppGatewayJson>>}
   | {action:'delete';table:string;id:string;expected:Readonly<Record<string,AppGatewayJson>>};
-export type AppDataFilter = {column:string;value:string|number|boolean|null} | {column:string;contains:readonly Readonly<Record<string,string|number|boolean|null>>[]};
+export type AppDataFilter = {column:string;value:string|number|boolean|null} | {column:string;in:readonly string[]} | {column:string;contains:readonly Readonly<Record<string,string|number|boolean|null>>[]};
 export interface AppDataListOptions {
   /** Optional bounded projection. The host also includes id and the cursor ordering column. */
   columns?:readonly string[];

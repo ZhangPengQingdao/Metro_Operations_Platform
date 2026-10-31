@@ -30,6 +30,7 @@ export interface AppAttachment { attachmentId: string; fileName: string; content
  * `attachments.create` / `attachments.read` in app.json. Originals up to 200 MiB, including videos.
  */
 export interface AppFiles {
+  transcribe?(file:Blob,format:string,options?:{signal?:AbortSignal}):Promise<{text:string}>;
   upload(file: Blob, target: { entityType: string; entityId: string; fileName?: string; intentId?: string }, options?: { signal?: AbortSignal }): Promise<AppAttachment>;
   list(target: { entityType: string; entityId: string; afterId?: string }, options?: { signal?: AbortSignal }): Promise<{ attachments: AppAttachment[]; nextCursor: string | null }>;
   download(attachmentId: string, options?: { signal?: AbortSignal }): Promise<{ blob: Blob; fileName: string }>;

@@ -1,68 +1,88 @@
-# 重排序与 ASR 模型配置
+# 模型协议与语音服务设置
 
-平台 1.8.0。在「个人中心 → 系统设置 → 大模型配置」中，聊天、知识库向量、重排序、语音识别各有独立标签。切换标签保留草稿，分别测试与保存；测试或保存时锁定切换。关闭设置或切换左侧分类不保存草稿。
+平台 1.9.0。在「个人中心 → 系统设置 → 大模型配置」中，聊天、知识库向量、重排序、语音识别、流式语音识别各有独立标签。表单首项为接口协议，按能力提供已适配的选项；切换协议后重新填写该服务的密钥。标签间切换保留草稿，分别测试与保存；操作期间锁定标签、侧栏和关闭动作。关闭设置或切换左侧分类不保存草稿。
 
-本次提供真实的配置持久化与诊断请求。保存重排序配置不会改变知识库检索结果；保存 ASR 配置不会替换慧策通当前浏览器语音识别。业务调用、公开 SDK、启用开关与质量评估属于后续接入阶段。
+| 标签 | 协议选项 | 当前作用 |
+| --- | --- | --- |
+| 聊天模型 | OpenAI 兼容 | 智能对话与内容生成，包含兼容该格式的方舟聊天接口 |
+| 知识库向量模型 | OpenAI 兼容、火山方舟多模态向量 | 连接测试、知识索引及查询向量均使用所选协议 |
+| 重排序模型 | Rerank 兼容 | 配置与示例诊断，尚未改变知识库排序 |
+| 语音识别模型 | OpenAI 兼容、豆包录音文件识别 | 配置、文件或 URL 转写诊断；1.10.0 起 OpenAI 兼容文件转写可由授权应用调用 |
+| 流式语音识别 | 豆包 WebSocket 流式识别 | 独立配置、按真实速率发送短音频并验证最终结果；尚未接入慧策通麦克风 |
 
-## 配置和测试
+新增协议在各能力适配器内扩展。不能仅因供应商提供 OpenAI 聊天接口，就假设其向量和语音接口也兼容。未知协议会被拒绝。没有填写 protocol 的旧向量和 ASR 配置按 OpenAI 格式读取；无需修改旧配置或迁移业务数据。
 
-两类服务分别填写完整请求地址、API Key、模型 ID、请求超时（5000–120000 毫秒）。首次配置或更换地址需填写密钥；地址不变时留空保留原密钥。没有通用的模型发现接口，模型 ID 应按服务商提供的标识填写。ASR 可额外填写两位小写语言代码，如 `zh`；留空不发送语言提示。
+## 向量模型
 
-服务地址按填写值请求，不自动补齐路径。示例：
+OpenAI 请求为 `model/input:string/encoding_format:float`，读取 `data[0].embedding`。火山方舟请求为 `model/input:[{type:"text",text}]/encoding_format:float`，读取 `data.embedding`，参考 [方舟向量化说明](https://docs.volcengine.com/docs/ark/vectorization?lang=zh)。虽然该接口支持多模态，本次知识库仍只传结构化文本，没有新增图片或视频索引。
 
-- 重排序：`https://api.example.com/v1/rerank`，或供应商实际的 `/v2/rerank`。
-- ASR：`https://api.example.com/v1/audio/transcriptions`。
+选择方舟协议会预填 `https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal`、`doubao-embedding-vision-251215` 和 2048 维，可按实际开通模型修改。请求地址按协议补齐路径，不会在 `/embeddings/multimodal` 后再追加 `/embeddings`。维度必须与实际输出一致；两种协议都校验有限数值和非零范数，再存储单位向量。
 
-### 重排序
+协议、地址、模型或维度变化会更新索引版本并自动重建。只修改相似度门槛、超时或密钥不重建。更换协议或地址时必须重新填写 Key，防止错误复用凭据；旧配置首次补写 `protocol=openai` 不改变索引版本。
 
-点击“测试连接”发送一条内置问题与两条示例文本；不会读取或发送实际知识库内容。请求采用 JSON：`model/query/documents/top_n`，其中测试 `top_n=2`。响应须包含 `results:[{index,relevance_score}]`；两个候选索引须为不重复的 0、1，分数须为有限数值。页面显示服务返回顺序、对应示例和分数；连接成功不代表真实检索质量通过验收。该协议参照 [Cohere Rerank 接口](https://docs.cohere.com/reference/rerank)，只要求这里列出的字段，不假设供应商其他扩展参数兼容，也不把重排序标记为 OpenAI 接口。
+## 重排序
 
-### 语音识别
+填写完整请求地址、API Key、模型 ID 和超时。点击“测试连接”仅发送内置问题与两条示例文本，请求为 `model/query/documents/top_n`，测试 `top_n=2`。响应须包含 `results:[{index,relevance_score}]`；两个索引须为不重复的 0、1，分数为有限数值。页面按服务顺序展示示例和分数；连接成功不等于检索质量验收。协议参照 [Cohere Rerank](https://docs.cohere.com/reference/rerank)，不标记为 OpenAI。
 
-选择不超过 **2 MiB** 的 WAV、MP3、M4A、WebM 或 OGG 短音频，点击“测试转写”。仅测试按钮会把所选音频发给配置的服务；保存配置不上传文件。请使用适合发送到该服务的测试素材。
+## 录音文件语音识别
 
-平台以 multipart/form-data 发送 `file/model/response_format=json`，配置语言时额外发送 `language`。响应要求 `{text:string}`，页面显示原始转写文字；空文本会提示未识别到文字，不冒充质量验收通过。参考 [OpenAI 音频转写接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)。不支持供应商私有 WebSocket、异步任务、实时流式协议和说话人分离参数。扩展名在支持列表内不代表音频编码一定被具体服务接受。
+### OpenAI 兼容
 
-测试请求的音频仅在浏览器与平台内存中暂存，不写入平台文件或数据库。供应商留存规则由所配置服务决定。测试响应最多 64 KiB，转写文本最多 12000 字符；超限、无效结构、拒绝连接、取消和超时均明确报错，不自动重试。
+填写完整 `/audio/transcriptions` 地址、Key、模型 ID、超时；可额外填写两位小写语言代码（如 `zh`），留空不发送语言提示。测试支持不超过 **2 MiB** 的 WAV、MP3、M4A、WebM、OGG 文件。平台发送 multipart `file/model/response_format=json` 与可选 language，读取 `{text:string}`。参考 [OpenAI 音频转写接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)。扩展名允许不代表供应商接受其内部编码。
 
-## 管理端接口
+### 豆包录音文件识别
 
-以下路径均位于 `/api/admin`，只允许管理员会话，所有写入和测试要求同源 Origin；响应为 `Cache-Control: no-store`。这些是管理诊断接口，业务应用不能拿管理员会话使用。
+默认地址 `https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit`，模型固定 `bigmodel`。资源下拉可选 `volc.seedasr.auc`（2.0）或 `volc.bigasr.auc`（1.0）；需要豆包语音控制台中能访问该资源的 API Key，方舟 Key 不能直接代替。
+
+该协议的测试来源是**公网 HTTPS 音频 URL**，支持 WAV、MP3、OGG；当前诊断不接受 URL 内嵌凭据、查询参数或片段。平台不为了测试而公开本地录音；音频由豆包从所填 URL 获取，平台不下载它。录音 URL 只随本次测试发送，不保存在配置里。
+
+服务使用 JSON、`X-Api-Key`、`X-Api-Resource-Id`、新 UUID 请求编号与 `X-Api-Sequence:-1`。平台只提交一次任务，随后最多自动查询三次。仍未完成或查询失败时保留任务编号，可以点击“查询转写结果”，不会重新提交音频。关闭设置会清除本次临时任务状态；诊断应使用短样例，长期任务管理属于后续业务接入。外部提交结果未知时不自动重试。
+
+提交地址末尾须为 `/submit`，查询路径为同源 `/query`。两条完整 URL 都要通过各自的地址检查；内网部署只批准 submit 不会同时放行 query。参考 [提交任务](https://docs.volcengine.com/docs/doubao-voice/task-submission-http-1?lang=zh)与[查询结果](https://docs.volcengine.com/docs/doubao-voice/result-query-http-1?lang=zh)。
+
+## 流式语音识别
+
+默认使用 `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async`（双向流式优化接口），选择豆包语音 WebSocket 协议、填写 Key 和对应流式资源。提供 ASR 2.0 / 1.0 的按时长、按并发四种资源 ID，默认 `volc.seedasr.sauc.duration`。它们与录音识别的 `.auc` 资源分开授权，录音转写成功不能证明流式资源可用。
+
+本次支持公网 WSS，沿用公网地址和 DNS 检查；拒绝 WS、内网、嵌入凭据、查询参数、片段与重定向，没有引入流式内网白名单。密钥仅由平台后端加入 WebSocket 握手 Header，不发送给浏览器或应用。
+
+测试音频为不超过 **2 MiB、30 秒、16 kHz、单声道、16 位 PCM** 的 WAV。平台校验 WAV 块与编码，剥离容器后每 200 ms 发送一段 PCM，使用豆包二进制协议和 gzip；超时需比音频时长至少多 3 秒，默认 45 秒。页面展示完成后的转写文字与识别结果次数。中间结果按完整假设替换，不逐段拼接造成重复；收到有效最终帧才成功，提前断开会报错。
+
+帧大小、解压大小、累计响应与文本长度均有限制。断开客户端连接、取消、服务关闭或超时会终止上游 WebSocket；不自动重连或重发音频。鉴权拒绝与其他握手失败分别报错。参考 [豆包流式 ASR 协议](https://docs.volcengine.com/docs/doubao-voice/large-model-streaming-automatic-speech-recognition-api-1?lang=zh)。
+
+慧策通 2.5.0 已接入录音文件转写和会议多事项提取，使用平台 1.10.0 的 `files.transcribe`。浏览器实时识别仍由 `SpeechRecognition` 提供；平台流式会话仍未开放。后续还需完成麦克风采集/重采样、用户与组织授权、会话生命周期、断线片段恢复、稳定文本合并、附件策略及人工编辑确认，再进入现有督办提取流程。
+
+## 管理端接口与数据边界
+
+以下均位于 `/api/admin`，要求独立管理员会话；所有 POST 均检查同源 Origin，响应 `Cache-Control: no-store`。
 
 | 方法与路径 | 输入 / 返回 |
 | --- | --- |
-| `GET /rerank`、`GET /asr` | 返回 endpoint、model、timeoutMs、hasApiKey、configured；ASR 另含 language。未配置时返回空值与默认超时 |
-| `POST /rerank/save`、`POST /asr/save` | 上述配置字段（不含 hasApiKey/configured），可选 apiKey，必填 UUID requestId；返回公开配置 |
-| `POST /rerank/test` | 配置字段与可选 apiKey，使用内置样例；返回 latencyMs 与 results |
-| `POST /asr/test` | 配置字段、可选 apiKey，加 `audio:{format,data}`；data 为规范 Base64；返回 latencyMs 与 text |
+| `GET /embedding` | 向量配置，始终返回 protocol；旧配置默认 openai |
+| `POST /embedding/save`、`POST /embedding/test` | 向量配置、protocol、可选 apiKey；测试返回 dimensions，不保存草稿 |
+| `GET /rerank`、`GET /asr`、`GET /streaming-asr` | 公开配置 endpoint/model/timeoutMs/hasApiKey/configured；语音含 protocol 和对应 resourceId |
+| `POST /{kind}/save` | 配置与 UUID requestId；不接受音频或任务输入，返回公开配置 |
+| `POST /rerank/test` | 配置，返回 latencyMs/results |
+| `POST /asr/test` | OpenAI 加 `audio:{format,data}`（规范 Base64）；豆包加 `urlAudio:{url,format}`，两者不能混传 |
+| `POST /asr/query` | 豆包配置与 UUID taskId；返回 taskId/pending，完成时另有 text |
+| `POST /streaming-asr/test` | 流式配置与 `audio:{format:"wav",data}`；返回 latencyMs/text/partialCount |
 
-管理端小文件测试使用受限 JSON 上传，然后平台转成供应商要求的 multipart。此路径不属于公开应用网关；后续业务音频应使用经授权的附件引用和任务契约，不复用诊断接口做大文件传输。每个 API 进程最多同时接纳 2 个重排序/ASR 诊断请求，超出返回 429。平台断开测试连接时取消上游请求；取消不能保证供应商未计费。
+测试和查询不保存配置。保存语音/重排序配置时在同一事务内写配置、管理员审计和幂等结果。三个配置键分别为 `rerank_runtime_global`、`asr_runtime_global`、`streaming-asr_runtime_global`，互不覆盖；相同 requestId、管理员和参数只返回首次结果，参数或服务类型变更返回 409。留空密钥仅在协议与地址不变时保留，密钥沿用 `AI_PROVIDER_ENCRYPTION_KEY` 加密，不回传明文或密文；审计不存录音、URL 或转写正文。
 
-保存时在同一事务中写入配置、管理员审计和幂等结果。重排序与 ASR 分别使用 `rerank_runtime_global`、`asr_runtime_global` 配置键。密钥沿用 `AI_PROVIDER_ENCRYPTION_KEY` 加密，不回传明文或加密载荷；审计不存密钥、音频或转写正文。相同 requestId、管理员和参数重发只返回首次结果；变更参数、管理员或服务类型返回 409。旧请求重发不会覆盖更新的配置。结果未知时先重新读取核对，前端不自动重放；同一草稿手动重试保留请求编号。
+文件仅在浏览器与 API 内存中暂存，保存不会上传测试音频。普通诊断响应最多 64 KiB，转写文本最多 12000 字符；流式另限制累计响应 2 MiB。每个 API 进程最多同时接纳两个重排序/语音测试或查询，超出返回 429。取消不能保证供应商未计费；供应商留存规则由对应服务决定。
 
-## 部署
+这些接口是管理员诊断，业务应用不能携管理员会话复用。公开业务音频能力需要受控附件或流式契约，不能把长音频塞入现有公开 JSON 网关。
 
-正式签名版本发布后，按正常管理端流程「系统更新 → 检查更新 → 下载更新 → 确认备份并安装」升级即可。宿主更新器会自动备份、运行新版本的 `dist/setup/database.js`、切换 API/前端并检查健康；无需管理员另外登录服务器执行数据库命令。新增迁移 `platform-model-configuration-expand` 只创建 `model_configuration_requests` 幂等记录表；已有配置与业务语料不迁移，已完成迁移不会重复执行。
+## 部署与兼容
 
-仅源码开发或绕过在线更新器的手工部署，才需要部署人员自行执行 `npm --prefix server run db:init`。模型配置需已有的有效 `AI_PROVIDER_ENCRYPTION_KEY`；不要为了接入新模型更换现有主密钥。
+1.9.0 复用现有 JSON 配置与幂等记录表，没有新增数据迁移。旧配置默认原协议，管理员可在系统更新中按正常签名版本流程升级。不要更换现有加密主密钥。
 
-公网服务使用 HTTPS 并通过现有外部模型地址校验。若服务在本机或内网，由运维在 **API 进程环境** 分别添加完整请求 URL：
+OpenAI、方舟向量、Rerank 和录音 ASR 沿用完整 URL 的精确内网白名单（API 进程环境，最多 16 项，逗号分隔）：
 
 ```dotenv
+MOP_EMBEDDING_ALLOWED_ENDPOINTS=http://embedding.internal:8000/v1/embeddings
 MOP_RERANK_ALLOWED_ENDPOINTS=http://rerank.internal:8000/v1/rerank
-MOP_ASR_ALLOWED_ENDPOINTS=http://asr.internal:8000/v1/audio/transcriptions
+MOP_ASR_ALLOWED_ENDPOINTS=http://asr.internal:8000/submit,http://asr.internal:8000/query
 ```
 
-每项最多 16 个、逗号分隔，仅允许 HTTP/HTTPS，不含凭据、查询参数或片段。精确匹配协议、主机、端口和路径；不开放同机其他路径。地址规范化后匹配，所有请求禁止重定向。两类列表互不授权，也不扩大聊天或向量服务的权限。修改启动环境后重启 API；私有 HTTPS 使用受信任证书，不关闭证书检查。配置模板见 `server/.env.example`。
-
-诊断测试会产生供应商调用和可能的费用。当前不包含真实模型质量评测、供应商部署、音频长期保存、配额结算或公开 SDK 能力。
-
-## 验收记录（2026-10-31）
-
-- 完整平台回归 527/527 通过。随后补齐非法 URL 处理和环境白名单验证，最终相关测试 22/22 通过（新增模型配置、向量服务、核心配置和管理端），未重复执行无关完整测试。
-- 前端类型检查、SDK/CLI/开发者资源/前端构建、API 构建以及版本一致性检查通过。
-- 使用 PGlite 验证配置加密、两类配置隔离、留空密钥保留、更换地址需密钥、审计失败回滚、请求编号冲突、旧请求不能覆盖新配置、迁移可重复执行；测试内容和明文密钥不进入配置或幂等结果。
-- 使用本地 HTTP 测试服务验证真实管理端鉴权、Origin 拒绝、重排序请求、ASR multipart 文件转发、诊断不保存草稿、并发限额释放和超大请求 413；供应商响应测试覆盖错误结构、重复/越界候选、过大响应、空转写、取消和超时。
-- 生产前端构建配合受控 API 响应验证四个标签、读取失败重试、草稿保留、文件类型校验、重排序结果、ASR 转写显示、保存不上传音频、空密钥不发送、保存响应丢失后手动重试复用 requestId、测试失败恢复、忙碌状态锁定、Home/End 切换。浏览器页面脚本错误为 0。
-- 检查 1440px 桌面与 390px、320px 窄屏，明暗主题正常；标签可横向滚动，表单纵向滚动后可到达保存按钮，对话框无横向溢出。截图和脚本保存在本地忽略目录 `output/playwright/model-services-*`，最终浏览器结果为 `model-services-final-result.txt`。
-- 自查了管理员边界、密钥与测试数据处理、事务和幂等、连接限制、取消、表单状态和文档一致性。尚未调用真实供应商、修改运行环境、执行业务数据库迁移、提交、推送或部署。管理端在线更新会自动执行迁移；用户验收可从两个新标签分别保存配置并测试开始。
+各类地址权限独立；允许 HTTP(S) 时仍禁止重定向和 URL 内嵌数据。流式 WSS 不使用这些白名单。配置模板见 `server/.env.example`。首次部署幂等表的说明仍见 1.8.0 版本记录，在线更新器会自动处理历史迁移。

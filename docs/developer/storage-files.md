@@ -9,6 +9,8 @@
 - `transaction(requestId, [...])` 一次最多 16 项写入，同一事务提交；`update`/`delete` 必须带 `expected` 旧值做并发校验。
 - 单行结果最多 32KiB，单次读取结果最多 60000 字节，单项写入值最多 16KiB。
 
+平台 1.10.0 起，UUID 列可使用 `{column: 'organization_id', in: [uuid1, uuid2]}` 集合筛选（1–127 个 UUID），可放入 `filters` 或 `anyOf`。空集合、非 UUID 值及非 UUID 列会拒绝。筛选通过数据库参数传入，不接受 SQL 表达式。每次存储请求仍最多 16 KiB；SDK 工作台摘要会在发送前按大小拆分读取批次，完整保留权限条件，失败不自动重试。
+
 写入的 `requestId` 由页面生成（UUID）并传给接口：同一 `requestId` 重试会返回第一次提交的结果，不会重复写入。结果未知时先核对原记录，不要换一个 `requestId` 重发。
 
 ## 本地文件

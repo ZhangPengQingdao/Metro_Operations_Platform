@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {GatewayError} from '../gateway/model.js';
 const identifier=z.string().regex(/^[a-z][a-z0-9_]{0,62}$/).refine(v=>!v.startsWith('pg_')&&!v.startsWith('platform_'));
 const scalar=z.union([z.string().max(1024),z.number().int().min(-2147483648).max(2147483647),z.boolean(),z.null()]);
-const filter=z.union([z.object({column:identifier,value:scalar}).strict(),z.object({column:identifier,contains:z.array(z.record(scalar)).min(1).max(10)}).strict()]);
+const filter=z.union([z.object({column:identifier,value:scalar}).strict(),z.object({column:identifier,in:z.array(z.string().uuid()).min(1).max(127)}).strict(),z.object({column:identifier,contains:z.array(z.record(scalar)).min(1).max(10)}).strict()]);
 type RuntimeFilter=z.infer<typeof filter>;
 export const runtimeListInput=z.object({
  columns:z.array(identifier).min(1).max(32).refine(values=>new Set(values).size===values.length).optional(),
@@ -32,6 +32,7 @@ function conditionsQuery(input:z.infer<typeof runtimeListInput>,columns:Readonly
  if(input.afterId)conditions.push(`id>${param(input.afterId)}::uuid`);
  const clause=(filter:RuntimeFilter)=>{
   const type=columns.get(filter.column);
+  if('in' in filter){if(type!=='uuid')throw new GatewayError('INVALID_PARAMS');return `"${filter.column}" = ANY(${param(filter.in)}::uuid[])`;}
   if('contains' in filter){if(type!=='jsonb')throw new GatewayError('INVALID_PARAMS');return `"${filter.column}" @> ${param(JSON.stringify(filter.contains))}::jsonb`;}
   const value=filter.value;
   if(!type||!['text','uuid','bool','int4','date','timestamptz'].includes(type)||value!==null&&!(['text','date','timestamptz'].includes(type)?typeof value==='string':type==='uuid'?z.string().uuid().safeParse(value).success:type==='bool'?typeof value==='boolean':typeof value==='number'))throw new GatewayError('INVALID_PARAMS');

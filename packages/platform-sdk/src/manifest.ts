@@ -4,7 +4,7 @@ export const APP_MANIFEST_V2_FILE = 'app.json' as const;
 
 /** Platform capabilities an application may request; each maps to `platform.<code>`. Application data access is implied by migrations. */
 export const APP_PLATFORM_ACCESS = [
-  'people.read', 'locations.read', 'assets.read', 'ai.complete', 'knowledge.read', 'knowledge.write', 'tools.read',
+  'people.read', 'locations.read', 'assets.read', 'ai.complete', 'asr.transcribe', 'knowledge.read', 'knowledge.write', 'tools.read',
   'attachments.create', 'attachments.read', 'notifications.create', 'notifications.manage',
   'signatures.create', 'signatures.read', 'signatures.sign', 'webhook.send',
 ] as const;

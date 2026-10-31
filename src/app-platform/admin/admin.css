@@ -207,6 +207,7 @@
 .admin-model-panel { padding-top:20px; }
 .admin-model-results { margin:0; padding-left:20px; display:grid; gap:12px; }
 .admin-model-results small { display:block; color:var(--afc-color-muted); }
+.admin-model-task { overflow-wrap:anywhere; }
 .afc-admin .admin-model-description { margin-bottom:24px; color:var(--afc-color-muted); line-height:1.7; }
 .afc-profile-dialog.afc-sidebar-dialog > .afc-dialog__body { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
 .afc-profile-dialog.afc-sidebar-dialog .afc-profile-layout { flex:1 1 auto; min-height:0; }

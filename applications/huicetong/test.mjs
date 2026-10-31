@@ -35,13 +35,22 @@ export function fixture(){
   }
   if(operation==='platform.people.organization_context'){const parent=orgs.get(payload.organizationUnitId);return {organizations:parent?[{id:payload.organizationUnitId,name:'工班',unitType:'workgroup'},{id:parent,name:'维保部',unitType:'department'}]:[{id:payload.organizationUnitId,name:'维保部',unitType:'department'}]};}
   if(operation==='platform.people.workgroups')return {rows:[...orgs].filter(([,org])=>org===payload.organizationUnitId).map(([id])=>({id,name:id===team?'一班':'二班'}))};
+  if(operation==='platform.people.assignees'){
+   const e=hostEmployee.getStore()??employee;
+   const grant=e.businessAuthorization.grants.find(g=>g.permission===`app.huicetong.${payload.permission}`);
+   if(!grant)throw Error('ACCESS_DENIED');
+   const rows=people.filter(row=>(grant.all||grant.organizationIds.includes(row.organizationUnitId)||grant.self&&row.id===e.personId)
+     &&(!payload.personId||row.id===payload.personId)
+     &&(!payload.search||(payload.exact?row.name===payload.search||row.employeeNo===payload.search:row.name.includes(payload.search)||row.employeeNo.includes(payload.search))));
+   return {rows,nextCursor:null};
+  }
   if(operation==='platform.people.members')return {organizationUnitId:payload.organizationUnitId,rows:people.filter(row=>row.organizationUnitId===payload.organizationUnitId&&(!payload.personIds||payload.personIds.includes(row.id))&&(!payload.search||row.name.includes(payload.search)||row.employeeNo.includes(payload.search)))};
   if(operation==='platform.attachments.list')return {attachments:clone(attachments.get(payload.entityId)??[]),nextCursor:null};
   if(operation==='platform.ai.complete')return {content:JSON.stringify(aiResult)};
   if(operation==='platform.webhook.send'){sent.push(payload);return {sent:true};}
   if(operation==='platform.app_data.get')return {row:clone(tables.get(payload.table)?.get(payload.id)??null)};
   if(operation==='platform.app_data.list'){
-   let rows=[...tables.get(payload.table).values()].filter(row=>(payload.filters??[]).every(filter=>row[filter.column]===filter.value)&&(!payload.anyOf||payload.anyOf.some(group=>group.every(filter=>row[filter.column]===filter.value)))&&(!payload.search||String(row[payload.search.column]).toLowerCase().includes(payload.search.text.toLowerCase())));
+   let rows=[...tables.get(payload.table).values()].filter(row=>(payload.filters??[]).every(filter=>('in' in filter?filter.in.includes(row[filter.column]):row[filter.column]===filter.value))&&(!payload.anyOf||payload.anyOf.some(group=>group.every(filter=>('in' in filter?filter.in.includes(row[filter.column]):row[filter.column]===filter.value))))&&(!payload.search||String(row[payload.search.column]).toLowerCase().includes(payload.search.text.toLowerCase())));
    if(payload.order){const key=payload.order.column,sign=payload.order.direction==='desc'?-1:1;const compare=(a,b)=>sign*(String(a[key]).localeCompare(String(b[key]))||a.id.localeCompare(b.id));rows.sort(compare);if(payload.after)rows=rows.filter(row=>compare(row,{[key]:payload.after.value,id:payload.after.id})>0);}
    const page=rows.slice(0,payload.pageSize??20),last=page.at(-1);return {rows:clone(page),nextCursor:rows.length>page.length?{id:last.id,value:String(last[payload.order.column])}:null};
   }
@@ -52,7 +61,7 @@ export function fixture(){
   for(const op of payload.operations){const rows=next.get(op.table),old=rows.get(op.id);assert.ok(rows,op.table);if(op.action==='insert'){if(old)throw Object.assign(Error('duplicate'),{code:'STORAGE_CONFLICT',writeOutcome:'not_started'});assert.ok(!('id' in op.values));rows.set(op.id,{id:op.id,...clone(op.values)});}else{if(!old||Object.entries(op.expected).some(([key,value])=>JSON.stringify(old[key])!==JSON.stringify(value)))throw Object.assign(Error('stale'),{code:'STORAGE_CONFLICT',writeOutcome:'not_started'});if(op.action==='delete')rows.delete(op.id);else rows.set(op.id,{...old,...clone(op.values)});}}
   tables.clear();for(const [key,value] of next)tables.set(key,value);writes.push(clone(payload));recorded.set(payload.requestId,clone(payload.operations));return {results:[]};
  }};
- const names=['read','fill','review','complete','extend','extension_review','export','attachment_export','supervision_read','supervision_manage','supervision_delete','supervision_complete','annual_read','annual_manage','annual_complete','corpus','settings'];
+ const names=['approved_delete','read','fill','review','complete','extend','extension_review','export','attachment_export','supervision_read','supervision_manage','supervision_delete','supervision_complete','annual_read','annual_manage','annual_complete','corpus','settings'];
  const employee={personId:person,organizationUnitId:team,businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'},{id:otherTeam,name:'二班'}],grants:names.map(name=>({permission:`app.huicetong.${name}`,all:false,self:false,organizationIds:[department,team,otherTeam]}))}};
  const role=(names,options={})=>({...employee,...options,businessAuthorization:{...employee.businessAuthorization,grants:employee.businessAuthorization.grants.filter(g=>names.includes(g.permission.split('.').at(-1))).map(g=>({...g,...(options.self?{self:true,organizationIds:[]}:{}),...(options.foreign?{organizationIds:[otherDepartment,foreignTeam]}:{})}))}});
  const result=createReformService(gateway,{clock:()=>instant});
@@ -168,8 +177,8 @@ test('workgroup roles can fill, read and complete their own task without acquiri
 test('large annual imports store bounded progress instead of growing a row-id list',async()=>{
  const f=fixture(),id=randomUUID();f.tables.get('annual_imports').set(id,{id,organization_id:f.department,created_by:f.person,version:166,total:500,imported:497,status:'in_progress'});await write(f,'annual-import',{id,organizationId:f.department,rows:[f.draft('annual'),f.draft('annual'),f.draft('annual')],offset:497,total:500});const batch=f.tables.get('annual_imports').get(id);assert.equal(batch.imported,500);assert.equal(batch.status,'completed');assert.ok(!('row_ids' in batch));
 });
-test('personal reads cannot cross departments just because a person id matches',async()=>{
- const f=fixture(),row=await f.create('annual');f.tables.get('work_records').get(row.id).organization_id=f.otherDepartment;const self=f.role(['annual_read'],{self:true});await assert.rejects(f.service['record-get']({id:row.id},self),/ACCESS_DENIED/);await assert.rejects(f.service['record-list']({organizationId:f.otherDepartment,kind:'annual'},self),/ACCESS_DENIED/);
+test('personal reads include cross-department assignments but cannot select an unrelated creation department',async()=>{
+ const f=fixture(),row=await f.create('annual');f.tables.get('work_records').get(row.id).organization_id=f.otherDepartment;const self=f.role(['annual_read'],{self:true});assert.equal((await f.service['record-get']({id:row.id},self)).record.id,row.id);assert.equal((await f.service['record-list']({organizationId:f.department,kind:'annual'},self)).rows.length,1);await assert.rejects(f.service['record-list']({organizationId:f.otherDepartment,kind:'annual'},self),/ACCESS_DENIED/);
 });
 
 test('short numbers are stable on edit, never reused after deletion, and allocated with annual batches',async()=>{
@@ -216,4 +225,93 @@ test('unified plan agent asks for month then uses knowledge and returns a draft 
  assert.match(draft.text,/2027-01/);assert.match(draft.text,/AFC/);assert.match(draft.text,/尚未提交/);assert.equal(f.writes.length,before);
  await assert.rejects(agent({...first,message:'2026-11 完成AFC排查'},f.role(['read'])),/ACCESS_DENIED/);
  await assert.rejects(agent({...first,organizationId:f.otherDepartment},f.employee),/INVALID_INPUT/);
+});
+
+test('session reuses verified ancestor paths only within one request and preserves nearest departments',async()=>{
+ const f=fixture(),invoke=f.gateway.invoke.bind(f.gateway),calls=[];
+ f.gateway.invoke=async(name,input,signal)=>{calls.push({name,id:input.organizationUnitId});return invoke(name,input,signal);};
+ const e=structuredClone(f.employee);e.businessAuthorization.organizations=[{id:f.team,name:'一班'},{id:f.department,name:'维保部'},{id:f.otherTeam,name:'二班'},{id:f.department,name:'维保部'}];
+ const result=await f.service.session({},e);
+ assert.equal(calls.filter(c=>c.name==='platform.people.organization_context').length,2);
+ assert.equal(calls.filter(c=>c.name==='platform.people.workgroups').length,1);
+ assert.equal(new Set(result.workgroups.map(w=>w.id)).size,result.workgroups.length);
+ assert.ok(result.workgroups.every(w=>w.departmentId===f.department));
+ await f.service.session({},e);assert.equal(calls.filter(c=>c.name==='platform.people.organization_context').length,4,'no cross-request cache');
+ const nested=randomUUID();
+ f.gateway.invoke=async(name,input,signal)=>name==='platform.people.organization_context'&&input.organizationUnitId===f.otherTeam?{organizations:[{id:f.otherTeam,name:'二班',unitType:'workgroup'},{id:nested,name:'子部门',unitType:'department'},{id:f.department,name:'上级部门',unitType:'department'}]}:invoke(name,input,signal);
+ const nestedResult=await f.service.session({},f.employee);
+ assert.equal(nestedResult.workgroups.find(w=>w.id===f.otherTeam).departmentId,nested);
+});
+
+test('session exposes safe failure codes and diagnostic reference, without leaking provider text or retrying writes',async()=>{
+ const f=fixture();
+ for(const code of ['RATE_LIMITED','TIMEOUT','AUDIT_FAILED','ACCESS_DENIED']){
+  const logs=[];const {handlers}=createReformHandlers({invoke:async()=>{throw Object.assign(Error('private details'),{code});}});
+  const requestId=randomUUID(),result=await handlers.session({},{employee:{...f.employee,requestId},log:line=>logs.push(JSON.parse(line))});
+  assert.equal(result.error.code,code);assert.equal(result.error.requestId,requestId);assert.equal(result.error.writeOutcome,'not_started');
+  assert.ok(!JSON.stringify({result,logs}).includes('private details'));
+ }
+ const {handlers}=createReformHandlers({invoke:async()=>{throw TypeError('private internals');}});
+ assert.equal((await handlers.session({},{employee:f.employee})).error.code,'READ_FAILED');
+});
+
+test('app response errors preserve safe diagnostic fields and uncertain write outcomes',async()=>{
+ const {appResponseError}=await import('./src/request-error.mjs');
+ const requestId=randomUUID(),error=appResponseError({error:{code:'RATE_LIMITED',writeOutcome:'not_started',requestId}});
+ assert.equal(error.code,'RATE_LIMITED');assert.equal(error.requestId,requestId);assert.equal(error.definitive,true);
+ const write=appResponseError({error:{code:'OPERATION_UNCONFIRMED',writeOutcome:'unknown'}},{write:true});assert.equal(write.definitive,false);
+ assert.equal(appResponseError({error:{code:'READ_FAILED',requestId:'invalid'}}).requestId,undefined);
+});
+
+test('approved deletion is role-scoped, rejects stale versions and retains audit history',async()=>{
+ const f=fixture(),row=await f.create();
+ await assert.rejects(write(f,'record-delete',{id:row.id,expectedVersion:1}),/ACCESS_DENIED/);
+ await review(f,row);
+ await assert.rejects(write(f,'record-delete',{id:row.id,expectedVersion:2},f.role(['read','review'])),/ACCESS_DENIED/);
+ await assert.rejects(write(f,'record-delete',{id:row.id,expectedVersion:2},f.role(['read','approved_delete'],{foreign:true})),/ACCESS_DENIED/);
+ await assert.rejects(write(f,'record-delete',{id:row.id,expectedVersion:1}),/CONFLICT/);
+ await write(f,'record-delete',{id:row.id,expectedVersion:2},f.role(['read','approved_delete'],{self:true}));
+ assert.equal(f.tables.get('work_records').get(row.id).deleted,true);
+ assert.ok([...f.tables.get('work_events').values()].some(e=>e.record_id===row.id&&e.action==='deleted'&&e.details.content===row.content));
+ await assert.rejects(f.service['record-get']({id:row.id},f.employee),/NOT_FOUND/);
+});
+
+test('assignees include department employees, search by number and revalidate scope on save',async()=>{
+ const f=fixture(),office={id:randomUUID(),name:'办公室员工',employeeNo:'OFFICE',organizationUnitId:f.department};f.people.push(office);
+ const page=await f.service.members({kind:'supervision',search:'OFFICE'},f.employee);assert.deepEqual(page.rows,[office]);
+ await f.create('supervision',{responsible:{personId:office.id,organizationUnitId:office.organizationUnitId}});
+ const self=f.role(['fill','read'],{self:true});
+ assert.deepEqual((await f.service.members({kind:'monthly'},self)).rows.map(p=>p.id),[f.person]);
+ await assert.rejects(f.create('monthly',{responsible:{personId:office.id,organizationUnitId:office.organizationUnitId}},self),/PERSON_INVALID/);
+ await assert.rejects(f.service.members({kind:'supervision'},f.role(['supervision_read'])),/ACCESS_DENIED/);
+ await assert.rejects(f.create('supervision',{responsible:{personId:office.id,organizationUnitId:f.team}}),/PERSON_INVALID/);
+});
+
+test('meeting extraction returns multiple editable drafts without writes and rejects invalid model output',async()=>{
+ const f=fixture(),items=[{content:'检查车站设备',qualityStandard:'提交检查记录',endDate:'2026-11-02',ownerName:'张三'},{content:'补充备件',qualityStandard:'',endDate:null,ownerName:''}];
+ f.setAi({items});const before=f.writes.length;
+ const result=await f.service['supervision-extract']({notes:'张三周一检查设备，另外要补充备件'},f.employee);
+ assert.equal(result.items.length,2);assert.equal(result.items[1].endDate,'');assert.equal(f.writes.length,before);
+ await assert.rejects(f.service['supervision-extract']({notes:'会议纪要'},f.role(['supervision_read'])),/ACCESS_DENIED/);
+ await assert.rejects(f.service['supervision-extract']({notes:'字'.repeat(11501)},f.employee),/INVALID_INPUT/);
+ f.setAi({items:[{...items[0],endDate:'2026-02-31'}]});await assert.rejects(f.service['supervision-extract']({notes:'会议纪要'},f.employee),/AI_INVALID_RESULT/);
+ f.setAi({items:[]});assert.deepEqual((await f.service['supervision-extract']({notes:'暂无督办'},f.employee)).items,[]);
+});
+
+test('transcription requires supervision management independently of plan permissions',async()=>{
+ const f=fixture();assert.deepEqual(await f.service['authorize-transcription']({},f.role(['supervision_manage'])),{allowed:true});
+ await assert.rejects(f.service['authorize-transcription']({},f.role(['read','fill'])),/ACCESS_DENIED/);
+});
+
+test('cross-department supervision assignments remain visible and completable to the responsible person',async()=>{
+ const f=fixture(),manager=f.role(['supervision_manage','supervision_read']);
+ manager.businessAuthorization.grants.forEach(g=>g.all=true);
+ const row=await f.create('supervision',{responsible:{personId:f.outside,organizationUnitId:f.foreignTeam}},manager);
+ const owner=f.role(['supervision_read','supervision_complete'],{self:true,personId:f.outside,organizationUnitId:f.foreignTeam});
+ const page=await f.service['record-list']({organizationId:f.otherDepartment,kind:'supervision'},owner);
+ assert.deepEqual(page.rows.map(r=>r.id),[row.id]);
+ await write(f,'record-progress',{id:row.id,expectedVersion:1,summary:'',complete:true},owner);
+ const unrelated=f.role(['supervision_read'],{self:true});
+ assert.equal((await f.service['record-list']({organizationId:f.department,kind:'supervision'},unrelated)).rows.length,0);
+ await assert.rejects(f.service['record-get']({id:row.id},unrelated),/ACCESS_DENIED/);
 });

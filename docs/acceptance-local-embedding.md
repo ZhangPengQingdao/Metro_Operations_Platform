@@ -57,3 +57,7 @@ server/node_modules/.bin/tsx output/agent-integration-1.6.0/platform.ts
 复测小样本：`output/local-embedding/.venv/bin/python output/local-embedding/evaluate.py`。实际平台复测：`node output/local-embedding/platform-check.mjs`。
 
 证据：`output/local-embedding/model-info.json`、`requirements.lock`、`evaluation.json`、`platform-result.json`。本轮未提交、推送或部署生产。
+
+## 1.9.0 协议配置补充
+
+以上本地模型仍选择“OpenAI 兼容”，旧配置省略 protocol 时自动按此协议读取，无需迁移。新接入火山方舟多模态向量时，应选择对应协议并填写其 Key、模型及原生维度，不能沿用本地 512 维索引。协议或模型变化会自动更新索引版本，详见 [模型协议设置](model-service-settings.md)。

@@ -20,6 +20,9 @@ export function createPlatformDirectoryClient(gateway:DirectoryGateway) {
     members(params:{organizationUnitId:string;personId?:string;personIds?:readonly string[];search?:string},signal?:AbortSignal) {
       return call<{organizationUnitId:string;rows:DirectoryPerson[]}>('platform.people.members',params,signal);
     },
+    assignees(params:{permission:string;search?:string;exact?:boolean;personId?:string;afterId?:string},signal?:AbortSignal){
+      return call<{rows:DirectoryPerson[];nextCursor:string|null}>('platform.people.assignees',params,signal);
+    },
     organizationContext(organizationUnitId:string,signal?:AbortSignal) {
       return call<{organizations:{id:string;name:string;unitType:string}[]}>('platform.people.organization_context',{organizationUnitId},signal);
     },

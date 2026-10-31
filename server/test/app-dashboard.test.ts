@@ -50,7 +50,7 @@ for(const [appId,create] of [['faults',createFaultService],['maintenance',create
   const gateway={async invoke(operation:string,params:any){calls++;assert.equal(operation,'platform.app_data.read_batch');
    // Advanced process IPC preserves object aliases; the real gateway requires a JSON tree.
    jsonSnapshot({version:'1.0',operation,params},65536);
-   for(const op of params.operations)assert.deepEqual(op.anyOf,[[{column:'organization_id',value:id(1)}],...(appId==='huicetong'?[[{column:'responsible_id',value:id(8)}]]:[]),[{column:'created_by',value:id(8)}]]);
+   for(const op of params.operations)assert.deepEqual(op.anyOf,[...(appId==='huicetong'?[[{column:'organization_id',in:[id(1)]}],[{column:'responsible_organization_id',in:[id(1)]}],[{column:'responsible_id',value:id(8)}]]:[[{column:'organization_id',value:id(1)}]]),[{column:'created_by',value:id(8)}]]);
    if(params.operations.length===1){assert.equal(params.operations[0].kind,'daily_count');return {results:[{days:[]}]};}
    assert.ok(params.operations[2].columns.length>0);
    return {results:[{count:12},{count:4},{rows:[]},...(params.operations.length===4?[params.operations[3].kind==='daily_count'?{days:[]}:{count:2}]:[])]};
@@ -66,6 +66,23 @@ test('dashboard helper rejects inconsistent statistics and never retries failed 
  let calls=0;
  const options={readBatch:async()=>{calls++;return {results:[{count:1},{count:2},{rows:[]}]};},table:'records',scope:{},filters:[],done:[],previewColumns:['title'],labels:['待办','完成','总计'] as [string,string,string],unit:'项',preview:()=>({id:'x',title:'x'})};
  await assert.rejects(readAppDashboard(options),/INVALID_DASHBOARD_COUNTS/);assert.equal(calls,1);
+});
+test('huicetong dashboard partitions large permission scopes before the real storage boundary',async()=>{
+ const storage=new AppDataServiceV2({pool:{connect:async()=>{throw Error('unused');}} as never,findInstallation:async()=>null});
+ const batch=storage.operations().find(op=>op.name==='platform.app_data.read_batch')!;
+ const organizationIds=Array.from({length:127},(_,i)=>id(i+1));let calls=0,reads=0;
+ const employee={personId:id(200),organizationUnitId:id(1),businessAuthorization:{grants:[{permission:'app.huicetong.read',all:false,self:true,organizationIds}]}};
+ const service=createHuicetongService({async invoke(operation:string,params:any){
+  calls++;assert.equal(operation,'platform.app_data.read_batch');assert.equal(batch.validateParams(params),true);
+  jsonSnapshot({version:'1.0',operation,params},65536);
+  return {results:params.operations.map((op:any)=>{
+   reads++;assert.deepEqual(op.anyOf[1],[{column:'responsible_organization_id',in:organizationIds}]);
+   return op.kind==='count'?{count:op.filters.some((f:any)=>f.column==='status')?2:3}:op.kind==='daily_count'?{days:[]}:{rows:[]};
+  })};
+ }});
+ const result=await service['dashboard-summary']({},employee);
+ assert.equal(result.completion.total,3);assert.equal(result.completion.completed,2);
+ assert.equal(calls,4);assert.equal(reads,4);
 });
 test('dashboard requests expand reused nested filters into independent JSON values',async()=>{
  const value={personId:id(8)},filter={column:'participants',contains:[value,value]};

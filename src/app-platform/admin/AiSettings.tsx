@@ -1,10 +1,10 @@
 import {EmbeddingSettings} from './EmbeddingSettings';
 import {ModelServiceSettings} from './ModelServiceSettings';
 import React,{useEffect,useId,useState} from 'react';
-import {Button,Input,Tabs,TabList,TabTrigger} from '../../components/ui';
+import {Button,Input,Select,Tabs,TabList,TabTrigger} from '../../components/ui';
 import {adminRequest} from './client';
 type Config={external:{endpoint:string;model:string;has_api_key:boolean;api_key_mask:string;timeout_ms:number;reasoning_effort:string;configured:boolean}};
-const modelTabs=[{id:'chat',label:'聊天模型'},{id:'embedding',label:'知识库向量模型'},{id:'rerank',label:'重排序模型'},{id:'asr',label:'语音识别模型'}] as const;
+const modelTabs=[{id:'chat',label:'聊天模型'},{id:'embedding',label:'知识库向量模型'},{id:'rerank',label:'重排序模型'},{id:'asr',label:'语音识别模型'},{id:'streaming-asr',label:'流式语音识别'}] as const;
 export function AiSettings({onBusy}:{onBusy?:(busy:boolean)=>void}){
  const [tab,setTab]=useState('chat'),[busy,setBusy]=useState(false);
  const id=useId();
@@ -17,10 +17,10 @@ export function AiSettings({onBusy}:{onBusy?:(busy:boolean)=>void}){
    setTab(modelTabs[next].id);
    document.getElementById(`${id}-${modelTabs[next].id}-tab`)?.focus();
   }}>{item.label}</TabTrigger>)}</TabList>
-  {/* Keep both forms mounted so switching tabs preserves unsaved fields and connection results. */}
+  {/* Keep forms mounted so switching tabs preserves unsaved fields and connection results. */}
   <div role="tabpanel" id={`${id}-chat-panel`} aria-labelledby={`${id}-chat-tab`} hidden={tab!=='chat'} tabIndex={0} className="admin-model-panel"><ChatModelSettings onBusy={reportBusy}/></div>
   <div role="tabpanel" id={`${id}-embedding-panel`} aria-labelledby={`${id}-embedding-tab`} hidden={tab!=='embedding'} tabIndex={0} className="admin-model-panel"><EmbeddingSettings disabled={false} onBusy={reportBusy}/></div>
-  {(['rerank','asr'] as const).map(kind=><div key={kind} role="tabpanel" id={`${id}-${kind}-panel`} aria-labelledby={`${id}-${kind}-tab`} hidden={tab!==kind} tabIndex={0} className="admin-model-panel"><ModelServiceSettings kind={kind} onBusy={reportBusy}/></div>)}
+  {(['rerank','asr','streaming-asr'] as const).map(kind=><div key={kind} role="tabpanel" id={`${id}-${kind}-panel`} aria-labelledby={`${id}-${kind}-tab`} hidden={tab!==kind} tabIndex={0} className="admin-model-panel"><ModelServiceSettings kind={kind} onBusy={reportBusy}/></div>)}
  </Tabs>;
 }
 function ChatModelSettings({onBusy}:{onBusy:(busy:boolean)=>void}){
@@ -36,6 +36,7 @@ function ChatModelSettings({onBusy}:{onBusy:(busy:boolean)=>void}){
   }catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy('');onBusy?.(false);}
  }
  return <section><p className="admin-model-description">用于智能对话与应用内容生成，可独立配置服务地址、密钥和模型。</p><form autoComplete="off" className="admin-form" onSubmit={e=>{e.preventDefault();void run('save');}}>
+  <label>接口协议<Select value="openai" disabled={!!busy} onChange={()=>{}}><option value="openai">OpenAI 兼容</option></Select><small>适用于 OpenAI、DeepSeek、火山方舟等兼容聊天接口。</small></label>
   <label>服务地址<Input required name="ai-provider-endpoint" autoComplete="off" type="url" placeholder="https://api.example.com/v1" maxLength={500} value={endpoint} onChange={e=>{setEndpoint(e.target.value);setModels([]);setStatus('');}} disabled={!!busy}/></label>
   <label>API Key<Input name="ai-provider-key" type="password" autoComplete="new-password" placeholder={config?.external.has_api_key?'已保存 · 留空保留':'请输入 API Key'} value={apiKey} onChange={e=>setKey(e.target.value)} disabled={!!busy}/></label>
   <label>模型<Input required list="admin-ai-models" placeholder="模型 ID" value={model} onChange={e=>setModel(e.target.value)} disabled={!!busy}/><datalist id="admin-ai-models">{models.map(id=><option value={id} key={id}/>)}</datalist></label>

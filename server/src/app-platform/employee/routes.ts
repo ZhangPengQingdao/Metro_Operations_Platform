@@ -1,3 +1,4 @@
+import {ModelServiceError,readModelServiceConfig,transcribeAudioFile} from '../../core/integrations/model-services/index.js';
 import type {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
@@ -19,7 +20,7 @@ import {Readable} from 'node:stream';
 import {zipStream,zipSize,type ZipEntry} from './zip-stream.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;chat?:ChatService;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;chat?:ChatService;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend;transcriptionBackend?:{config():ReturnType<typeof readModelServiceConfig>;transcribe:typeof transcribeAudioFile}}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -39,6 +40,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
  app.register(async scoped=>{
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error&&typeof error==='object'&&'statusCode' in error&&error.statusCode===413)return reply.code(413).send({error:'FILE_TOO_LARGE'});
+   if(error instanceof ModelServiceError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    if(error instanceof ChatError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof GatewayError)return reply.code(error.statusCode).send({version:'1.0',error:{code:error.code,writeOutcome:error.writeOutcome}});
@@ -136,6 +138,34 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
    activeUploads++;uploads.add(req);
   };
   const releaseUpload=(req:FastifyRequest)=>{if(uploads.delete(req))activeUploads--;};
+  const maxAudioBytes=50*1024*1024,transcriptions=new Set<AbortController>();
+  scoped.addHook('onClose',async()=>{for(const controller of transcriptions)controller.abort();});
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/transcription',{
+   bodyLimit:maxAudioBytes,onRequest:admitUpload,onRequestAbort:async req=>releaseUpload(req),onResponse:async req=>releaseUpload(req)
+  },async(req,reply)=>{
+   const formats={mp3:'audio/mpeg',wav:'audio/wav',m4a:'audio/mp4',mp4:'audio/mp4',webm:'audio/webm',ogg:'audio/ogg',aac:'audio/aac'};
+   const {format}=z.object({format:z.enum(['mp3','wav','m4a','mp4','webm','ogg','aac'])}).strict().parse(req.query);
+   const key=z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']);
+   if(!options.management||!(req.body instanceof Readable))throw new GatewayError('ACCESS_DENIED',403);
+   if(Number(req.headers['content-length'])>maxAudioBytes)throw new AppAttachmentError('FILE_TOO_LARGE');
+   const authorize=()=>options.management!.authorizeEmployeeTranscription(req.params.appId,()=>resolveRequestIdentity(req),key);
+   await authorize();
+   const db=getDatabasePool();
+   const config=options.transcriptionBackend?await options.transcriptionBackend.config():db&&await readModelServiceConfig(db,'asr');
+   if(!config)throw new ModelServiceError('ASR_NOT_CONFIGURED','未配置语音识别服务',503);
+   const chunks:Buffer[]=[];let bytes=0;
+   for await(const chunk of req.body){bytes+=chunk.length;if(bytes>maxAudioBytes)throw new AppAttachmentError('FILE_TOO_LARGE');chunks.push(chunk);}
+   if(!bytes)throw new ModelServiceError('ASR_AUDIO_INVALID','音频为空');
+   await authorize();
+   const controller=new AbortController(),abort=()=>controller.abort();
+   transcriptions.add(controller);reply.raw.once('close',abort);
+   try{
+    if(reply.raw.destroyed)controller.abort();
+    const result=await (options.transcriptionBackend?.transcribe??transcribeAudioFile)(config,{bytes:Buffer.concat(chunks,bytes),format,contentType:formats[format]},controller.signal);
+    await authorize();
+    return {text:result.text};
+   }finally{transcriptions.delete(controller);reply.raw.off('close',abort);}
+  });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/attachments',{
    bodyLimit:APP_ATTACHMENT_MAX_BYTES,onRequest:admitUpload,onRequestAbort:async req=>releaseUpload(req),onResponse:async req=>releaseUpload(req)
   },async req=>{
@@ -226,6 +256,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
  app.register(async scoped=>{
   scoped.setErrorHandler((error,_req,reply)=>{
    if(error instanceof EmployeeIdentityError||error instanceof AdminIdentityError)return reply.code(error.statusCode).send({error:error.code});
+   if(error instanceof ModelServiceError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof z.ZodError)return reply.code(400).send({error:'EMPLOYEE_INVALID_INPUT'});
    return reply.code(503).send({error:'EMPLOYEE_MANAGEMENT_UNAVAILABLE'});
   });

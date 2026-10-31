@@ -73,3 +73,14 @@ Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，
 
 员工 `GET /api/employee/profile` 读取本人资料，`GET /api/employee/notifications` 仅返回本人收件通知。工作区复用共享侧边栏、消息和个人资料。
 `PATCH /api/employee/profile` 只接受本人的 `phone` 和 `wecomUserId`，拒绝身份、岗位与组织字段；沿用默认租户的企业微信外部身份记录，修改 UserID 后清除核验状态。`PATCH /api/employee/auth/password` 接受 `currentPassword` 和至少 8 字符且包含上述四类字符中至少三类的新密码 `newPassword`，验证当前密码后撤销该员工的全部会话。两个写接口均校验 Origin 和有效员工会话，事务内再次核对本人身份并记录审计。
+
+
+## 1.10.0 人员指派和录音转写
+
+应用后端可调用 `platform.people.assignees`，传入本应用短权限码 `permission`，由平台读取绑定员工的实时业务授权后过滤人员。包含非工班组织，每页最多 40 人，`nextCursor` 用作后续 `afterId`，支持姓名／工号搜索、精确匹配和指定人员校验。返回姓名、工号、人员 ID 与组织 ID。页面直调白名单仍使用已有目录入口，指派人员查询通过本应用业务 API 调用。
+
+页面通过 `useApp().files.transcribe(blob,format,{signal})` 调用录音转写。应用须声明 `asr.transcribe`，并提供绑定明确业务权限的 `authorize-transcription` API，返回 `{ok:true,result:{allowed:true}}`。平台检查员工登录、同源、应用准入、回调和服务授权，接收音频后与返回文本前再次核验。一次最多 50 MiB，与附件上传共享两个并发名额，取消或断开会中止上游请求。
+
+HTTP 入口为 `POST /api/employee/apps/:appId/transcription?format=webm`，使用二进制正文及页面准入 Header。支持 MP3、WAV、M4A、MP4、WebM、OGG、AAC，供应商须支持实际编码。当前文件转写支持已配置的 OpenAI 兼容语音模型，使用 multipart 文件请求，凭据由服务器持有，音频在请求结束后释放。豆包 URL 协议配置返回 `ASR_FILE_PROTOCOL`。失败不自动重发。
+
+平台增加权限迁移 `app-asr-transcribe-permission`。升级先执行 `npm --prefix server run db:init`，再升级应用包并核对服务授权。

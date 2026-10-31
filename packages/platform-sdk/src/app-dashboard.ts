@@ -48,14 +48,27 @@ export async function readAppDashboard(options:{
  // Advanced IPC preserves object aliases; the gateway accepts a JSON tree only.
  // Give every query independent filter/scope objects, including nested contains values.
  const copyFilters=(filters:readonly AppDataFilter[])=>filters.map(filter=>'contains' in filter
-  ?{column:filter.column,contains:filter.contains.map(value=>({...value}))}:{...filter});
+  ?{column:filter.column,contains:filter.contains.map(value=>({...value}))}:'in' in filter?{column:filter.column,in:[...filter.in]}:{...filter});
  const base=(extra:readonly AppDataFilter[]=[])=>({table:options.table,
   ...(options.scope.anyOf?{anyOf:options.scope.anyOf.map(copyFilters)}:{}),filters:copyFilters([...options.filters,...extra])});
  const operations:AppDataRead[]=[{...base(),kind:'count'},{...base(options.done),kind:'count'},
   {...base(options.previewFilters),columns:[...options.previewColumns],pageSize:1,order:{column:'created_at',direction:'desc'}}];
  if(options.excluded)operations.push({...base(options.excluded),kind:'count'});
  if(trend&&!options.excluded)operations.push({...base(),kind:'daily_count',column:trend.column,from,days:trend.days});
- const result=await options.readBatch(operations,signal) as {results:({count:number}|{rows:Record<string,unknown>[]} | {days:{day:string;count:number}[]})[]};
+ // Large authorization scopes must still fit the storage API's 16 KiB request limit.
+ // Partition reads before sending; never retry a rejected request or drop scope filters.
+ const read=async(items:AppDataRead[])=>{
+  const batches:AppDataRead[][]=[];let batch:AppDataRead[]=[];
+  for(const item of items){
+   if(batch.length&&new TextEncoder().encode(JSON.stringify({operations:[...batch,item]})).length>16384){batches.push(batch);batch=[];}
+   batch.push(item);
+  }
+  if(batch.length)batches.push(batch);
+  const results:({count:number}|{rows:Record<string,unknown>[]} | {days:{day:string;count:number}[]})[]=[];
+  for(const group of batches){signal?.throwIfAborted();const response=await options.readBatch(group,signal) as {results:typeof results};results.push(...response.results);}
+  return {results};
+ };
+ const result=await read(operations);
  const counts=result.results.slice(0,2).map(r=>(r as {count:number}).count);
  const all=counts[0]!,done=counts[1]!,excluded=options.excluded?(result.results[3] as {count:number}).count:0;
  if(![all,done,excluded].every(count)||done+excluded>all)throw Error('INVALID_DASHBOARD_COUNTS');
