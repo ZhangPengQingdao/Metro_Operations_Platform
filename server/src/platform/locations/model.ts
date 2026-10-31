@@ -40,6 +40,7 @@ export interface LineStation {
   lineId: string;
   stationId: string;
   stationCode: string;
+  stationNumber?: string | null;
   sortOrder: number;
   status: LocationRecordStatus;
   createdAt: string;
