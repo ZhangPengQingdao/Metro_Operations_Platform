@@ -5,6 +5,7 @@ import {createEmployeeRoleManagement} from './employee-roles.js';
 import {getCoreConfig} from '../../core/config/index.js';
 import type {AppManagement} from '../management/service.js';
 import {registerAdminAiRoutes} from './ai-routes.js';
+import {registerAdminModelServiceRoutes} from './model-service-routes.js';
 import {createAdminDataService,adminDataResources,AdminDataError} from '../admin-data/index.js';
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
@@ -63,6 +64,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   // A disconnected upload has no response; release its slot exactly once.
   scoped.addHook('onRequestAbort',async req=>{if(admitted.delete(req))uploads--;});
   scoped.setErrorHandler((error,_req,reply)=>{
+   if(error instanceof Error&&'code' in error&&error.code==='FST_ERR_CTP_BODY_TOO_LARGE')return reply.code(413).send({error:'ADMIN_BODY_TOO_LARGE',message:'请求内容超过大小限制，请缩小文件后重试。'});
    if(error instanceof AdminIdentityError||error instanceof EmployeeIdentityError)return reply.code(error.statusCode).send({error:error.code});
    if(error instanceof AdminDataError)return reply.code(error.statusCode).send({error:error.code,message:error.message});
    if(error instanceof LocationDirectoryError)return reply.code(400).send({error:error.code,message:error.message});
@@ -100,6 +102,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
   scoped.put('/employee-roles',{bodyLimit:4096},async req=>withRoles(req,(s,c)=>s.assign(c,req.body)));
   registerDeveloperDownloads(scoped);
   await registerAdminAiRoutes(scoped,options.identity);
+  registerAdminModelServiceRoutes(scoped,options.identity,options.pool);
   scoped.get('/data/resources',async()=>({resources:adminDataResources()}));
   scoped.get('/data/line-stations',async req=>withData(req,(service,context)=>service.stationDirectory(context.administrator,req.query)));
   scoped.post('/data/stations',{bodyLimit:16384},async req=>withData(req,(service,context)=>service.createStation(context.administrator,req.body)));

@@ -6,13 +6,13 @@ export function EmbeddingSettings({disabled,onBusy}:{disabled:boolean;onBusy:(bu
  const [form,setForm]=useState<Config|null>(null),[key,setKey]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[status,setStatus]=useState('');
  useEffect(()=>{const abort=new AbortController();adminRequest<Config>('/embedding',{signal:abort.signal}).then(setForm).catch(error=>{if(!abort.signal.aborted)setError(error.message);});return()=>abort.abort();},[]);
  async function run(action:'save'|'test'){
-  if(!form)return;setBusy(true);onBusy(true);setError('');setStatus('');
+  if(!form||busy||disabled)return;setBusy(true);onBusy(true);setError('');setStatus('');
   const input={enabled:form.enabled,endpoint:form.endpoint,model:form.model,dimensions:form.dimensions,timeoutMs:form.timeoutMs,minScore:form.minScore};
   try{const result=await adminRequest<Config&{dimensions:number}>(`/embedding/${action}`,{method:'POST',body:{...input,...(key?{apiKey:key}:{})}});
    if(action==='save'){setForm(result);setKey('');setStatus('已保存；模型变化后会自动重建索引。');}else setStatus(`连接正常，返回 ${result.dimensions} 维向量。`);
   }catch(error){setError(error instanceof Error?error.message:'操作失败');}finally{setBusy(false);onBusy(false);}
  }
- return <section><h3>知识库向量模型</h3><p>用于检索语料，独立于聊天模型。未启用时使用文本检索。维度填写模型原生输出维度。</p>{error&&<p role="alert" className="afc-error">{error}</p>}{form&&<form className="admin-form" autoComplete="off" onSubmit={e=>{e.preventDefault();void run('save');}}>
+ return <section><p className="admin-model-description">用于知识库语义检索，独立于聊天模型。未启用时使用文本检索，维度填写模型原生输出维度。</p>{error&&<p role="alert" className="afc-error">{error}</p>}{form&&<form className="admin-form" autoComplete="off" onSubmit={e=>{e.preventDefault();void run('save');}}>
  <Switch label="启用语义检索" checked={form.enabled} disabled={disabled||busy} onChange={e=>setForm({...form,enabled:e.target.checked})}/>
  <label>向量服务地址<Input required type="url" placeholder="https://api.example.com/v1/embeddings" value={form.endpoint} disabled={disabled||busy} onChange={e=>setForm({...form,endpoint:e.target.value})}/></label>
  <label>向量 API Key<Input type="password" autoComplete="new-password" value={key} placeholder={form.hasApiKey?'已保存 · 留空保留':'请输入 API Key'} disabled={disabled||busy} onChange={e=>setKey(e.target.value)}/></label>

@@ -80,7 +80,7 @@ await knowledge.write({
 
 ## 索引与连接
 
-管理端「个人中心 → 系统设置 → 大模型 → 知识库向量模型」单独填写 OpenAI 兼容的 embeddings 地址、API Key、模型 ID、模型原生输出维度（1–4096）。可先测试再启用保存，密钥加密存储且不回传明文。接口发送 `model/input/encoding_format:float`，不请求缩减维度。更换地址必须重新填写密钥；支持服务器本机及内网 HTTP/HTTPS 模型：运维在启动环境 `MOP_EMBEDDING_ALLOWED_ENDPOINTS` 指定完整请求地址白名单，管理员填写匹配地址即可。未列入白名单的地址仍须通过公网 HTTPS 检查，所有连接均禁止重定向。白名单不会放开聊天模型连接策略。详见 [部署说明](../deployment.md)。
+管理端「个人中心 → 系统设置 → 大模型配置 → 知识库向量模型」单独填写 OpenAI 兼容的 embeddings 地址、API Key、模型 ID、模型原生输出维度（1–4096）。可先测试再启用保存，密钥加密存储且不回传明文。接口发送 `model/input/encoding_format:float`，不请求缩减维度。更换地址必须重新填写密钥；支持服务器本机及内网 HTTP/HTTPS 模型：运维在启动环境 `MOP_EMBEDDING_ALLOWED_ENDPOINTS` 指定完整请求地址白名单，管理员填写匹配地址即可。未列入白名单的地址仍须通过公网 HTTPS 检查，所有连接均禁止重定向。白名单不会放开聊天模型连接策略。详见 [部署说明](../deployment.md)。
 
 索引状态：`not_required`（精确库）、`unconfigured`、`pending`、`processing`、`ready`、`failed`。保存和修改仅落库，后台每两秒最多处理一条，外部请求不占用数据库事务。失败保存错误码，等待用户修复配置后手动重建；不自动反复重试。进程中断的任务在两分钟租约到期后可重新领取。停机和平台维护会取消并等待当前索引任务。
 

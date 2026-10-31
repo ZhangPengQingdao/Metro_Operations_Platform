@@ -34,6 +34,13 @@ const optionalSecretFromEnv = (minimumLength: number) => z.preprocess(
   z.string().min(minimumLength).optional()
 );
 
+const modelEndpoints = z.string().default('').transform(value=>value.split(',').map(item=>item.trim()).filter(Boolean)).pipe(
+  z.array(z.string().url().refine(value=>{
+    let url:URL;try{url=new URL(value);}catch{return false;}
+    return ['http:','https:'].includes(url.protocol)&&!url.username&&!url.password&&!url.search&&!url.hash;
+  },'Model endpoints must be HTTP(S) URLs without credentials, query or fragment').transform(value=>new URL(value).toString())).max(16)
+);
+
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3101),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -51,12 +58,9 @@ const envSchema = z.object({
   AFC_MCP_URL: optionalUrlFromEnv,
   AFC_MCP_API_KEY: optionalSecretFromEnv(8),
   AI_PROVIDER_ENCRYPTION_KEY: optionalSecretFromEnv(32),
-  MOP_EMBEDDING_ALLOWED_ENDPOINTS: z.string().default('').transform(value=>value.split(',').map(item=>item.trim()).filter(Boolean)).pipe(
-    z.array(z.string().url().refine(value=>{
-      const url=new URL(value);
-      return ['http:','https:'].includes(url.protocol)&&!url.username&&!url.password&&!url.search&&!url.hash;
-    },'Embedding endpoints must be HTTP(S) URLs without credentials, query or fragment').transform(value=>new URL(value).toString())).max(16)
-  ),
+  MOP_EMBEDDING_ALLOWED_ENDPOINTS: modelEndpoints,
+  MOP_RERANK_ALLOWED_ENDPOINTS: modelEndpoints,
+  MOP_ASR_ALLOWED_ENDPOINTS: modelEndpoints,
   RELEASE_VERSION: z.string().min(1).default((JSON.parse(readFileSync(new URL('../../package.json',import.meta.url),'utf8')) as {version:string}).version)
 });
 
