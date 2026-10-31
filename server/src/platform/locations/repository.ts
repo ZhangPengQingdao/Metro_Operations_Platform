@@ -13,7 +13,7 @@ import {
 
 export interface LocationDirectoryRepository {
   updateLocationDetails(id: string, patch: Partial<Pick<Location, 'name' | 'shortName' | 'status'>>, updatedAt: string): Promise<Location>;
-  updateLineDetails(id: string, patch: Partial<Pick<Line, 'name' | 'shortName' | 'status'>>, updatedAt: string): Promise<Line>;
+  updateLineDetails(id: string, patch: Partial<Pick<Line, 'name' | 'shortName' | 'lineNumber' | 'status'>>, updatedAt: string): Promise<Line>;
   createLocation(record: Location): Promise<Location>;
   findLocationById(id: string): Promise<Location | null>;
   findLocationByCode(code: string): Promise<Location | null>;
@@ -22,6 +22,8 @@ export interface LocationDirectoryRepository {
   createLine(record: Line): Promise<Line>;
   findLineById(id: string): Promise<Line | null>;
   findLineByCode(code: string): Promise<Line | null>;
+  findLineByLineNumber(lineNumber: string): Promise<Line | null>;
+  setLineNumber(id: string, lineNumber: string | null, updatedAt: string): Promise<Line>;
   listLines(): Promise<Line[]>;
   createLineStation(record: LineStation): Promise<LineStation>;
   findLineStation(lineId: string, stationId: string): Promise<LineStation | null>;
@@ -109,6 +111,16 @@ export function createMemoryLocationDirectoryRepository(seed: {
     },
     async findLineByCode(code) {
       return cloneOrNull([...lines.values()].find((item) => item.code === code));
+    },
+    async findLineByLineNumber(lineNumber) {
+      return cloneOrNull([...lines.values()].find((item) => item.lineNumber != null && item.lineNumber.toLowerCase() === lineNumber.toLowerCase()));
+    },
+    async setLineNumber(id, lineNumber, updatedAt) {
+      const record = lines.get(id);
+      if (!record) throw new LocationDirectoryError('DIRECTORY_RECORD_NOT_FOUND', '目录记录不存在');
+      const updated = { ...record, lineNumber, updatedAt };
+      lines.set(id, clone(updated));
+      return clone(updated);
     },
     async listLines() {
       return [...lines.values()].map(clone).sort(compareLines);
@@ -275,6 +287,15 @@ export function createPostgresLocationDirectoryRepository(client: QueryableClien
     },
     async findLineByCode(code) {
       return optionalRow(await client.query('SELECT * FROM platform_lines WHERE code = $1', [code]), mapLine);
+    },
+    async findLineByLineNumber(lineNumber) {
+      return optionalRow(await client.query('SELECT * FROM platform_lines WHERE lower(line_number) = lower($1)', [lineNumber]), mapLine);
+    },
+    async setLineNumber(id, lineNumber, updatedAt) {
+      return mapLine(requireRow(await client.query(
+        'UPDATE platform_lines SET line_number=$2, updated_at=$3 WHERE id=$1 RETURNING *',
+        [id, lineNumber, updatedAt]
+      ), 'DIRECTORY_RECORD_NOT_FOUND'));
     },
     async listLines() {
       return resultRows(await client.query('SELECT * FROM platform_lines ORDER BY sort_order, name, id')).map(mapLine);
@@ -481,6 +502,7 @@ function mapLine(row: unknown): Line {
     code: requiredString(value.code),
     name: requiredString(value.name),
     shortName: optionalString(value.short_name),
+    lineNumber: optionalString(value.line_number),
     status: requiredString(value.status) as Line['status'],
     sortOrder: Number(value.sort_order ?? 0),
     createdAt: toIsoString(value.created_at),
