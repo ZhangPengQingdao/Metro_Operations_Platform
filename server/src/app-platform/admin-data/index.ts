@@ -17,12 +17,13 @@ const text = z.string().trim().min(1).max(200);
 const optional = z.string().trim().max(1000).nullable().optional();
 const uuid = z.string().uuid();
 const state = z.enum(['active', 'inactive']).optional();
+const lineNumber = z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/, '线路编号须为 1–50 位字母、数字、点、下划线或连字符，以字母或数字开头').nullable().optional();
 const classification = { code: text, name: text, description: optional, status: state };
 const schemas = {
   organizations: z.object({ code: text, name: text, shortName: optional, unitType: z.enum(ORGANIZATION_UNIT_TYPES), parentId: uuid.nullable().optional(), status: state }).strict(),
   positions: z.object(classification).strict(),
   people: z.object({ employeeNo: text, name: text, organizationUnitId: uuid, positionId: uuid }).strict(),
-  lines: z.object({ code: text, name: text, shortName: optional, status: state }).strict(),
+  lines: z.object({ code: text, name: text, shortName: optional, lineNumber, status: state }).strict(),
   locations: z.object({ code: text, name: text, shortName: optional, parentId: uuid.nullable().optional(), organizationUnitId: uuid.nullable().optional(), locationType: z.enum(LOCATION_TYPES), status: state }).strict(),
   'asset-systems': z.object(classification).strict(),
   'asset-categories': z.object({ ...classification, systemId: uuid }).strict(),
@@ -31,11 +32,12 @@ const schemas = {
 };
 const detail = z.object({ name: text.optional(), description: optional, status: state }).strict();
 const named = z.object({ name: text.optional(), shortName: optional, status: state }).strict();
-const updates = { organizations: named, positions: detail, people: z.object({ organizationUnitId: uuid.optional(), positionId: uuid.optional() }).strict(), lines: named, locations: named, 'asset-systems': detail, 'asset-categories': detail, 'asset-types': detail, assets: z.object({ locationId: uuid.optional(), lifecycleState: z.enum(ASSET_LIFECYCLE_STATES).optional(), dataQualityStatus: z.enum(ASSET_DATA_QUALITY_STATUSES).optional() }).strict() };
+const lineUpdates = z.object({ name: text.optional(), shortName: optional, lineNumber, status: state }).strict();
+const updates = { organizations: named, positions: detail, people: z.object({ organizationUnitId: uuid.optional(), positionId: uuid.optional() }).strict(), lines: lineUpdates, locations: named, 'asset-systems': detail, 'asset-categories': detail, 'asset-types': detail, assets: z.object({ locationId: uuid.optional(), lifecycleState: z.enum(ASSET_LIFECYCLE_STATES).optional(), dataQualityStatus: z.enum(ASSET_DATA_QUALITY_STATUSES).optional() }).strict() };
 type WritableResource = keyof typeof schemas;
 const codePrefixes:Partial<Record<WritableResource,string>>={organizations:'org',positions:'pos',lines:'line',locations:'loc','asset-systems':'sys','asset-categories':'cat','asset-types':'type',assets:'asset'};
 const generatedField=(key:string)=>key==='assets'?'assetCode':'code';
-const labels: Record<string,string> = { organizations:'组织与工班', positions:'岗位', people:'人员', lines:'线路', locations:'车站与位置', 'asset-systems':'设备系统', 'asset-categories':'设备分类', 'asset-types':'设备类型', assets:'设备', dictionaries:'公共字典', code:'编码', name:'名称', shortName:'简称', description:'说明', unitType:'组织类型', parentId:'上级', status:'状态', employeeNo:'工号', phone:'电话', organizationUnitId:'所属组织', positionId:'岗位', employmentStatus:'任职状态', locationType:'位置类型', systemId:'设备系统', categoryId:'设备分类', typeId:'设备类型', locationId:'所在位置', displayName:'设备名称', assetCode:'资产编码', lifecycleState:'生命周期', dataQualityStatus:'数据质量', remark:'备注' };
+const labels: Record<string,string> = { organizations:'组织与工班', positions:'岗位', people:'人员', lines:'线路', locations:'车站与位置', 'asset-systems':'设备系统', 'asset-categories':'设备分类', 'asset-types':'设备类型', assets:'设备', dictionaries:'公共字典', code:'编码', name:'名称', shortName:'简称', lineNumber:'线路编号', description:'说明', unitType:'组织类型', parentId:'上级', status:'状态', employeeNo:'工号', phone:'电话', organizationUnitId:'所属组织', positionId:'岗位', employmentStatus:'任职状态', locationType:'位置类型', systemId:'设备系统', categoryId:'设备分类', typeId:'设备类型', locationId:'所在位置', displayName:'设备名称', assetCode:'资产编码', lifecycleState:'生命周期', dataQualityStatus:'数据质量', remark:'备注' };
 const references: Record<string,string> = { organizationUnitId:'organizations', positionId:'positions', systemId:'asset-systems', categoryId:'asset-categories', typeId:'asset-types', locationId:'locations' };
 export function adminDataResources(): AdminDataResource[] {
   const descriptors = Object.entries(schemas).map(([key,schema]) => ({
