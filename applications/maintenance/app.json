@@ -1,10 +1,10 @@
 {
   "id": "maintenance",
   "name": "检修管理",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "计划、派工、完成与检修归档",
   "color": "#0891B2",
-  "platform": ">=0.30.0",
+  "platform": ">=1.11.0",
   "permissions": [
     {
       "code": "read",
@@ -65,7 +65,8 @@
   "platformAccess": [
     "people.read",
     "locations.read",
-    "assets.read"
+    "assets.read",
+    "apps.read"
   ],
   "pages": [
     {
@@ -110,10 +111,20 @@
       "id": "dashboard-summary",
       "permission": "read",
       "dashboard": true
+    },
+    {
+      "id": "related-faults",
+      "permission": "read"
     }
   ],
   "limits": {
     "memoryMiB": 128,
     "timeoutSeconds": 30
-  }
+  },
+  "appAccess": [
+    {
+      "appId": "faults",
+      "apiId": "public-query"
+    }
+  ]
 }

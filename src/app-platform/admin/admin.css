@@ -363,3 +363,5 @@ a.afc-notification-row:focus-visible { outline:2px solid var(--afc-color-primary
 .afc-notification-content p { margin-top:4px; font-size:13px; color:var(--afc-muted); line-height:1.55; }
 .afc-notification-actions { display:flex; gap:16px; padding:0 12px 14px 32px; font-size:13px; }
 .afc-notification-empty { padding:40px 0; text-align:center; color:var(--afc-muted); }
+
+.developer-query-form{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:20px 0}.developer-query-form label{display:grid;gap:8px;min-width:0;flex:1 1 200px}.developer-key-form{max-width:520px;margin-block:20px}.developer-center textarea{width:100%;max-width:100%;margin:10px 0}.developer-center details{min-width:0}.developer-center .admin-actions{align-items:center}

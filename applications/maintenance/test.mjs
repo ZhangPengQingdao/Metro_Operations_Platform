@@ -125,3 +125,11 @@ test('oversized plan is rejected before the managed storage write',async()=>{
  await assert.rejects(f.service.create({requestId:randomUUID(),id:randomUUID(),plan},f.employee),/PLAN_TOO_LARGE/);
  assert.equal(f.writes.length,0);
 });
+
+test('related faults requires source plan access and invokes only the declared target with its station',async()=>{
+ const f=fixture(),id=randomUUID();await f.service.create({requestId:randomUUID(),id,plan:f.plan},f.employee);
+ const calls=[];const service=createMaintenanceService({invoke:async(operation,input,signal)=>{if(operation==='platform.apps.call'){calls.push(input);return {rows:[],cursor:''};}return f.gateway.invoke(operation,input,signal);}});
+ assert.deepEqual(await service['related-faults']({id},f.employee),{rows:[],cursor:''});assert.deepEqual(calls,[{appId:'faults',apiId:'public-query',input:{stationId:f.station}}]);
+ f.rows.get(id).organization_id=f.otherOrg;await assert.rejects(service['related-faults']({id},f.employee),/ACCESS_DENIED/);assert.equal(calls.length,1);
+ await assert.rejects(service['related-faults']({id,personId:f.person},f.employee),/INVALID_INPUT/);
+});

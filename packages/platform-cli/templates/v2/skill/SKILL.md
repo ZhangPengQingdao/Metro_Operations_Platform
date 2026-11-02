@@ -26,7 +26,8 @@ description: 开发运管平台应用（应用模型 v2）：编写 app.json、R
 | `permissions` | `{code, name, scopes}`；`code` 用短代码（`read`），`scopes` 取自 `self` `workgroup` `department` `organizations` `all` |
 | `platformAccess` | 需要的平台能力：`people.read` `locations.read` `assets.read` `ai.complete` `attachments.create` `attachments.read` `notifications.create` `notifications.manage` `signatures.create` `signatures.read` `signatures.sign` `webhook.send`。只申请用到的 |
 | `pages` | `{path, title, permission, nav}`；`path` 可带参数 `/records/:id`；`nav: true` 进入侧栏，按数组顺序排列 |
-| `api` | `{id, permission, dashboard}`；`id` 与 `server.js` 中的函数名一致；`dashboard: true` 表示工作台摘要（最多一个） |
+| `api` | `{id, permission, dashboard, expose?}`；`id` 与 `server.js` 中的函数名一致；`dashboard: true` 表示工作台摘要（最多一个） |
+| `appAccess` | 可选跨应用查询依赖 `[{appId,apiId}]`，同时申请 `apps.read`；需要平台 >=1.11.0 |
 | `limits` | 可选 `{memoryMiB, timeoutSeconds}` |
 
 ## 页面 src/ui.jsx
@@ -81,3 +82,12 @@ export default defineServer({
 ## 交付
 
 `npm run build` 生成 `dist/<id>-<version>.mopkg`。该文件包含 app.json、图标、页面、接口和迁移，管理员上传后可预览并安装，员工也可在员工端“应用管理 → 申请上架”提交给管理员审核。平台 0.27.0 起支持安装运行，0.28.0 起支持 `directory`、`files` 与 `mop-app dev`，0.30.0 起支持 `saveAs`。安装后由管理员指定应用负责人，负责人配置角色和使用人员，员工才能看到应用。
+
+## 开发者中心与跨应用查询（平台 1.11.0）
+
+- 员工开发者中心可下载工具、浏览真实公共目录和按本人权限导出接口文档。本地脚本/Agent 使用个人只读开发 Key，经环境变量传入；不写入前端、源码或应用包。正式应用使用宿主身份，不使用个人 Key。
+- 全员可读目录只包含启用的线路、车站、组织工班、管辖关系、岗位和设备分类。后端申请 `directory.read` 后调用 `ctx.directory.list('stations', {pageSize:50})`；跟随 `nextCursor` 分页。人员、具体设备和业务数据继续按权限查询。
+- 调用其他应用：声明 `appAccess:[{appId:'faults',apiId:'public-query'}]`，申请 `apps.read`，后端调用 `ctx.apps.call('faults','public-query',{stationId})`。函数表写法使用 `gateway.invoke('platform.apps.call',{appId,apiId,input},signal)`。目标权限来自当前员工在目标应用中的角色和范围，不能伪造员工身份。
+- 提供查询接口：`api[].expose` 声明 `mode:'read'`、`title`、`documentation`（description/input/output/examples/errors）。输入根对象须 `additionalProperties:false`，接口必须显式绑定业务权限。handler 返回 `{ok:true,result}`，output 描述 result。列表须先按授权范围过滤再分页。
+- 只支持员工触发的一层只读跨应用调用，开放处理器禁止平台写操作和继续跨应用调用。不要把普通内部接口自动公开，不做后台服务身份或自动重试。
+- 完整示例、错误与 HTTP 接口见离线资料 `references/integration.md`；AI 能力范围见 `references/ai.md`（通过开发者中心下载 Skill 包获取）。以实际安装的版本和授权为准。

@@ -21,6 +21,9 @@ export interface AppServerBaseContext {
   uuid(): string;
 }
 export interface AppServerContext extends AppServerBaseContext {
+  readonly apps: {call<T = AppGatewayJson>(appId:string,apiId:string,input:AppGatewayJson):Promise<T>};
+  readonly directory: {list<T = AppGatewayJson>(resource:string,query?:Record<string,AppGatewayJson>):Promise<T>};
+
   readonly employee: Readonly<AppBackendEmployeeContext>;
   /** Short (`inspect`) or full (`app.<id>.inspect`) permission code, checked against the employee's data scope. */
   can(permission: string, resource?: AppResource): boolean;
@@ -72,6 +75,8 @@ export function createAppServerContext(options: {
   return Object.freeze({
     appId, employee, signal: options.signal, platform: options.gateway,
     data: createAppDataClient(options.gateway),
+    apps: Object.freeze({call:<T = AppGatewayJson>(target:string,apiId:string,input:AppGatewayJson)=>options.gateway.invoke('platform.apps.call',{appId:target,apiId,input},options.signal) as Promise<T>}),
+    directory: Object.freeze({list:<T = AppGatewayJson>(resource:string,query:Record<string,AppGatewayJson>={})=>options.gateway.invoke('platform.directory.list',{...query,resource},options.signal) as Promise<T>}),
     log: options.log ?? ((message: string) => { console.log(message); }),
     uuid: () => randomUUID(),
     can,

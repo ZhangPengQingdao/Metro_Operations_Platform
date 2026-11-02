@@ -73,3 +73,11 @@ MOP_EMBEDDING_ALLOWED_ENDPOINTS=http://127.0.0.1:3212/v1/embeddings,http://embed
 试跑模型：`BAAI/bge-small-zh-v1.5`，512维，短文本最长512 tokens。运行环境与模型文件属于独立模型服务，不打进 `.mopkg`；应用继续只调用平台知识库 SDK。当前本机试跑服务拒绝超长输入，不静默截断；长条目需后续分段或选择上下文更长的模型。最低相似度按业务样例设置，本次试跑0.55，仅是小样本起点。
 
 实际本地模型与检索试跑记录见 [本地向量模型验收](acceptance-local-embedding.md)。
+
+## 1.11.0 开发者中心升级
+
+新增 `developer-access-expand` 迁移，创建个人开发凭证及调用记录表，并登记 `platform.directory.read` / `platform.apps.read`。在线更新按既有流程执行迁移；手工部署先 `npm --prefix server run db:init`，再启动新 API。凭证不会自动创建。SDK、CLI 和开发资料需要同版本构建。
+
+`/api/developer/*` 与 `/api/employee/*` 使用员工站点的既有 `/api` 反向代理，无新增域名或端口。前者只接受个人 Bearer 凭证，不接受管理员或员工 Cookie。不要在代理日志记录 Authorization 或请求正文。
+
+检修读取故障的示例需要分别安装故障记录、检修管理 1.1.0 应用包，并保留/配置员工在两个应用的业务角色。平台包升级不会安装或授权业务应用。功能说明见 [开发接入指南](developer/integration.md)。

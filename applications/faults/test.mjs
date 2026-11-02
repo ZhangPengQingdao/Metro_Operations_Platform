@@ -94,3 +94,14 @@ test('record write rejects stations outside the workgroup responsibility scope',
  await assert.rejects(f.service.create({requestId:randomUUID(),id:randomUUID(),record:{...f.form,stationId:null}},f.employee),/INVALID_STATION/);
  assert.equal(f.writes.length,0);
 });
+
+test('public query uses target business scopes and exposes only documented summary fields',async()=>{
+ const f=fixture(),id=randomUUID();await f.service.create({requestId:randomUUID(),id,record:f.form},f.employee);
+ const other=randomUUID();f.rows.set(other,{...f.rows.get(id),id:other,organization_id:f.otherOrg});
+ const result=await f.service['public-query']({stationId:f.locationId},f.employee);
+ assert.equal(result.rows.length,1);assert.deepEqual(Object.keys(result.rows[0]).sort(),['description','deviceNumber','id','occurredAt','stationName','status']);assert.equal(result.rows[0].id,id);
+ assert.equal((await f.service['public-query']({stationId:randomUUID()},f.employee)).rows.length,0);
+ await assert.rejects(f.service['public-query']({employee:f.employee},f.employee),/INVALID_INPUT/);
+ await assert.rejects(f.service['public-query']({cursor:'bad'},f.employee),/INVALID_INPUT/);
+ await assert.rejects(f.service['public-query']({}, {...f.employee,businessAuthorization:{...f.employee.businessAuthorization,grants:[]}}),/ACCESS_DENIED/);
+});

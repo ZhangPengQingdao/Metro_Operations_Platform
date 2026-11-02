@@ -42,6 +42,14 @@ export function createFaultService(gateway,{clock=()=>new Date(),newId=randomUUI
   return data.list('records',{...scope(employee,name),filters,order:{column:'occurred_order',direction:input.sort??'desc'},...(input.search?{search:{column:'search_text',text:input.search.toLowerCase()}}:{}),...(input.dateFrom||input.dateTo?{range:dateRange(input.dateFrom,input.dateTo)}:{}),...(input.after?{after:input.after}:{}),pageSize:input.pageSize??20},signal);
  }
  return Object.freeze({
+  async 'public-query'(input,employee,signal){
+   identity(employee);
+   if(!plain(input)||Object.keys(input).some(k=>!['stationId','cursor'].includes(k))||input.stationId!==undefined&&!uuid(input.stationId)||input.cursor!==undefined&&(!short(input.cursor,300)))fail('INVALID_INPUT');
+   let after;
+   if(input.cursor){try{after=JSON.parse(input.cursor);}catch{fail('INVALID_INPUT');}if(!plain(after)||Object.keys(after).some(k=>!['id','value'].includes(k))||!uuid(after.id)||!iso(after.value))fail('INVALID_INPUT');}
+   const page=await data.list('records',{...scope(employee,'read'),filters:[{column:'voided',value:false},...(input.stationId?[{column:'station_id',value:input.stationId}]:[])],order:{column:'occurred_order',direction:'desc'},pageSize:20,...(after?{after}:{})},signal);
+   return {rows:page.rows.map(row=>({id:row.id,stationName:row.station_name,deviceNumber:row.device_number,description:row.description,status:row.status,occurredAt:row.occurred_at})),cursor:page.nextCursor?JSON.stringify(page.nextCursor):''};
+  },
   async 'dashboard-summary'(input,employee,signal){
    identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
    return readAppDashboard({readBatch:data.readBatch,table:'records',scope:scope(employee,'read'),filters:[{column:'voided',value:false}],done:[{column:'status',value:'fixed'}],

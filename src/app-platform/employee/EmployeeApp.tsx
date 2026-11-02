@@ -13,6 +13,7 @@ import {employeeRequest,EmployeeRequestError} from './client';
 import {readThemePreference} from '../identity/theme';
 import {AppErrorBoundary,AppPageV2} from '../host/v2/AppPage';
 
+const DeveloperPage=lazy(()=>import('../admin/DeveloperPage'));
 const ChatPage=lazy(()=>import('./ChatPage').then(module=>({default:module.ChatPage})));
 const EmployeeDashboard=lazy(()=>import('./EmployeeDashboard').then(module=>({default:module.EmployeeDashboard})));
 const ManagedApplications=lazy(()=>import('./ManagedApplications').then(module=>({default:module.ManagedApplications})));
@@ -75,7 +76,7 @@ export default function EmployeeApp(){
  {error&&<p role="alert" className="afc-error">{error}</p>}
  {(catalogError||(pathname==='/employee/apps'&&managedError))&&<div role="alert" className="afc-error">{catalogError||managedError}<Button variant="secondary" onClick={()=>setCatalogAttempt(value=>value+1)}>重试读取应用列表</Button></div>}
  <AppErrorBoundary key={pathname} onRetry={()=>window.location.reload()}><Suspense fallback={<p role="status">正在加载页面…</p>}>
- {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname==='/employee/chat'||pathname.startsWith('/employee/chat/')?<ChatPage key={`${account.id}:${locationKey}`} name={account.name??account.username}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
+ {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname==='/employee/developer'?<DeveloperPage employee/>:pathname==='/employee/chat'||pathname.startsWith('/employee/chat/')?<ChatPage key={`${account.id}:${locationKey}`} name={account.name??account.username}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
  </Suspense></AppErrorBoundary>
  {activeEntry&&<AppPageV2 key={`${account.id}:${activeEntry.appId}`} app={{appId:activeEntry.appId,name:activeEntry.name,runtimeRevision:activeEntry.runtimeRevision,v2:activeEntry.v2}} path={pathname.slice(`/employee/app/${activeEntry.appId}`.length)||'/'} onNavigate={openAppPath}/>}
  {activeAppId&&!activeEntry&&!catalogError&&<p role="status">{appsLoaded?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}

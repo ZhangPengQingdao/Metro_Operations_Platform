@@ -70,6 +70,12 @@ export function createMaintenanceService(gateway,{clock=()=>new Date(),newId=ran
   return {id:input.id,revision:values.revision};
  }
  return Object.freeze({
+  async 'related-faults'(input,employee,signal){
+   identity(employee);if(!object(input)||Object.keys(input).some(k=>k!=='id'))fail('INVALID_INPUT');
+   const plan=await current(input.id,employee,'read',signal);
+   if(!plan.station_id)fail('INVALID_STATION');
+   return gateway.invoke('platform.apps.call',{appId:'faults',apiId:'public-query',input:{stationId:plan.station_id}},signal);
+  },
   async 'dashboard-summary'(input,employee,signal){
    identity(employee);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)fail('INVALID_INPUT');
    return readAppDashboard({readBatch:data.readBatch,table:'plans',scope:scope(employee,'read'),filters:[{column:'deleted_at',value:null}],done:[{column:'status',value:'completed'}],

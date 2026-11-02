@@ -56,3 +56,9 @@ npm --prefix applications/faults run build
 应用定义 `app.faults.read/create/update/export/delete`，支持本人、本工班、本部室、指定组织和全平台范围。建议普通成员授予本工班的 read/create/update/export，工班负责人再授予本工班 delete。应用负责人管理角色分配，但不自动获得业务数据权限。
 
 应用服务需获 `platform.app_data.read/write`、`platform.people.read`、`platform.locations.read`、`platform.assets.read`；员工还需获应用使用授权及对应业务权限。平台管理员身份不代替员工业务身份。未知写入结果不自动重试，界面保留请求编号并阻止后续写入。
+
+## 1.1.0 开放接口接入
+
+开放 public-query 只读故障摘要接口，按当前员工的故障查询权限过滤；返回车站、设备编号、描述、状态及发生时间，不返回人员资料或处理详情。
+
+需平台 1.11.0。故障记录和检修管理分别安装 1.1.0 包；调用方还需具备 apps.read 平台能力及声明的 appAccess 依赖。平台升级不自动更新业务应用，不自动授予员工业务角色。

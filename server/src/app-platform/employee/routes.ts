@@ -1,3 +1,5 @@
+import {registerEmployeeDeveloperRoutes} from '../developer/routes.js';
+import type {ConnectablePool} from '../../core/database/index.js';
 import {ModelServiceError,readModelServiceConfig,transcribeAudioFile} from '../../core/integrations/model-services/index.js';
 import type {AppBusinessAuthorization} from '../business-authorization/service.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
@@ -20,7 +22,7 @@ import {Readable} from 'node:stream';
 import {zipStream,zipSize,type ZipEntry} from './zip-stream.js';
 
 type AttachmentBackend={connect():Promise<QueryableClient&{release():void}>;repository(client:QueryableClient):AttachmentRepository;directory(client:QueryableClient):AppAttachmentDirectory;storage:StorageAdapter};
-export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;chat?:ChatService;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend;transcriptionBackend?:{config():ReturnType<typeof readModelServiceConfig>;transcribe:typeof transcribeAudioFile}}){
+export function registerEmployeeRoutes(app:FastifyInstance,options:{pool?:ConnectablePool&QueryableClient;origin:string;service:EmployeeIdentityService;resolveAdmin(request:FastifyRequest):Promise<PlatformAdministratorContext>;adminOrigin?:string;management?:AppManagement;chat?:ChatService;access?:EmployeeAppAccess;business?:AppBusinessAuthorization;attachmentBackend?:AttachmentBackend;transcriptionBackend?:{config():ReturnType<typeof readModelServiceConfig>;transcribe:typeof transcribeAudioFile}}){
  const url=new URL(options.origin);
  if(url.origin!==options.origin||!['http:','https:'].includes(url.protocol)||(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('EMPLOYEE_CANONICAL_ORIGIN_REQUIRED');
  const cookie={path:'/api/employee',httpOnly:true,secure:url.protocol==='https:',sameSite:'strict' as const};
@@ -77,6 +79,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{origin:strin
   scoped.post<{Params:{id:string}}>('/notifications/:id/read',{bodyLimit:1024},async req=>options.service.markNotificationRead(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.params.id));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
   async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
+  if(options.pool)registerEmployeeDeveloperRoutes(scoped,{pool:options.pool,management:options.management,personId:ownerId});
   if(options.chat){
    const chat=options.chat;
    scoped.get('/chat/capabilities',async req=>({capabilities:await chat.capabilities(await ownerId(req))}));

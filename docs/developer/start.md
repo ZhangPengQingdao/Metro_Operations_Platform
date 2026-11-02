@@ -4,7 +4,7 @@
 
 ## 准备工具
 
-要求 Node.js 22+、npm。管理员从开发者中心下载同一平台版本的 SDK、CLI 和应用项目示例（.tgz / .tar.gz），当前不要假设包已发布到公共 npm。
+要求 Node.js 22+、npm。员工或管理员从开发者中心下载同一平台版本的 SDK、CLI 和应用项目示例（.tgz / .tar.gz），当前不要假设包已发布到公共 npm。
 
 ```sh
 npm install --global /downloads/metro-platform-cli-<版本>.tgz
@@ -51,3 +51,5 @@ mop-app build          # 输出 dist/fire-check-0.1.0.mopkg
 接入平台“新建对话”及声明提示卡片，见[统一对话与应用编排](agents.md)。
 
 平台 1.6.0 支持[只读工具与 MCP](tools.md)：应用声明工具及业务权限，编排通过统一 SDK 调用；平台绑定员工身份并执行权限校验。
+
+平台 1.11.0 支持员工开发者中心、公共目录、个人只读开发凭证和正式跨应用查询，见[公共目录与应用接口](integration.md)。AI 能力范围见[AI 总览](ai.md)。

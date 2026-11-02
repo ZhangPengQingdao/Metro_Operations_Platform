@@ -1,10 +1,11 @@
+import {isAppApiDocumentation,type AppApiDocumentation} from './app-api-documentation.js';
 import {isAppToolInputSchema,type AppToolDefinition} from './app-tools.js';
 /** Application model v2 manifest (app.json). Shared by the CLI and the platform; validation grants nothing. */
 export const APP_MANIFEST_V2_FILE = 'app.json' as const;
 
 /** Platform capabilities an application may request; each maps to `platform.<code>`. Application data access is implied by migrations. */
 export const APP_PLATFORM_ACCESS = [
-  'people.read', 'locations.read', 'assets.read', 'ai.complete', 'asr.transcribe', 'knowledge.read', 'knowledge.write', 'tools.read',
+  'directory.read', 'apps.read', 'people.read', 'locations.read', 'assets.read', 'ai.complete', 'asr.transcribe', 'knowledge.read', 'knowledge.write', 'tools.read',
   'attachments.create', 'attachments.read', 'notifications.create', 'notifications.manage',
   'signatures.create', 'signatures.read', 'signatures.sign', 'webhook.send',
 ] as const;
@@ -14,7 +15,8 @@ export type AppDataScope = typeof APP_DATA_SCOPES[number];
 
 export interface AppPermissionV2 { code: string; name: string; scopes?: AppDataScope[] }
 export interface AppPageV2 { path: string; title: string; permission?: string; nav?: boolean }
-export interface AppApiV2 { id: string; permission?: string; dashboard?: boolean }
+export interface AppApiV2 { id: string; permission?: string; dashboard?: boolean; expose?: {mode:'read';title:string;documentation:AppApiDocumentation} }
+export interface AppDependencyV2 {appId:string;apiId:string}
 export interface AppLimitsV2 { memoryMiB?: number; timeoutSeconds?: number }
 export interface AppKnowledgeBaseV2 {
   id: string;
@@ -47,6 +49,7 @@ export interface AppManifestV2 {
   platformAccess: AppPlatformAccess[];
   pages: AppPageV2[];
   api: AppApiV2[];
+  appAccess?: AppDependencyV2[];
   knowledgeBases?: AppKnowledgeBaseV2[];
   agents?: AppAgentV2[];
   tools?: AppToolDefinition[];
@@ -60,7 +63,7 @@ const CODE = /^[a-z][a-z0-9_-]*$/;
 const SEMVER = /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const PAGE_SEGMENT = /^(?:[a-z0-9][a-z0-9_-]*|:[a-z][a-zA-Z0-9]*)$/;
 const COMPARATOR = /^(>=|<=|>|<|=)?(.+)$/;
-const KEYS = ['id', 'name', 'version', 'description', 'color', 'platform', 'permissions', 'platformAccess', 'pages', 'api', 'limits', 'knowledgeBases', 'agents', 'tools'];
+const KEYS = ['id', 'name', 'version', 'description', 'color', 'platform', 'permissions', 'platformAccess', 'pages', 'api', 'limits', 'knowledgeBases', 'agents', 'tools', 'appAccess'];
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown, max: number): value is string =>
@@ -174,16 +177,27 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
   else {
     api.forEach((item: unknown, index) => {
       const path = `api[${index}]`;
-      if (!record(item) || Object.keys(item).some(key => !['id', 'permission', 'dashboard'].includes(key))) { fail(path, '应只包含 id、permission、dashboard'); return; }
+      if (!record(item) || Object.keys(item).some(key => !['id', 'permission', 'dashboard', 'expose'].includes(key))) { fail(path, '应只包含 id、permission、dashboard、expose'); return; }
       if (typeof item.id !== 'string' || item.id.length > 64 || !ID.test(item.id)) fail(`${path}.id`, '接口 ID 应为小写字母开头、以连字符分隔的英文标识');
       else if (apiIds.has(item.id)) fail(`${path}.id`, '接口 ID 重复');
       else apiIds.add(item.id);
       if (item.permission !== undefined && !declared(item.permission)) fail(`${path}.permission`, '权限未在 permissions 中声明');
       if (item.dashboard !== undefined && item.dashboard !== true) fail(`${path}.dashboard`, '只能为 true');
+      if (item.expose !== undefined && (!record(item.expose) || Object.keys(item.expose).some(key=>!['mode','title','documentation'].includes(key)) || item.expose.mode !== 'read' || !text(item.expose.title,80) || !isAppApiDocumentation(item.expose.documentation) || item.expose.documentation.input.type !== 'object' || item.expose.documentation.input.additionalProperties !== false || !declared(item.permission))) fail(`${path}.expose`, '开放接口须声明业务权限、只读模式、标题及完整文档；输入须为封闭对象');
       if (item.dashboard === true && item.permission === undefined) fail(`${path}.permission`, '工作台摘要接口必须声明权限');
     });
     if (api.filter(item => record(item) && item.dashboard === true).length > 1) fail('api', '最多一个工作台摘要接口');
     if (api.some(item => record(item) && item.permission === undefined) && !codes.size) fail('api', '未声明权限的接口表示“有本应用任一权限即可调用”，需要至少声明一个权限');
+  }
+
+  if (value.appAccess !== undefined) {
+    const seen=new Set<string>();
+    if(!Array.isArray(value.appAccess)||value.appAccess.length>32)fail('appAccess','最多声明32个跨应用查询接口');
+    else for(const entry of value.appAccess){
+      if(!record(entry)||Object.keys(entry).sort().join(',')!=='apiId,appId'||typeof entry.appId!=='string'||entry.appId.length>64||!ID.test(entry.appId)||entry.appId===value.id||typeof entry.apiId!=='string'||entry.apiId.length>64||!ID.test(entry.apiId)){fail('appAccess','须指定其他应用的 appId 与 apiId');continue;}
+      const key=entry.appId+':'+entry.apiId;if(seen.has(key))fail('appAccess','接口重复');seen.add(key);
+    }
+    if(!Array.isArray(access)||!access.includes('apps.read'))fail('appAccess','需申请 apps.read 平台能力');
   }
 
   if (value.tools !== undefined) {
@@ -255,10 +269,11 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
     permissions: (permissions as AppPermissionV2[]).map(p => ({ code: short(p.code), name: p.name, ...(p.scopes ? { scopes: [...p.scopes] } : {}) })),
     platformAccess: [...access as AppPlatformAccess[]],
     pages: (pages as AppPageV2[]).map(p => ({ path: p.path, title: p.title, ...(p.permission !== undefined ? { permission: short(p.permission) } : {}), ...(p.nav !== undefined ? { nav: p.nav } : {}) })),
-    api: (api as AppApiV2[]).map(a => ({ id: a.id, ...(a.permission !== undefined ? { permission: short(a.permission) } : {}), ...(a.dashboard ? { dashboard: true } : {}) })),
+    api: (api as AppApiV2[]).map(a => ({ id: a.id, ...(a.permission !== undefined ? { permission: short(a.permission) } : {}), ...(a.dashboard ? { dashboard: true } : {}), ...(a.expose ? {expose:structuredClone(a.expose)} : {}) })),
     ...(value.knowledgeBases !== undefined ? { knowledgeBases: (value.knowledgeBases as AppKnowledgeBaseV2[]).map(base => ({...base, readPermission: short(base.readPermission), writePermission: short(base.writePermission)})) } : {}),
     ...(value.agents !== undefined ? {agents: (value.agents as AppAgentV2[]).map(agent=>({...agent,permission:short(agent.permission),examples:[...agent.examples]}))} : {}),
     ...(value.tools !== undefined ? {tools:(value.tools as AppToolDefinition[]).map(tool=>({...tool,permission:short(tool.permission),inputSchema:structuredClone(tool.inputSchema)}))} : {}),
+    ...(value.appAccess !== undefined ? {appAccess:structuredClone(value.appAccess as AppDependencyV2[])} : {}),
     ...(value.limits !== undefined ? { limits: { ...value.limits as AppLimitsV2 } } : {}),
   };
   return { ok: true, manifest };

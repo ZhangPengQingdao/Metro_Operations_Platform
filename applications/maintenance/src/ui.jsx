@@ -83,6 +83,7 @@ function App(){
       {item.secondaryOperatorId&&<Field label="主作业占比" htmlFor={`maintenance-share-${index}`}><Input id={`maintenance-share-${index}`} type="number" min="0.05" max="0.95" step="0.05" value={item.operatorShare??0.5} onChange={event=>changeItem(index,{operatorShare:Number(event.target.value)})} disabled={dialog?.kind==='view'}/></Field>}
      </div>{dialog?.kind!=='view'&&form.items.length>1&&dialog?.row?.items.find(old=>old.id===item.id)?.status!=='completed'&&<div className="maintenance-item-actions"><Button size="xs" variant="ghost" onClick={()=>setForm(current=>({...current,items:current.items.filter((_,i)=>i!==index)}))}>移除设备</Button></div>}</section>)}</div><Button size="sm" variant="secondary" leadingIcon={<Plus size={15}/>} onClick={()=>setForm(current=>({...current,items:[...current.items,{deviceNumber:'',operatorId:null,operatorName:'',secondaryOperatorId:null,secondaryOperatorName:'',operatorShare:0.5,status:'pending'}]}))} disabled={dialog?.kind==='view'||form.items.length>=100}>添加一台设备</Button></div>
    </div>
+   {dialog?.kind==='view'&&dialog.row?.station_id&&<RelatedFaults key={dialog.row.id} planId={dialog.row.id} call={call}/>}
   </Dialog>
   <Dialog open={dialog?.kind==='delete'} onClose={close} title="作废检修计划" footer={<div className="maintenance-footer"><Button variant="secondary" onClick={close}>取消</Button><Button variant="danger" loading={saving} disabled={!!uncertain.current} onClick={()=>void remove()}>确认作废</Button></div>}>{error&&<p role="alert" className="maintenance-error">{error}</p>}<p>作废 {dialog?.row?.scheduled_date} · {dialog?.row?.station_name} 的计划？记录会保留审计信息，并从列表中隐藏。</p></Dialog>
   <Dialog open={dialog?.kind==='import'} onClose={close} title="批量导入检修计划" description="请核对日期、车站、类型和设备编号" footer={<div className="maintenance-footer"><Button variant="secondary" onClick={close}>关闭</Button><Button loading={saving} disabled={!!uncertain.current||!importRows.length} onClick={()=>void importPlans()}>导入 {importRows.length} 组</Button></div>}>{error&&<p role="alert" className="maintenance-error">{error}</p>}<p className="maintenance-note">导入后均为待执行，车站与设备类型按原文保存。已完成 {importProgress}/{importRows.length} 组。</p><div className="maintenance-import"><ul>{importRows.map((row,i)=><li key={i}>{row.scheduledDate} · {row.stationName} · {row.deviceTypeName} · {row.items.map(item=>item.deviceNumber).join('、')}</li>)}</ul></div></Dialog>
@@ -90,3 +91,9 @@ function App(){
  </main>;
 }
 export default defineApp({pages:{'/':App}});
+
+function RelatedFaults({planId,call}){
+ const [result,setResult]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ async function read(){setBusy(true);setError('');setResult(null);try{setResult(await call('related-faults',{id:planId}));}catch{setError('无法读取故障记录。请核对故障应用是否已更新启用，以及你在该应用中的查询权限。');}finally{setBusy(false);}}
+ return <section className="maintenance-related"><h3>本站故障记录</h3><p className="maintenance-note">按你在故障应用中的权限读取，最多显示最近 20 条。</p><Button variant="secondary" loading={busy} onClick={()=>void read()}>查询故障</Button>{error&&<p role="alert" className="maintenance-error">{error}</p>}{result&&<>{!result.rows.length&&<p>当前权限范围内暂无故障记录。</p>}<ul>{result.rows.map(row=><li key={row.id}>{row.deviceNumber} · {row.description} · {row.status==='fixed'?'已修复':'待处理'}</li>)}</ul>{result.cursor&&<p className="maintenance-note">更多记录请在故障应用中查看。</p>}</>}</section>;
+}

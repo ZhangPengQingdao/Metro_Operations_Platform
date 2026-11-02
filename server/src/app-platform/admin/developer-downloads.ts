@@ -4,7 +4,7 @@ import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 const assetSchema=z.object({id:z.enum(['sdk','cli','docs','skill','example']),title:z.string().max(80),fileName:z.string().regex(/^metro-[a-z0-9.-]+\.(?:tgz|tar\.gz)$/),bytes:z.number().int().positive().max(50*1024*1024),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 const indexSchema=z.object({version:z.string().regex(/^\d+\.\d+\.\d+$/),downloads:z.array(assetSchema).length(5)}).strict();
-/** Register only inside the administrator-authenticated scope. Never accept a filesystem path. */
+/** Register only inside an administrator- or employee-authenticated scope. Never accept a filesystem path. */
 export function registerDeveloperDownloads(scoped:FastifyInstance,root=new URL('../../../developer-assets/',import.meta.url)) {
  const readIndex=async()=>{
   try{return indexSchema.parse(JSON.parse(await readFile(new URL('index.json',root),'utf8')));}catch(error){

@@ -1,3 +1,6 @@
+import {AppInterfaces,type PublishedInterface} from '../developer/app-interfaces.js';
+import {publicDirectoryOperation} from '../developer/directory.js';
+import {requireDeveloperAccount} from '../developer/keys.js';
 import {AppToolService,type ToolBinding} from '../tools/index.js';
 import {createToolOperations} from '../gateway/tools.js';
 import {readEmployeeDashboard} from '../employee/dashboard.js';
@@ -71,7 +74,36 @@ export async function createAppManagement(configFile:string,origin:string){
    return apps.host(appId).invokeEmployeeApi(employeeApi(appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:args},signal);
   }
  });
- const gateway=createManagementGateway(pool,[...data.operations(),...createToolOperations(tools)]);
+ const interfaces=new AppInterfaces({
+  async catalog(personId,targetAppId){
+   await requireDeveloperAccount(pool,personId);apiAuthorization.clearSessions();
+   const result:PublishedInterface[]=[];
+   for(const {appId} of targetAppId?[{appId:targetAppId}]:await employeeAccess.candidates(personId)){
+    const host=apps.findHost(appId);if(!host)continue;
+    try{
+     const access=await employeeAccess.assert(appId,personId);const installation=await host.admittedSnapshot();
+     const manifest=installation.runtime?.manifest;if(!manifest)continue;
+     const requestId=randomUUID(),actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:{source:'session',userId:personId},execution:{type:'application',appId},requestId,traceId:requestId});
+     const accessKey=createHash('sha256').update(JSON.stringify({access:access.revision,business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
+     for(const api of manifest.api)if(api.expose&&api.permission&&await apiAuthorization.authorize(actor,`app.${appId}.${api.permission}`))result.push({appId,appName:manifest.name,version:manifest.version,revision:installation.revision,accessKey,apiId:api.id,permission:api.permission,expose:api.expose});
+    }catch(e){if(e instanceof GatewayError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}
+   }
+   return result;
+  },
+  async assertDependency(source,target,apiId,personId){
+   await requireDeveloperAccount(pool,personId);await employeeAccess.assert(source,personId);
+   const record=await apps.host(source).admittedSnapshot();
+   if(source===target||!record.runtime?.manifest.appAccess?.some(d=>d.appId===target&&d.apiId===apiId))throw new GatewayError('ACCESS_DENIED',403);
+  },
+  async invoke(personId,appId,apiId,input,signal){
+   assertOpen();apiAuthorization.clearSessions();
+   const identity=async()=>{await requireDeveloperAccount(pool,personId);await employeeAccess.assert(appId,personId);return {source:'session' as const,userId:personId};};
+   await identity();const installation=await apps.host(appId).admittedSnapshot();
+   if(!installation.runtime?.manifest.api.some(api=>api.id===apiId&&api.expose))throw new GatewayError('ACCESS_DENIED',403);
+   return apps.host(appId).invokeEmployeeApi(identity,{apiId,method:'POST',path:`/${apiId}`,payload:input},signal);
+  }
+ });
+ const gateway=createManagementGateway(pool,[...data.operations(),...createToolOperations(tools),publicDirectoryOperation(pool),interfaces.operation()]);
  const invalidateAppSessions=()=>{employeeAppSessions.clear();apiAuthorization.clearSessions();};
  const apps=createAppRuntimeV2({root:join(config.artifactRoot,'v2'),registry,pool,gateway,api:apiAuthorization,findInstallation,
   listInstallations:()=>lookups.list(1000),platformVersion:()=>getCoreConfig().runtime.releaseVersion.value,maintenanceBlocked:()=>maintenanceBlocked});
@@ -117,6 +149,7 @@ export async function createAppManagement(configFile:string,origin:string){
  const stopDevWatcher=process.env.MOP_DEV_APPS_DIR?await startDevAppsWatcher({directory:process.env.MOP_DEV_APPS_DIR,log:line=>console.log(line),
   install:bytes=>queue.run(async()=>{try{const result=await apps.installer.install(devAdministratorContext(),bytes,{dev:true});return `${result.appId} ${result.version} ${result.state}`;}finally{invalidateAppSessions();}})}):undefined;
  return {
+  interfaces,
   invalidateEmployeeSessions:invalidateAppSessions,
   maintenanceActive:()=>maintenanceBlocked,
   maintenanceStatus:()=>maintenance?.status()??null,

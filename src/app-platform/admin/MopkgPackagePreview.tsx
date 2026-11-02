@@ -31,6 +31,7 @@ export function readMopkgFile(file:File):Promise<string>{
 }
 
 const ACCESS_LABELS:Record<string,string>={
+ 'directory.read':'读取公共目录','apps.read':'跨应用查询',
  'people.read':'读取人员与组织','locations.read':'读取线路与车站','assets.read':'读取设备','ai.complete':'调用 AI 文本模型',
  'attachments.create':'上传附件','attachments.read':'读取附件','notifications.create':'发送通知','notifications.manage':'管理通知',
  'signatures.create':'发起签字','signatures.read':'查看签字','signatures.sign':'执行签字','webhook.send':'调用外部 Webhook',
@@ -58,7 +59,8 @@ export function MopkgPreviewDetails({preview}:{preview:MopkgPreview}){
    <dt>平台能力</dt><dd>{manifest.platformAccess.length?manifest.platformAccess.map(code=>ACCESS_LABELS[code]??code).join('、'):'无'}{preview.change&&preview.change.addedPlatformAccess.length>0&&preview.installed&&<p className="afc-muted">新增：{preview.change.addedPlatformAccess.map(code=>ACCESS_LABELS[code]??code).join('、')}</p>}</dd>
    {preview.change&&preview.installed&&<><dt>权限变化</dt><dd>新增：{preview.change.addedPermissions.join('、')||'无'}；移除：{preview.change.removedPermissions.join('、')||'无'}</dd></>}
    <dt>页面</dt><dd>{manifest.pages.length?<ul className="mopkg-preview-list">{manifest.pages.map(page=><li key={page.path}>{page.title} <code>{page.path}</code>{page.nav&&<span className="afc-muted"> · 侧栏</span>}{page.permission&&<span className="afc-muted"> · {permissionName(page.permission)}</span>}</li>)}</ul>:'无'}</dd>
-   <dt>接口</dt><dd>{manifest.api.length?<ul className="mopkg-preview-list">{manifest.api.map(api=><li key={api.id}><code>{api.id}</code>{api.permission&&<span className="afc-muted"> · {permissionName(api.permission)}</span>}{api.dashboard&&<span className="afc-muted"> · 工作台摘要</span>}</li>)}</ul>:'无'}</dd>
+   <dt>接口</dt><dd>{manifest.api.length?<ul className="mopkg-preview-list">{manifest.api.map(api=><li key={api.id}><code>{api.id}</code>{api.permission&&<span className="afc-muted"> · {permissionName(api.permission)}</span>}{api.expose&&<span className="afc-muted"> · 开放查询：{api.expose.title}</span>}{api.dashboard&&<span className="afc-muted"> · 工作台摘要</span>}</li>)}</ul>:'无'}</dd>
+   {!!manifest.appAccess?.length&&<><dt>跨应用依赖</dt><dd>{manifest.appAccess.map(item=><p key={`${item.appId}/${item.apiId}`}><code>{item.appId}/{item.apiId}</code> · 按当前员工权限查询</p>)}</dd></>}
    <dt>数据迁移</dt><dd>{preview.migrations.length?<ul className="mopkg-preview-list">{preview.migrations.map(migration=><li key={migration.id}><code>{migration.id}</code><span className="afc-muted"> · {migration.statements} 条结构语句</span></li>)}</ul>:'无'}</dd>
    <dt>文件</dt><dd>{preview.files.map(file=>`${file.path}（${size(file.bytes)}）`).join('、')}</dd>
    <dt>安装包</dt><dd>{size(preview.bytes)} · <code title={preview.sha256}>sha256 {preview.sha256.slice(0,16)}…</code></dd>

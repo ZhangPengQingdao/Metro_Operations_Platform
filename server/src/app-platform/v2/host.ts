@@ -1,3 +1,4 @@
+import {matchesAppContract} from '@metro/platform-sdk/app-api-documentation';
 import {matchesAppToolInput} from '@metro/platform-sdk/app-tools';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -151,11 +152,13 @@ export class AppHostV2 {
     const employee = parseAppBackendEmployeeContext({ version: '1.0', personId: actor.person.id, organizationUnitId: actor.person.organization.id, requestId, traceId: requestId, permissions, ...(business ? { businessAuthorization: business } : {}) });
     let payload: GatewayJson;
     try { payload = jsonSnapshot(request.payload, 60 * 1024); } catch { throw new AppV2CallError('INVALID_PAYLOAD', 400); }
+    const exposed=installation.runtime?.model==='v2'?installation.runtime.manifest.api?.find(entry=>entry.id===api.id)?.expose:undefined;
+    if(exposed&&!matchesAppContract(exposed.documentation.input,payload))throw new AppV2CallError('INVALID_PARAMS',400);
     const tool=installation.runtime?.model==='v2'?installation.runtime.manifest.tools?.find(tool=>tool.apiId===api.id):undefined;
     if(tool&&!matchesAppToolInput(tool.inputSchema,payload))throw new AppV2CallError('INVALID_PARAMS',400);
     const process = this.process;
     if (!process) throw new AppV2CallError('APP_NOT_RUNNING', 503);
-    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly:!!tool});
+    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly:!!tool||!!exposed});
     try {
       return jsonSnapshot(await process.call(api.handler, payload, employee, signal, requestId), 256 * 1024);
     } catch (error) {
@@ -189,6 +192,7 @@ export class AppHostV2 {
   /** Platform operation requested by the app process, executed as the app's service identity (and the bound employee). */
   private async platform(operation: string, params: unknown, callId: string | undefined): Promise<unknown> {
     const employee = callId ? this.employees.get(callId) : undefined;
+    if (employee?.readOnly && operation==='platform.apps.call') throw new GatewayError('OPERATION_DENIED',403);
     if (callId && !employee) throw new GatewayError('ACCESS_DENIED', 403);
     const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, employee?.signal, employee ? async () => employee.actor : undefined,employee?.readOnly);
     return response.result;

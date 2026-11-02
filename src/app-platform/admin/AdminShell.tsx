@@ -41,7 +41,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const base=mode==='admin'?'/admin':'/employee';
   const dashboardCanvas=mode==='employee'&&(pathname==='/employee'||pathname==='/employee/');
   const applicationCanvas=pathname.startsWith(`${base}/app/`);
-  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/chat',label:'新建对话',icon:'plus' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
+  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/chat',label:'新建对话',icon:'plus' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName},{path:'/employee/developer',label:'开发者中心',icon:'terminal' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
   const [mobileOpen, setMobileOpen] = useState(false);

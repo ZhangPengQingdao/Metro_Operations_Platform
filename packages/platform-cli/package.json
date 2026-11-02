@@ -1,6 +1,6 @@
 {
   "name": "@metro/platform-cli",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Metro Operations Platform application tools: init, check and build single-file .mopkg packages",
   "type": "module",
   "engines": {

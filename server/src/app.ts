@@ -1,3 +1,4 @@
+import {registerDeveloperApi} from './app-platform/developer/routes.js';
 import {KnowledgeIndexer} from './platform/knowledge/indexer.js';
 import {ChatService} from './platform/chat/index.js';
 import {startMaintenanceControl} from './app-platform/updates/control.js';
@@ -74,7 +75,8 @@ export async function buildApp(){
  registerAppSubmissionRoutes(app,{pool,origin,adminOrigin,employee:employeeIdentity,resolveAdmin:resolveContext,management});
  await registerRegistrationRoutes(app,{origin,adminOrigin,pool,resolveAdmin:resolveContext});
  registerUnifiedLogin(app,{origin,adminOrigin,pool,admin:identity,employee:employeeIdentity});
- registerEmployeeRoutes(app,{origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management,chat});
+ registerDeveloperApi(app,{pool,origin,management});
+ registerEmployeeRoutes(app,{pool,origin,adminOrigin,service:employeeIdentity,business:new AppBusinessAuthorization(pool),access:new EmployeeAppAccess(pool),resolveAdmin:resolveContext,management,chat});
  await registerAdminConsoleRoutes(app,{origin:adminOrigin,identity,pool,management,
   lifecycle:management?{getHost:management.getHost}:undefined});
  return app;
