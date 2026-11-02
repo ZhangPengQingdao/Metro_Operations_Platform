@@ -95,17 +95,26 @@ export class AppGateway {
     // indefinitely; AUDIT_FAILED means persistence was not confirmed (it may complete later).
     let terminalAudit: Promise<void> | undefined;
     let routingAudit:Readonly<Record<string,string>>={};
+    let auditFailureReported=false;
+    const auditFailure=(reason:'storage'|'timeout',cause?:unknown)=>{
+      if(!auditFailureReported){
+        auditFailureReported=true;
+        const code=cause&&typeof cause==='object'&&'code' in cause?cause.code:undefined;
+        console.warn(JSON.stringify({event:'app.gateway.audit_failed',reason,appId,operation:trace.operation,requestId:trace.requestId,traceId:trace.traceId,employeeRequestId:routingAudit.employeeRequestId,...(typeof code==='string'&&/^[A-Z0-9_]{1,40}$/.test(code)?{storageCode:code}:{})}));
+      }
+      return new GatewayError('AUDIT_FAILED',503,writeStarted?'unknown':'not_started');
+    };
     const recordTerminal=(outcome:'succeeded'|'failed',errorCode?:string,mode?:'read'|'write')=>{
       if(!terminalAudit) terminalAudit=Promise.resolve().then(async()=>{
         await this.options.auditRepository?.append({category:'app',action:trace.operation??'gateway',outcome,context:{...trace},...(errorCode?{errorCode}:{}),metadata:{phase:'operation',deliveryConfirmed:false,...routingAudit,...(mode?{mode}:{}),...(outcome==='failed'?{writeOutcome:writeStarted?'unknown':'not_started'}:{})}});
-      });
+      }).catch(error=>{throw auditFailure('storage',error);});
       return terminalAudit;
     };
     const boundedAudit=async(audit:Promise<void>)=>{
       let auditTimer:ReturnType<typeof setTimeout>|undefined;
       try {
         await Promise.race([audit,new Promise<never>((_,reject)=>{auditTimer=setTimeout(()=>reject(new Error('audit deadline')),AUDIT_ACK_GRACE_MS);})]);
-      }catch{throw new GatewayError('AUDIT_FAILED',503,writeStarted?'unknown':'not_started');}
+      }catch(error){throw error instanceof GatewayError?error:auditFailure('timeout');}
       finally{if(auditTimer) clearTimeout(auditTimer);}
     };
     const onAbort=()=>{
@@ -114,6 +123,7 @@ export class AppGateway {
     };
     controller.signal.addEventListener('abort',onAbort,{once:true});
     const timer=setTimeout(abort,this.admission.limits.timeoutMs);
+    if(controller.signal.aborted)onAbort();
     const run=async():Promise<AppGatewayResponse>=>{
       check();
       const input=await readInput(controller.signal);check();
@@ -139,7 +149,7 @@ export class AppGateway {
       trace.actorId=context.actorType==='person'?context.person.id:context.execution.serviceIdentityId;
       this.admission.authenticated(appId,context.actorType==='person'?context.person.id:'service');
       if(!operation.validateParams(request.params)) throw new GatewayError('INVALID_PARAMS');
-      routingAudit={...operation.auditMetadata?.(request.params),...(context.employeeActor?{employeeActorId:context.employeeActor.person.id}:{})};
+      routingAudit={...operation.auditMetadata?.(request.params),...(context.employeeActor?{employeeActorId:context.employeeActor.person.id,...(context.employeeActor.request?.requestId?{employeeRequestId:context.employeeActor.request.requestId}:{})}:{})};
       const authorize=async(refresh=true)=>{
         if(refresh)context=await fresh();check();
         const resources=await operation.resolveResources(context,request.params);check();
@@ -156,14 +166,16 @@ export class AppGateway {
         if(!Array.isArray(resources)||!resources.length||resources.length>128)throw new GatewayError('ACCESS_DENIED',403);
         for(const resource of resources){if(!(await context.authorize(operation.permissionCode,resource)).allowed)throw new GatewayError('ACCESS_DENIED',403);check();}
       }
-      await boundedAudit(recordTerminal('succeeded',undefined,operation.mode));check();
+      // Normal audit uses the request's remaining deadline. Only onAbort applies
+      // the short grace period; routine pool/IO latency must not fail at 100ms.
+      await recordTerminal('succeeded',undefined,operation.mode);check();
       return {version:'1.0',requestId:trace.requestId!,traceId:trace.traceId,result};
     };
     // Keep the slot until actual work settles, even if a noncooperative adapter ignores abort.
     const work=run().catch(async(error:unknown)=>{
       if(!(error instanceof GatewayError))(this.options.reportUnexpected??((operation,cause)=>console.error('App gateway operation failed',operation??'unknown',cause)))(trace.operation,error);
       const safe=error instanceof GatewayError?error:new GatewayError('GATEWAY_FAILED',500);
-      await boundedAudit(recordTerminal('failed',safe.code));
+      await recordTerminal('failed',safe.code);
       throw new GatewayError(safe.code,safe.statusCode,writeStarted?'unknown':safe.writeOutcome);
     }).finally(()=>{
       // A stuck audit sink also retains its slot; bounded replies must not create unbounded background writes.

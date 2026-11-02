@@ -189,7 +189,7 @@ test('unconfirmed success audit retains admission and does not claim delivery',a
 
 test('gateway drain retains unconfirmed audit after bounded caller failure',async()=>{
  const f=await gatewayFixture();let finish!:()=>void;
- const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[f.operation],auditRepository:{append:async input=>{await new Promise<void>(resolve=>{finish=resolve;});return createMemoryCoreTechnicalAuditRepository().append(input);}}});
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[f.operation],limits:{timeoutMs:200},auditRepository:{append:async input=>{await new Promise<void>(resolve=>{finish=resolve;});return createMemoryCoreTechnicalAuditRepository().append(input);}}});
  await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request),/AUDIT_FAILED/);
  let drained=false;const pending=gateway.drain(f.r.appId).then(()=>{drained=true;});
  await new Promise(resolve=>setImmediate(resolve));assert.equal(drained,false);
@@ -208,4 +208,28 @@ test('read checkpoints avoid duplicate admission work and still reject revocatio
   execute:async()=>{executed=true;return {ok:true};}}]});
  await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request,undefined,async()=>{if(revoked)throw Error('revoked');}),/ACCESS_DENIED/);
  assert.equal(executed,false);
+});
+
+test('healthy audit taking over 100ms uses the remaining request budget',async()=>{
+ const f=await gatewayFixture();let attempts=0;
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[f.operation],limits:{timeoutMs:1500},auditRepository:{append:async input=>{attempts++;await new Promise(resolve=>setTimeout(resolve,300));return createMemoryCoreTechnicalAuditRepository().append(input);}}});
+ const response=await gateway.invokeService(f.r.appId,f.issued.credential,f.request);
+ assert.equal(response.version,'1.0');assert.equal(attempts,1);
+});
+
+test('slow audit preserves denied authorization and never executes the operation',async()=>{
+ const f=await gatewayFixture();let executed=false,attempts=0;
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[{...f.operation,resolveResources:async()=>{throw new GatewayError('ACCESS_DENIED',403);},execute:async()=>{executed=true;return {};}}],limits:{timeoutMs:1500},auditRepository:{append:async input=>{attempts++;await new Promise(resolve=>setTimeout(resolve,300));return createMemoryCoreTechnicalAuditRepository().append(input);}}});
+ await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request),error=>error instanceof GatewayError&&error.code==='ACCESS_DENIED'&&error.statusCode===403);
+ assert.equal(executed,false);assert.equal(attempts,1);
+});
+
+test('already cancelled request still bounds a stuck audit and retains its slot',{timeout:1500},async()=>{
+ const f=await gatewayFixture(),controller=new AbortController();controller.abort();
+ let finish!:()=>void,executed=false,attempts=0;
+ const gateway=new AppGateway({registry:f.registry,contextResolver:f.resolver,operations:[{...f.operation,execute:async()=>{executed=true;return {};}}],limits:{timeoutMs:1000,concurrency:1},auditRepository:{append:async input=>{attempts++;await new Promise<void>(resolve=>{finish=resolve;});return createMemoryCoreTechnicalAuditRepository().append(input);}}});
+ await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request,controller.signal),/AUDIT_FAILED/);
+ assert.equal(executed,false);assert.equal(attempts,1);
+ await assert.rejects(gateway.invokeService(f.r.appId,f.issued.credential,f.request),/BUSY/);
+ finish();await gateway.drain(f.r.appId);
 });
