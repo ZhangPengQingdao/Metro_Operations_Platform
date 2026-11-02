@@ -24,3 +24,8 @@ export function parseWebhook(value){
  fail('INVALID_WEBHOOK');
 }
 export const safeArchiveName=value=>String(value).replace(/[\\/\u0000-\u001f\u007f<>:"|?*]/g,'_').replace(/^\.+/,'_').slice(0,140)||'材料';
+
+export function monthlyDates(today=shanghaiDay()){
+ const [year,month]=today.split('-').map(Number);
+ return {startDate:today,endDate:new Date(Date.UTC(year,month,0)).toISOString().slice(0,10)};
+}

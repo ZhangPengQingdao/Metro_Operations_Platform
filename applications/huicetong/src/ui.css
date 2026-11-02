@@ -106,3 +106,8 @@
 .hct-draft details{margin-top:10px;color:var(--afc-color-muted);font-size:13px}.hct-draft summary{cursor:pointer}.hct-draft details[open] summary{margin-bottom:6px}
 .hct-notes{width:100%;min-height:150px;resize:vertical}.hct-upload-label+.afc-field,.hct-audio-preview+.afc-field{margin-top:16px}
 @media(max-width:600px){.hct-draft-grid{grid-template-columns:1fr}.hct-list-toolbar>.afc-filter-bar-wrapper{max-width:100%}}
+
+@media(max-width:600px){
+ .hct-plan-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .hct-plan-footer>button{width:100%;min-width:0;margin:0}
+}

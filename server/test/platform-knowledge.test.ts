@@ -121,6 +121,7 @@ test('knowledge pagination, relevance and Huicetong suggestion use the platform 
     let prompt:any;
     const service=createReformService({invoke:async(operation:string,input:any)=>{
       if(operation==='platform.people.organization_context')return {organizations:[{id:f.team},{id:f.department}]};
+      if(operation==='platform.people.assignees')return {rows:[{id:f.reader,organizationUnitId:f.team,name:'测试员工'}],nextCursor:null};
       if(operation==='platform.ai.complete'){prompt=JSON.parse(input.prompt);return {content:JSON.stringify({content:'完成AFC设备检查',qualityStandard:'提交问题清单',startDate:null,endDate:null,missingInfo:[]})};}
       assert.ok(operation.startsWith('platform.knowledge.'));return f.invoke(f.reader,operation,input);
     }}).service;

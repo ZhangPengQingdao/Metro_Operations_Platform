@@ -141,7 +141,7 @@ test('corpus permissions, protected terms and quality examples affect only new A
  await assert.rejects(f.service['corpus-list']({organizationId:f.department},f.role(['read','fill'])),/ACCESS_DENIED/);
  let payload;const service=createReformService({invoke:(name,input)=>{if(name==='platform.ai.complete')payload=input;return f.gateway.invoke(name,input);}}).service;
  const writes=f.writes.length;const result=await service['plan-suggest']({organizationId:f.department,month:'2026-10',rawText:'本月底完成AFC设备排查'},f.employee);assert.ok(result.content.includes('AFC'));assert.match(payload.prompt,/提交问题清单/);assert.match(payload.prompt,/protectedTerms/);assert.equal(f.writes.length,writes);
- const {sources,retrieval,...modelResult}=result;f.setAi({...modelResult,content:'完成自动售检票设备排查'});await assert.rejects(service['plan-suggest']({organizationId:f.department,month:'2026-10',rawText:'完成AFC排查'},f.employee),/TERM_CHANGED/);
+ const {sources,retrieval,responsible,...modelResult}=result;f.setAi({...modelResult,content:'完成自动售检票设备排查'});await assert.rejects(service['plan-suggest']({organizationId:f.department,month:'2026-10',rawText:'完成AFC排查'},f.employee),/TERM_CHANGED/);
 });
 test('settings mask webhook, validate destination, and do not expose it in events',async()=>{
  const f=fixture(),url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret';await write(f,'settings-save',{organizationId:f.department,expectedVersion:0,webhookUrl:url,enabled:true,advanceDays:3,sendHour:9,overdueEveryDays:1});const result=await f.service['settings-get']({organizationId:f.department},f.employee);assert.ok(result.webhookConfigured);assert.ok(!JSON.stringify(result).includes('secret'));assert.ok(!JSON.stringify([...f.tables.get('work_events').values()]).includes('secret'));assert.throws(()=>parseWebhook('https://example.org/hook'),/INVALID_WEBHOOK/);
@@ -314,4 +314,30 @@ test('cross-department supervision assignments remain visible and completable to
  const unrelated=f.role(['supervision_read'],{self:true});
  assert.equal((await f.service['record-list']({organizationId:f.department,kind:'supervision'},unrelated)).rows.length,0);
  await assert.rejects(f.service['record-get']({id:row.id},unrelated),/ACCESS_DENIED/);
+});
+
+test('monthly suggestions default omitted dates and assignee without clarification, preserving explicit choices',async()=>{
+ const f=fixture(),actor=f.role(['fill'],{self:true});
+ f.setClock('2028-02-28T16:05:00Z');
+ const base={content:'开展风险再排查工作',qualityStandard:'形成隐患排查台账',startDate:null,endDate:null,responsibleName:null,missingInfo:[]};
+ f.setAi(base);
+ const request={organizationId:f.department,month:'2028-02',rawText:'开展风险再排查工作'};
+ const result=await f.service['plan-suggest'](request,actor);
+ assert.equal(result.startDate,'2028-02-29');assert.equal(result.endDate,'2028-02-29');
+ assert.deepEqual(result.responsible,{personId:f.person,organizationUnitId:f.team,name:'张三'});
+ assert.deepEqual(result.missingInfo,[]);assert.equal(f.writes.length,0);
+ assert.deepEqual((await f.service.session({},actor)).self,result.responsible);
+ f.setAi({...base,startDate:'2028-03-01',endDate:'2028-03-15',responsibleName:'李四'});
+ const named=await f.service['plan-suggest']({...request,rawText:'李四3月1日至15日开展风险再排查工作'},f.employee);
+ assert.equal(named.startDate,'2028-03-01');assert.equal(named.endDate,'2028-03-15');assert.equal(named.responsible.personId,f.colleague);
+ // A named person outside this actor's grant must never become self silently.
+ assert.equal((await f.service['plan-suggest']({...request,rawText:'李四3月1日至15日开展风险再排查工作'},actor)).responsible,null);
+ f.people.push({...f.people[1],id:randomUUID()});
+ assert.equal((await f.service['plan-suggest']({...request,rawText:'李四开展风险再排查工作'},f.employee)).responsible,null);
+ f.setAi({...base,responsibleName:'模型编造姓名'});
+ await assert.rejects(f.service['plan-suggest'](request,actor),/AI_INVALID_RESULT/);
+ f.setAi({...base,startDate:'2028-02-10'});
+ assert.equal((await f.service['plan-suggest'](request,actor)).endDate,'2028-02-29');
+ f.setAi({...base,endDate:'2028-03-10'});
+ assert.equal((await f.service['plan-suggest'](request,actor)).startDate,'2028-02-29');
 });
