@@ -131,3 +131,28 @@ test('key creation and revocation roll back together with audit failures',async(
   broken=true;await assert.rejects(keys.revoke(f.person,identity.id,randomUUID()),/AUDIT_UNAVAILABLE/);assert.ok(await keys.authenticate(`Bearer ${created.token}`));
  }finally{await f.pg.close();}
 });
+
+test('default keys have no expiry, include both read scopes and keep legacy key limits and revocation',async()=>{
+ const f=await fixture();try{
+  const legacy=await f.keys.create(f.person,{requestId:randomUUID(),name:'legacy',days:7,scopes:['directory']});
+  const before=(await f.pg.query('SELECT expires_at,scopes FROM platform_developer_keys WHERE id=$1',[legacy.id])).rows[0];
+  // Exercise the additive migration against the prior NOT NULL schema with an existing key.
+  await f.pg.query('ALTER TABLE platform_developer_keys ALTER COLUMN expires_at SET NOT NULL');
+  const {developerKeyLifetimeMigration}=await import('../src/app-platform/developer/keys.ts');
+  await developerKeyLifetimeMigration.run({client:f.pool} as any);
+  assert.deepEqual((await f.pg.query('SELECT expires_at,scopes FROM platform_developer_keys WHERE id=$1',[legacy.id])).rows[0],before);
+  const input={requestId:randomUUID(),name:'default'};
+  const created=await f.keys.create(f.person,input),header=`Bearer ${created.token}`;
+  assert.deepEqual((await f.keys.authenticate(header)).scopes,['directory','apps']);
+  const row=(await f.pg.query('SELECT expires_at FROM platform_developer_keys WHERE id=$1',[created.id])).rows[0];assert.equal(row.expires_at,null);
+  assert.equal((await f.keys.create(f.person,input)).token,null);
+  await assert.rejects(f.keys.create(f.person,{...input,days:7}),/REQUEST_ID_REUSED/);
+  await assert.rejects(f.keys.create(f.person,{...input,scopes:['directory']}),/REQUEST_ID_REUSED/);
+  for(let i=0;i<3;i++)await f.keys.create(f.person,{...input,requestId:randomUUID()});
+  await assert.rejects(f.keys.create(f.person,{...input,requestId:randomUUID()}),/DEVELOPER_KEY_LIMIT/);
+  await f.keys.revoke(f.person,created.id!,randomUUID());await assert.rejects(f.keys.authenticate(header),/DEVELOPER_AUTH_REQUIRED/);
+  const replacement=await f.keys.create(f.person,{...input,requestId:randomUUID()});
+  await f.pg.query("UPDATE platform_employee_accounts SET password_hash='changed' WHERE id=$1",[f.account]);
+  await assert.rejects(f.keys.authenticate(`Bearer ${replacement.token}`),/DEVELOPER_AUTH_REQUIRED/);
+ }finally{await f.pg.close();}
+});

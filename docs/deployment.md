@@ -81,3 +81,7 @@ MOP_EMBEDDING_ALLOWED_ENDPOINTS=http://127.0.0.1:3212/v1/embeddings,http://embed
 `/api/developer/*` 与 `/api/employee/*` 使用员工站点的既有 `/api` 反向代理，无新增域名或端口。前者只接受个人 Bearer 凭证，不接受管理员或员工 Cookie。不要在代理日志记录 Authorization 或请求正文。
 
 检修读取故障的示例需要分别安装故障记录、检修管理 1.1.0 应用包，并保留/配置员工在两个应用的业务角色。平台包升级不会安装或授权业务应用。功能说明见 [开发接入指南](developer/integration.md)。
+
+## 1.11.1 开发凭证简化
+
+新增 `developer-key-lifetime-expand` 迁移，允许 expires_at 为空，支持不设到期时间的新密钥。已有密钥保留原到期时间与查询范围。在线更新按既有流程执行迁移；手工部署先 `npm --prefix server run db:init`。新版界面只提交名称，后端默认授予公共目录及本人授权应用接口的只读查询范围。

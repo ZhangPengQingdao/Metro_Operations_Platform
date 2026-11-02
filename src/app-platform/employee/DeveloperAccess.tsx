@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Button,Input,Select,Textarea} from '../../components/ui';
+import {Button,Input,Select,Textarea,Dialog,Table,TableActionButton,Badge} from '../../components/ui';
 import type {AppApiDocumentation} from '@metro/platform-sdk/app-api-documentation';
 import {employeeRequest} from './client';
 const print=(value:unknown)=>JSON.stringify(value,null,2);
@@ -8,20 +8,39 @@ const date=(value:string)=>new Date(value).toLocaleString('zh-CN');
 function Json({value}:{value:unknown}){return <pre className="developer-code"><code>{print(value)}</code></pre>;}
 function download(name:string,value:unknown){const url=URL.createObjectURL(new Blob([print(value)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
-type Key={id:string;name:string;prefix:string;scopes:string[];expiresAt:string;revokedAt:string|null};
+type Key={id:string;name:string;prefix:string;scopes:string[];createdAt:string;expiresAt:string|null;revokedAt:string|null};
 export function DeveloperKeys(){
  const pending=useRef<{signature:string;requestId:string}|null>(null);
- const [keys,setKeys]=useState<Key[]>([]),[name,setName]=useState('本地开发'),[days,setDays]=useState('30'),[apps,setApps]=useState(false),[token,setToken]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState(0),[history,setHistory]=useState<unknown[]>([]);
- useEffect(()=>{const c=new AbortController();setError('');Promise.all([employeeRequest<{keys:Key[]}>('/developer/keys',{signal:c.signal}),employeeRequest<{events:unknown[]}>('/developer/history',{signal:c.signal})]).then(([a,b])=>{setKeys(a.keys);setHistory(b.events);}).catch(e=>{if(!c.signal.aborted)setError(message(e));});return()=>c.abort();},[attempt]);
- async function create(){setBusy(true);setError('');setToken('');setNotice('');try{const fields={name,days:Number(days),scopes:apps?['directory','apps']:['directory']},signature=print(fields);if(pending.current?.signature!==signature)pending.current={signature,requestId:crypto.randomUUID()};const v=await employeeRequest<{token:string|null}>('/developer/keys',{method:'POST',body:{requestId:pending.current.requestId,...fields}});pending.current=null;setToken(v.token??'');setNotice(v.token?'完整密钥仅在此显示一次，请保存到本地环境变量。':'请求已记录，完整密钥不可再次获取；请核对列表后撤销并重新创建。');setAttempt(x=>x+1);}catch(e){setError(message(e));}finally{setBusy(false);}}
- async function revoke(id:string){setBusy(true);setError('');try{await employeeRequest(`/developer/keys/${id}/revoke`,{method:'POST',body:{requestId:crypto.randomUUID()}});setToken('');setNotice('凭证已撤销。');setAttempt(x=>x+1);}catch(e){setError(message(e));}finally{setBusy(false);}}
- return <><div className="developer-intro"><h2>我的开发凭证</h2><p>凭证代表你的员工身份，只能读取公共目录及你有权限的开放接口。最多保留 5 个有效凭证；不要放进网页、应用包或代码仓库。</p></div>
- {error&&<p role="alert" className="afc-error">{error} <Button size="sm" onClick={()=>setAttempt(x=>x+1)}>刷新列表</Button></p>}{notice&&<p role="status">{notice}</p>}
- <form className="admin-form developer-key-form" onSubmit={e=>{e.preventDefault();void create();}}><label>名称<Input required maxLength={60} value={name} disabled={busy} onChange={e=>setName(e.target.value)}/></label><label>有效期<Select value={days} disabled={busy} onChange={e=>setDays(e.target.value)}><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></Select></label><label><span><input type="checkbox" checked={apps} disabled={busy} onChange={e=>setApps(e.target.checked)}/> 同时允许查询我有权限的应用接口</span></label><Button type="submit" disabled={busy||!name.trim()}>{busy?'处理中…':'创建只读凭证'}</Button></form>
- {token&&<section className="admin-card"><h3>请立即保存</h3><pre className="developer-code"><code>{token}</code></pre><Button variant="secondary" onClick={()=>setToken('')}>已保存，隐藏密钥</Button></section>}
- <div className="developer-reference-list">{keys.map(k=><section key={k.id} className="admin-card"><h3>{k.name}</h3><p><code>{k.prefix}…</code> · {k.scopes.includes('apps')?'公共目录、授权应用接口':'公共目录'}</p><p>{k.revokedAt?'已撤销':new Date(k.expiresAt).getTime()<=Date.now()?'已过期':`有效至 ${date(k.expiresAt)}`}</p>{!k.revokedAt&&<Button variant="secondary" disabled={busy} onClick={()=>void revoke(k.id)}>撤销</Button>}</section>)}</div>
- <h3>本地调用</h3><pre className="developer-code"><code>{`# 将密钥存入 MOP_DEV_KEY 环境变量\ncurl -H "Authorization: Bearer $MOP_DEV_KEY" \\\n  '${window.location.origin}/api/developer/directory?resource=stations'`}</code></pre>
- <details><summary>最近 50 条凭证与开发请求记录</summary><Json value={history}/></details></>;
+ const [keys,setKeys]=useState<Key[]>([]),[name,setName]=useState('本地开发'),[token,setToken]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[formError,setFormError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState(0),[loading,setLoading]=useState(true),[open,setOpen]=useState(false);
+ useEffect(()=>{const c=new AbortController();setLoading(true);setError('');employeeRequest<{keys:Key[]}>('/developer/keys',{signal:c.signal}).then(v=>{if(!c.signal.aborted)setKeys(v.keys);}).catch(e=>{if(!c.signal.aborted)setError(message(e));}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();},[attempt]);
+ function close(){if(busy)return;setOpen(false);setToken('');setFormError('');}
+ async function create(){
+  setBusy(true);setFormError('');setNotice('');
+  try{
+   const fields={name},signature=print(fields);if(pending.current?.signature!==signature)pending.current={signature,requestId:crypto.randomUUID()};
+   const v=await employeeRequest<{token:string|null}>('/developer/keys',{method:'POST',body:{requestId:pending.current.requestId,...fields}});
+   pending.current=null;setToken(v.token??'');setAttempt(x=>x+1);
+   if(!v.token){setOpen(false);setNotice('创建请求已完成，完整密钥不能再次获取。请核对列表，作废后重新新增。');}
+  }catch(e){setFormError(message(e));}finally{setBusy(false);}
+ }
+ async function revoke(id:string){setBusy(true);setError('');try{await employeeRequest(`/developer/keys/${id}/revoke`,{method:'POST',body:{requestId:crypto.randomUUID()}});setNotice('密钥已作废。');setAttempt(x=>x+1);}catch(e){setError(message(e));}finally{setBusy(false);}}
+ return <>
+  <div className="developer-key-heading"><div className="developer-intro"><h2>我的开发凭证</h2><p>新密钥可读取公共目录和你有权限的应用接口，长期有效，最多保留 5 个。请勿放入网页、应用包或代码仓库。</p></div><Button disabled={busy} onClick={()=>{setFormError('');setToken('');setOpen(true);}}>新增密钥</Button></div>
+  {error&&<p role="alert" className="afc-error">{error} <Button size="sm" onClick={()=>setAttempt(x=>x+1)}>刷新列表</Button></p>}{notice&&<p role="status">{notice}</p>}
+  <Table compact className="developer-key-table" emptyState={!keys.length?(loading?'正在读取密钥…':'暂无密钥，点击“新增密钥”开始使用。'):undefined}>
+   <thead><tr><th scope="col">密钥</th><th scope="col" className="developer-key-created">创建时间</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
+   <tbody>{keys.map(k=>{const expired=!!k.expiresAt&&new Date(k.expiresAt).getTime()<=Date.now();return <tr key={k.id}>
+    <td><div className="developer-key-identity"><strong>{k.name}</strong><code>{k.prefix}…</code></div></td>
+    <td className="developer-key-created">{date(k.createdAt)}</td>
+    <td><Badge size="sm" variant={k.revokedAt||expired?'neutral':'success'}>{k.revokedAt?'已作废':expired?'已过期':'有效'}</Badge></td>
+    <td>{!k.revokedAt?<TableActionButton disabled={busy} aria-label={`作废 ${k.name}`} onClick={()=>void revoke(k.id)}>作废</TableActionButton>:<span className="afc-muted">—</span>}</td>
+   </tr>;})}</tbody>
+  </Table>
+  <h3 className="developer-key-usage">调用方法</h3><pre className="developer-code"><code>{`# 将密钥存入 MOP_DEV_KEY 环境变量\ncurl -H "Authorization: Bearer $MOP_DEV_KEY" \\\n  '${window.location.origin}/api/developer/directory?resource=stations'\n\n# 查询我有权限的应用接口\ncurl -H "Authorization: Bearer $MOP_DEV_KEY" \\\n  '${window.location.origin}/api/developer/interfaces'`}</code></pre>
+  <Dialog open={open} title={token?'密钥已创建':'新增密钥'} size="sm" onClose={close} closeOnBackdropClick={!token} description={token?'完整密钥仅显示一次，请立即保存到本地环境变量。':'默认可读取公共目录和你有权限的应用接口，无需设置有效期。'} footer={token?<Button onClick={close}>已保存，关闭</Button>:<><Button variant="secondary" disabled={busy} onClick={close}>取消</Button><Button type="submit" form="developer-create-key" disabled={busy||!name.trim()}>{busy?'创建中…':'创建密钥'}</Button></>}>
+   {token?<pre className="developer-code"><code>{token}</code></pre>:<form id="developer-create-key" className="admin-form developer-key-form" onSubmit={e=>{e.preventDefault();if(!busy)void create();}}><label>名称<Input required maxLength={60} value={name} disabled={busy} onChange={e=>setName(e.target.value)}/></label>{formError&&<p role="alert" className="afc-error">{formError}</p>}</form>}
+  </Dialog>
+ </>;
 }
 
 export function PublicDirectories(){

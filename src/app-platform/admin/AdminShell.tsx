@@ -41,7 +41,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const base=mode==='admin'?'/admin':'/employee';
   const dashboardCanvas=mode==='employee'&&(pathname==='/employee'||pathname==='/employee/');
   const applicationCanvas=pathname.startsWith(`${base}/app/`);
-  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/chat',label:'新建对话',icon:'plus' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName},{path:'/employee/developer',label:'开发者中心',icon:'terminal' as PlatformIconName}];
+  const primary=mode==='admin'?navigation:[{path:'/employee',label:'工作台',icon:'grid' as PlatformIconName},{path:'/employee/chat',label:'新建对话',icon:'plus' as PlatformIconName},{path:'/employee/apps',label:'应用管理',icon:'cube' as PlatformIconName}];
   const [collapsed, setCollapsed] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'primary' | 'secondary'>('secondary');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -80,7 +80,7 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
     setLoggingOut(true); setError('');
     try {await onLogout();} catch (cause) {setError(cause instanceof Error ? cause.message : '退出登录失败，请重试');} finally {setLoggingOut(false);}
   };
-  const title = app?.name || primary.find(item => item.path === base ? pathname === item.path : pathname.startsWith(item.path))?.label || '运管开放平台';
+  const title = (mode==='employee'&&pathname==='/employee/developer'?'开发者中心':undefined) || app?.name || primary.find(item => item.path === base ? pathname === item.path : pathname.startsWith(item.path))?.label || '运管开放平台';
   return <div className="afc-admin afc-theme-neutral" data-theme={theme} data-rail={rail} data-secondary={secondary}>
     <a className="afc-skip-link" href="#admin-main">跳至主要内容</a>
     {mobileOpen && <button type="button" className="afc-mobile-backdrop" aria-label="关闭导航" onClick={() => setMobileOpen(false)}/>}
