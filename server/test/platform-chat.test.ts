@@ -175,6 +175,7 @@ test('chat dispatches real Huicetong and Todos child handlers with employee-boun
      if(params.table==='tasks'){assert.ok(params.anyOf.some((group:any[])=>group.some(filter=>filter.value===person)));return {rows:[{id:randomUUID(),title:'本人巡检待办',created_by:person,organization_id:org}],nextCursor:null};}
      return {rows:[],nextCursor:null};
     }
+    if(operation==='platform.app_data.get'&&params.table==='plan_prompt_settings')return {row:null};
     throw Error(`unexpected platform call ${operation}`);
    }});
    processes.set(appId,process);await process.start();
