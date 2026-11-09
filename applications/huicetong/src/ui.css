@@ -50,7 +50,9 @@
 
 .hct-corpus-panel{min-width:0}
 .hct-corpus-toolbar{display:flex;align-items:center;justify-content:space-between;gap:24px;border-bottom:1px solid var(--afc-color-line);min-width:0}
-.hct-corpus-toolbar>.afc-tab-list{border-bottom:0;flex-shrink:0}
+.hct-corpus-toolbar>.afc-tab-list{border-bottom:0;flex-shrink:0;min-width:0;overflow:visible}
+.hct-corpus-toolbar .afc-tab-trigger{white-space:nowrap}
+.hct-corpus-toolbar .afc-tab-trigger[aria-selected=true]::after{bottom:0}
 .hct-corpus-toolbar>.afc-filter-bar-wrapper{width:auto;margin:0 0 0 auto;min-width:0}
 .hct-import-upload{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:190px;padding:28px;border:1px dashed var(--afc-color-line);border-radius:10px;background:var(--afc-color-surface);cursor:pointer;text-align:center;overflow-wrap:anywhere}
 .hct-import-upload input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
@@ -110,4 +112,19 @@
 @media(max-width:600px){
  .hct-plan-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
  .hct-plan-footer>button{width:100%;min-width:0;margin:0}
+}
+
+.hct-prompt-settings{max-width:960px;padding-top:8px;min-width:0}
+.hct .hct-prompt-editor{min-height:360px}
+.hct-prompt-settings>.afc-field{margin-bottom:16px}
+.hct-prompt-result{margin-top:20px;padding:20px;border:1px solid var(--afc-color-line);border-radius:8px;background:var(--afc-color-surface);overflow-wrap:anywhere}
+.hct-prompt-result dt:not(:first-child){margin-top:16px}
+.hct-prompt-result summary{cursor:pointer;font-size:13px}
+@media(max-width:700px){
+ .hct-corpus-toolbar{flex-wrap:wrap;gap:12px;padding-bottom:12px}
+ .hct-corpus-toolbar>.afc-tab-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:0}
+ .hct-corpus-toolbar .afc-tab-trigger{justify-content:center;min-width:0;padding-inline:6px}
+ .hct-corpus-toolbar>.afc-filter-bar-wrapper{width:100%;margin:0}
+ .hct .hct-prompt-editor{min-height:420px}
+ .hct-prompt-result{padding:14px}
 }

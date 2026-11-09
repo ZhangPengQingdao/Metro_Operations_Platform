@@ -51,6 +51,13 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
   }};
   const employee={personId:person,organizationUnitId:team,businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'}],grants:['read','fill','review','complete','corpus','settings'].map(code=>({permission:`app.huicetong.${code}`,all:false,self:false,organizationIds:[org,team]}))}};
   const service=createReformService(gateway).service,id=randomUUID();
+  assert.equal((await service['plan-prompt-get']({organizationId:org},employee)).version,0);
+  await service['plan-prompt-save']({organizationId:org,prompt:'规范'.repeat(1200),expectedVersion:0,requestId:randomUUID()},employee);
+  const persistedPrompt=await createReformService(gateway).service['plan-prompt-get']({organizationId:org},employee);
+  assert.equal(persistedPrompt.prompt,'规范'.repeat(1200));assert.equal(persistedPrompt.version,1);
+  await service['plan-prompt-save']({organizationId:org,prompt:'结合标准示例补全计划。',expectedVersion:1,requestId:randomUUID()},employee);
+  await assert.rejects(service['plan-prompt-save']({organizationId:org,prompt:'过期覆盖',expectedVersion:1,requestId:randomUUID()},employee),/CONFLICT/);
+  assert.equal((await service['plan-prompt-get']({organizationId:org},employee)).version,2);
   await service['record-save']({id,requestId:randomUUID(),organizationId:org,kind:'monthly',submit:true,draft:{content:'检查'.repeat(250),qualityStandard:'验收'.repeat(250),startDate:'2026-10-01',endDate:'2026-10-31',month:'2026-10',responsible:{personId:person,organizationUnitId:team},originalText:'原话'.repeat(750)}},employee);
   await service['record-review']({id,requestId:randomUUID(),expectedVersion:1,action:'approve'},employee);
   await service['record-progress']({id,requestId:randomUUID(),expectedVersion:2,summary:'完成',complete:true},employee);

@@ -1,7 +1,7 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "月度计划、上级督办、年度计划与AI语料管理",
   "color": "#059669",
   "platform": ">=1.10.0 <2.0.0",
@@ -289,6 +289,18 @@
     },
     {
       "id": "corpus-save"
+    },
+    {
+      "id": "plan-prompt-get",
+      "permission": "corpus"
+    },
+    {
+      "id": "plan-prompt-save",
+      "permission": "corpus"
+    },
+    {
+      "id": "plan-prompt-test",
+      "permission": "corpus"
     },
     {
       "id": "plan-suggest"

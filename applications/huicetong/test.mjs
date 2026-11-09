@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {createReformService,createReformHandlers} from './src/reform-service.mjs';
 import {annualMonths,relevantAnnual,reminderDue,parseWebhook,day} from './src/reform-rules.mjs';
+import {DEFAULT_PLAN_PROMPT,PLAN_PROMPT_MAX_LENGTH,planSystemPrompt} from './src/plan-prompt.mjs';
 
 const migrations=await Promise.all((await readdir(new URL('./migrations/',import.meta.url))).filter(name=>name.endsWith('.json')).sort().map(async name=>JSON.parse(await readFile(new URL('./migrations/'+name,import.meta.url),'utf8'))));
 const schema={operations:migrations.flatMap(value=>value.operations)};
@@ -340,4 +341,81 @@ test('monthly suggestions default omitted dates and assignee without clarificati
  assert.equal((await f.service['plan-suggest'](request,actor)).endDate,'2028-02-29');
  f.setAi({...base,endDate:'2028-03-10'});
  assert.equal((await f.service['plan-suggest'](request,actor)).startDate,'2028-02-29');
+});
+
+test('plan prompts are defaulted per department and only corpus maintainers can read, save or test them',async()=>{
+ const f=fixture(),input={organizationId:f.department},manager=f.role(['corpus']);
+ const config=await f.service['plan-prompt-get'](input,manager);
+ assert.deepEqual(config,{prompt:DEFAULT_PLAN_PROMPT,defaultPrompt:DEFAULT_PLAN_PROMPT,version:0});
+ const draft={...input,prompt:'结合语料补全工作对象与成果要求。',month:'2026-11',rawText:'开展风险辨识工作'};
+ for(const actor of [f.role(['fill'],{self:true}),f.role(['settings']),f.role(['corpus'],{foreign:true})]){
+  await assert.rejects(f.service['plan-prompt-get'](input,actor),/ACCESS_DENIED/);
+  await assert.rejects(write(f,'plan-prompt-save',{...input,prompt:draft.prompt,expectedVersion:0},actor),/ACCESS_DENIED/);
+  await assert.rejects(f.service['plan-prompt-test'](draft,actor),/ACCESS_DENIED/);
+ }
+ const saved=await write(f,'plan-prompt-save',{...input,prompt:` ${draft.prompt} `,expectedVersion:0},manager);
+ assert.deepEqual(saved,{prompt:draft.prompt,version:1});
+ const stored=f.tables.get('plan_prompt_settings').get(f.department);assert.equal(stored.updated_by,manager.personId);
+ assert.equal((await f.service['plan-prompt-get'](input,manager)).prompt,draft.prompt);
+ const foreign=await f.service['plan-prompt-get']({organizationId:f.otherDepartment},f.role(['corpus'],{foreign:true}));
+ assert.equal(foreign.prompt,DEFAULT_PLAN_PROMPT);assert.equal(foreign.version,0);
+});
+
+test('saved prompts reach both monthly suggestion and unified conversation, without changing other departments',async()=>{
+ const f=fixture(),requests=[],invoke=f.gateway.invoke.bind(f.gateway);
+ f.gateway.invoke=async(name,input,signal)=>{if(name==='platform.ai.complete')requests.push(input);return invoke(name,input,signal);};
+ const prompt='借鉴相关示例的句式，补全工作对象、动作和成果要求。';
+ await write(f,'plan-prompt-save',{organizationId:f.department,prompt,expectedVersion:0});
+ const before=f.writes.length;
+ await f.service['plan-suggest']({organizationId:f.department,month:'2026-11',rawText:'开展风险辨识工作'},f.role(['fill'],{self:true}));
+ await f.service['agent-plan']({message:'2026-11 开展风险辨识工作',history:[],today:'2026-11-06'},f.role(['fill'],{self:true}));
+ assert.equal(requests.length,2);for(const request of requests)assert.equal(request.system,planSystemPrompt(prompt));
+ const outsider=f.role(['fill'],{foreign:true,personId:f.outside,organizationUnitId:f.foreignTeam});
+ await f.service['plan-suggest']({organizationId:f.otherDepartment,month:'2026-11',rawText:'开展设备检查'},outsider);
+ assert.equal(requests.at(-1).system,planSystemPrompt(DEFAULT_PLAN_PROMPT));assert.equal(f.writes.length,before);
+});
+
+test('prompt preview uses unsaved instructions and retrieved examples without changing configuration or records',async()=>{
+ const f=fixture(),manager=f.role(['corpus']),org={organizationId:f.department};
+ await write(f,'corpus-save',{...org,id:randomUUID(),kind:'example',content:'根据设备系统或重要部件、重要作业环节等持续开展风险再辨识工作，并结合已知风险进行隐患排查。',qualityStandard:'形成隐患排查台账。'});
+ await write(f,'plan-prompt-save',{...org,prompt:'已保存的规则',expectedVersion:0},manager);
+ let request;const invoke=f.gateway.invoke.bind(f.gateway);
+ f.gateway.invoke=async(name,input,signal)=>{if(name==='platform.ai.complete')request=input;return invoke(name,input,signal);};
+ const before=f.writes.length,snapshot=structuredClone(f.tables.get('plan_prompt_settings'));
+ const content='围绕设备系统、重要部件及重要作业环节开展风险辨识，梳理风险点并整理辨识结果。';
+ f.setAi({content,qualityStandard:'形成风险辨识清单。',startDate:null,endDate:null,responsibleName:null,missingInfo:[]});
+ const result=await f.service['plan-prompt-test']({...org,prompt:'当前未保存的测试规则',month:'2026-11',rawText:'开展风险辨识工作'},manager);
+ assert.equal(request.system,planSystemPrompt('当前未保存的测试规则'));
+ const context=JSON.parse(request.prompt);assert.equal(context.examples.length,1);assert.equal(context.examples[0].qualityStandard,'形成隐患排查台账。');
+ assert.equal(result.content,content);assert.equal(result.sources.length,1);assert.equal(f.writes.length,before);
+ assert.deepEqual(f.tables.get('plan_prompt_settings'),snapshot);assert.equal(f.tables.get('work_records').size,0);
+ f.gateway.invoke=async(name,input,signal)=>{if(name==='platform.ai.complete')throw Error('provider failure');return invoke(name,input,signal);};
+ await assert.rejects(f.service['plan-prompt-test']({...org,prompt:'测试规则',month:'2026-11',rawText:'开展风险辨识工作'},manager),/AI_UNAVAILABLE/);
+ assert.deepEqual(f.tables.get('plan_prompt_settings'),snapshot);assert.equal(f.writes.length,before);
+});
+
+test('prompt saves reject stale or concurrent updates and never duplicate a retried write',async()=>{
+ const f=fixture(),input={organizationId:f.department,prompt:'首版提示词',expectedVersion:0,requestId:randomUUID()};
+ await f.service['plan-prompt-save'](input,f.employee);
+ await assert.rejects(f.service['plan-prompt-save'](input,f.employee),/CONFLICT/);
+ assert.equal(f.writes.length,1);
+ const outcomes=await Promise.allSettled(['第二版甲','第二版乙'].map(prompt=>write(f,'plan-prompt-save',{organizationId:f.department,prompt,expectedVersion:1})));
+ assert.equal(outcomes.filter(item=>item.status==='fulfilled').length,1);assert.match(outcomes.find(item=>item.status==='rejected').reason.message,/CONFLICT/);
+ assert.equal(f.tables.get('plan_prompt_settings').get(f.department).version,2);assert.equal(f.writes.length,2);
+});
+
+test('prompt limits fit the AI gateway contract and invalid preview/save inputs never invoke the model',async()=>{
+ const f=fixture(),org={organizationId:f.department};let calls=0;const invoke=f.gateway.invoke.bind(f.gateway);
+ f.gateway.invoke=async(name,input,signal)=>{if(name==='platform.ai.complete'){calls++;assert.ok(input.system.length<=3000);}return invoke(name,input,signal);};
+ assert.ok(planSystemPrompt('字'.repeat(PLAN_PROMPT_MAX_LENGTH)).length<=3000);
+ for(const prompt of ['', '  ', '字'.repeat(PLAN_PROMPT_MAX_LENGTH+1),'非法\u0000内容']){
+  await assert.rejects(write(f,'plan-prompt-save',{...org,prompt,expectedVersion:0}),/INVALID_INPUT/);
+  await assert.rejects(f.service['plan-prompt-test']({...org,prompt,month:'2026-11',rawText:'开展风险辨识工作'},f.employee),/INVALID_INPUT/);
+ }
+ for(const expectedVersion of [undefined,-1,1.5,'0'])await assert.rejects(write(f,'plan-prompt-save',{...org,prompt:'有效提示词',expectedVersion}),/INVALID_INPUT/);
+ await assert.rejects(f.service['plan-prompt-test']({...org,prompt:'有效提示词',month:'2026-13',rawText:'测试计划'},f.employee),/INVALID_INPUT/);
+ await assert.rejects(f.service['plan-prompt-test']({...org,prompt:'有效提示词',month:'2026-11',rawText:'测试计划',requestId:randomUUID()},f.employee),/INVALID_INPUT/);
+ assert.equal(calls,0);assert.equal(f.writes.length,0);
+ await write(f,'plan-prompt-save',{...org,prompt:'字'.repeat(PLAN_PROMPT_MAX_LENGTH),expectedVersion:0});
+ await f.service['plan-suggest']({...org,month:'2026-11',rawText:'测试计划'},f.employee);assert.equal(calls,1);
 });
