@@ -23,7 +23,7 @@ async function runV2(command:string,args:string[]){
    const id=option(args,'--id'),name=option(args,'--name');
    if(args.length!==1)throw new CliError('用法：mop-app init <目录> [--id <应用ID>] [--name <应用名称>]');
    const result=await initProject(args[0]!,{id,name,templates:new URL('./templates/',import.meta.url),platformVersion:metadata.version});
-   console.log(`已创建 ${result.name}（${result.id}）：${result.root}\n下一步：cd ${args[0]} && npm install && npm test && npm run build`);
+   console.log(`已创建 ${result.name}（${result.id}）：${result.root}\n下一步：按项目 .claude/skills/metro-app/references/toolchain.md 安装同版本 SDK/CLI，再运行 npm test、npm run check 和 npm run build`);
   }else{
    if(args.length>1)throw new CliError(`用法：mop-app ${command} [目录]`);
    if(command==='check'){

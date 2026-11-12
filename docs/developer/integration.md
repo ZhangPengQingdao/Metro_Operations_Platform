@@ -42,6 +42,12 @@ curl -H "Authorization: Bearer $MOP_DEV_KEY" \
 
 员工浏览器使用 /api/employee/developer 下对应接口，沿用会话和 Origin 校验。keys 的创建只需 name 与 requestId，revoke 为幂等作废。兼容旧客户端的 days / scopes 参数；已有密钥保留原到期时间与查询范围，不自动延长或扩大权限。expiresAt 为 null 表示无到期时间。
 
+## 接口发现与调试
+
+开发者中心“应用接口”使用 `/api/employee/developer/catalog`，Agent 使用 `/api/developer/catalog`。目录包含员工有业务权限且向应用开放的接口，包括 `expose: "apps"` 和 `expose: true`，并列出 `consumers` 可用入口与调用示例。目录不返回业务数据，不授予调用权限。
+
+`/interfaces` 保持原有含义，只返回个人凭证可执行的接口。`/call` 也继续校验个人开放范围；仅向应用开放的接口应在声明 appAccess 的应用后端联调。所有入口复用同一处理函数和输入输出契约。
+
 ## 开放应用接口
 
 只支持显式声明的只读接口；必须绑定业务权限，并提供完整输入输出、示例和错误说明。输入根对象要求 additionalProperties:false。未声明 expose 的内部接口不出现在开放目录。
@@ -66,7 +72,7 @@ curl -H "Authorization: Bearer $MOP_DEV_KEY" \
 }
 ```
 
-handler 仍返回 {ok:true,result} 或 {ok:false,error}；documentation.output 描述 result。公开调用返回的 HTTP 正文为 {result}；SDK ctx.apps.call 直接返回业务 result。平台检查契约与权限，应用必须先按员工数据范围过滤再分页。声明不会自动修复应用自身的资源授权。
+defineServer 处理函数直接返回业务结果；旧函数表兼容 {ok:true,result} 或 {ok:false,error}。documentation.output 描述业务结果。公开调用返回的 HTTP 正文为 {result}；SDK ctx.apps.call 直接返回业务 result。平台检查契约与权限，应用必须先按员工数据范围过滤再分页。声明不会自动修复应用自身的资源授权。
 
 ## 正式跨应用调用
 
@@ -91,7 +97,7 @@ const result2 = await gateway.invoke('platform.apps.call', {
 
 本版本只支持员工触发的一层跨应用查询：开放查询处理器不可继续调用其他应用，禁止循环调用，执行期间平台写操作被拒绝。宿主不提供任意第三方后端副作用的事务保证，开放处理器必须保持纯查询。无后台服务身份、跨应用写入或分布式事务，失败不自动重试。
 
-故障记录 1.1.0 开放 public-query；检修管理 1.1.0 的计划详情可读取本站最近 20 条故障摘要。需要分别安装这两个应用更新，并为员工分配相应业务角色；平台升级不会自动更新业务应用。
+仓库内八个应用均已声明跨应用查询入口。实际可接入的 ID、参数、版本与开放范围以当前实例的接口目录为准；调用方逐项声明依赖，并为触发员工分配目标应用业务角色。平台升级不会自动更新已安装应用包。
 
 ## 升级与验收
 

@@ -21,6 +21,7 @@ export function registerEmployeeDeveloperRoutes(app:FastifyInstance,options:Opti
  app.get('/developer/directories',async()=>({directories:PUBLIC_DIRECTORIES}));
  app.get('/developer/directory',async req=>{const personId=await options.personId(req);limit(personId);const p=directoryQuery.parse(req.query);await keys.audit(personId,null,'directory.read',p.resource);return readPublicDirectory(options.pool,p);});
  app.get('/developer/interfaces',async req=>({interfaces:await options.management?.interfaces.catalog(await options.personId(req))??[]}));
+ app.get('/developer/catalog',async req=>({interfaces:await options.management?.interfaces.describe(await options.personId(req))??[]}));
  app.post('/developer/call',{bodyLimit:65536},async req=>{
   if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
   const personId=await options.personId(req);limit(personId);const p=appCallInput.parse(req.body);await keys.audit(personId,null,'app.call',`${p.appId}/${p.apiId}`);
@@ -47,6 +48,8 @@ export function registerDeveloperApi(app:FastifyInstance,options:Options&{origin
    const identity=identities.get(req)!;if(!identity.scopes.includes(scope))throw new EmployeeIdentityError(403,'ACCESS_DENIED');
    await keys.audit(identity.personId,identity.id,action,target);return identity;
   }
+  registerDeveloperDownloads(scoped,undefined,'/downloads');
+  scoped.get('/catalog',async req=>{const identity=await access(req,'apps','app.catalog','');const interfaces=await options.management?.interfaces.describe(identity.personId)??[];await keys.authenticate(req.headers.authorization);return {interfaces};});
   scoped.get('/directories',async req=>{await access(req,'directory','directory.catalog','');return {directories:PUBLIC_DIRECTORIES};});
   scoped.get('/directory',async req=>{const p=directoryQuery.parse(req.query);await access(req,'directory','directory.read',p.resource);const result=await readPublicDirectory(options.pool,p);await keys.authenticate(req.headers.authorization);return result;});
   scoped.get('/interfaces',async req=>{const identity=await access(req,'apps','app.catalog','');const interfaces=await options.management?.interfaces.catalog(identity.personId)??[];await keys.authenticate(req.headers.authorization);return {interfaces};});

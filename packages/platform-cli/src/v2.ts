@@ -1,7 +1,7 @@
 /** Application model v2 commands: init, check and build a single `.mopkg` file. */
 import { build as esbuild, transform, type Metafile, type Plugin } from 'esbuild';
 import { watch } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -70,6 +70,7 @@ export async function initProject(target: string, options: { id?: string; name?:
     await mkdir(join(root, to, '..'), { recursive: true });
     await writeFile(join(root, to), text, { flag: 'wx' });
   }
+  await cp(new URL('skill/references/', source), join(root, '.claude/skills/metro-app/references'), {recursive:true});
   return { root, id, name };
 }
 

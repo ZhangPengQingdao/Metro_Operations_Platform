@@ -27,7 +27,10 @@ try{
  await writeFile(join(staging,'developer-docs/VERSION'),version+'\n');
  // Skill: the same SKILL.md that `mop-app init` writes into new projects, plus the offline references.
  await mkdir(join(staging,'metro-app-development'));
- await cp(join(root,'packages/platform-cli/templates/v2/skill/SKILL.md'),join(staging,'metro-app-development/SKILL.md'));
+ await cp(join(root,'packages/platform-cli/templates/v2/skill'),join(staging,'metro-app-development'),{recursive:true});
+ await mkdir(join(staging,'metro-app-development/tools'));
+ for(const asset of downloads)await cp(join(output,asset.fileName),join(staging,'metro-app-development/tools',asset.fileName));
+ await writeFile(join(staging,'metro-app-development/tools/toolchain.json'),JSON.stringify({version,downloads},null,2)+'\n');
  await cp(join(staging,'developer-docs'),join(staging,'metro-app-development/references'),{recursive:true});
  // Example: a fresh project from the CLI template (app.json, icon, page, API, migration, tests).
  run(process.execPath,[join(root,'packages/platform-cli/dist/cli.mjs'),'init','example-app','--id','example-app','--name','示例应用'],staging);

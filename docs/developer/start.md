@@ -6,17 +6,17 @@
 
 ## 准备工具
 
-要求 Node.js 22+、npm。员工或管理员从开发者中心下载同一平台版本的 SDK、CLI 和应用项目示例（.tgz / .tar.gz），当前不要假设包已发布到公共 npm。
+要求 Node.js 22+、npm。推荐从开发者中心“Skill 与工具”下载完整 Skill，一包包含指引、参考文档和同版本 SDK/CLI。让 Agent 读取 SKILL.md，然后使用包内脚本：
 
 ```sh
-npm install --global /downloads/metro-platform-cli-<版本>.tgz
-mop-app init fire-check --name 灭火器巡检
-cd fire-check
-npm install /downloads/metro-platform-sdk-<版本>.tgz
+node /absolute/path/metro-app-development/scripts/create-app.mjs /absolute/path/fire-check 灭火器巡检
+cd /absolute/path/fire-check
 npm test
-mop-app check
-mop-app build          # 输出 dist/fire-check-0.1.0.mopkg
+npm run check
+npm run build
 ```
+
+已有项目、在线下载地址和可选密钥配置见[工具安装与平台连接](toolchain.md)。本地开发与打包不需要平台账号；公共 npm 不提供平台私有工具包。
 
 项目结构：
 

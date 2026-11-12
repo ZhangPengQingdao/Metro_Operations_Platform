@@ -1,5 +1,8 @@
 import {ApplicationInterfaces,DeveloperKeys,PublicDirectories} from '../employee/DeveloperAccess';
 import {employeeRequest} from '../employee/client';
+import sharedApi from '../../../docs/developer/shared-api.md?raw';
+import toolchain from '../../../docs/developer/toolchain.md?raw';
+import testing from '../../../docs/developer/testing.md?raw';
 import integration from '../../../docs/developer/integration.md?raw';
 import ai from '../../../docs/developer/ai.md?raw';
 import React,{useEffect,useState} from 'react';
@@ -17,20 +20,34 @@ import notifications from '../../../docs/developer/notifications.md?raw';
 import agents from '../../../docs/developer/agents.md?raw';
 import tools from '../../../docs/developer/tools.md?raw';
 import knowledge from '../../../docs/developer/knowledge.md?raw';
-const sections=[['start','开始开发'],['sdk','平台 SDK'],['guides','开发与改造'],['downloads','工具与下载']] as const;
-const guides=[{id:'integration',title:'公共数据与跨应用调用',content:integration},{id:'ai',title:'AI 能力总览',content:ai},{id:'identity',title:'身份与权限',content:identity},{id:'ui',title:'界面与导航',content:ui},{id:'storage',title:'存储与文件',content:storage},{id:'notifications',title:'通用通知',content:notifications},{id:'knowledge',title:'应用知识库',content:knowledge},{id:'agents',title:'统一对话与编排',content:agents},{id:'tools',title:'只读工具与 MCP',content:tools},{id:'packaging',title:'打包与升级',content:packaging}];
+const sections=[['start','开始开发'],['sdk','平台 SDK'],['guides','开发与改造'],['downloads','Skill 与工具']] as const;
+const guides=[{id:'shared-api',title:'统一接口与调用入口',content:sharedApi},{id:'toolchain',title:'工具安装与平台连接',content:toolchain},{id:'testing',title:'测试与验收',content:testing},{id:'integration',title:'公共数据与跨应用调用',content:integration},{id:'ai',title:'AI 能力总览',content:ai},{id:'identity',title:'身份与权限',content:identity},{id:'ui',title:'界面与导航',content:ui},{id:'storage',title:'存储与文件',content:storage},{id:'notifications',title:'通用通知',content:notifications},{id:'knowledge',title:'应用知识库',content:knowledge},{id:'agents',title:'统一对话与编排',content:agents},{id:'tools',title:'只读工具与 MCP',content:tools},{id:'packaging',title:'打包与升级',content:packaging}];
 function Code({children}:{children:string}) {return <pre className="developer-code"><code>{children}</code></pre>;}
-/** Render bundled documentation as text and code only; never interpret embedded HTML. */
+/** Render bundled Markdown without HTML or arbitrary URL execution. */
 export function DeveloperDocument({content}:{content:string}) {
+ const [,setParams]=useSearchParams();
+ function inline(value:string):React.ReactNode[]{return value.split(/(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*)/g).map((part,i)=>{
+  if(part.startsWith('`'))return <code key={i}>{part.slice(1,-1)}</code>;
+  if(part.startsWith('**'))return <strong key={i}>{part.slice(2,-2)}</strong>;
+  const link=/^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+  if(link){const id=link[2].replace(/\.md(?:#.*)?$/,'');const known=guides.some(g=>g.id===id)||id==='start';return known?<a key={i} href={`?section=${id==='start'?'start':`guides&guide=${id}`}`} onClick={e=>{e.preventDefault();setParams(id==='start'?{section:'start'}:{section:'guides',guide:id});}}>{link[1]}</a>:<span key={i}>{link[1]}</span>;}
+  return part;
+ });}
  const blocks=content.trim().split(/(```[^\n]*\n[\s\S]*?\n```)/g).filter(Boolean);
  return <article className="developer-document">{blocks.flatMap((block,i)=>{
   if(block.startsWith('```'))return <Code key={i}>{block.replace(/^```[^\n]*\n/,'').replace(/\n```$/,'')}</Code>;
   return block.trim().split(/\n\s*\n/).filter(Boolean).map((paragraph,j)=>{
-   const key=`${i}-${j}`;
-   if(paragraph.startsWith('# '))return <h2 key={key}>{paragraph.slice(2)}</h2>;
-   if(paragraph.startsWith('## '))return <h3 key={key}>{paragraph.slice(3)}</h3>;
-   if(paragraph.startsWith('### '))return <h4 key={key}>{paragraph.slice(4)}</h4>;
-   return <p key={key}>{paragraph}</p>;
+   const key=`${i}-${j}`,lines=paragraph.split('\n');
+   if(paragraph.startsWith('# '))return <h2 key={key}>{inline(paragraph.slice(2))}</h2>;
+   if(paragraph.startsWith('## '))return <h3 key={key}>{inline(paragraph.slice(3))}</h3>;
+   if(paragraph.startsWith('### '))return <h4 key={key}>{inline(paragraph.slice(4))}</h4>;
+   if(lines.length>1&&lines[0].startsWith('|')&&/^\|[\s:|+-]+\|$/.test(lines[1])){
+    const cells=(line:string)=>line.slice(1,-1).split('|').map(cell=>cell.trim());
+    return <div className="developer-document-table" key={key}><table><thead><tr>{cells(lines[0]).map((cell,k)=><th key={k}>{inline(cell)}</th>)}</tr></thead><tbody>{lines.slice(2).map((line,k)=><tr key={k}>{cells(line).map((cell,n)=><td key={n}>{inline(cell)}</td>)}</tr>)}</tbody></table></div>;
+   }
+   if(lines.every(line=>/^[-*] /.test(line)))return <ul key={key}>{lines.map((line,k)=><li key={k}>{inline(line.slice(2))}</li>)}</ul>;
+   if(lines.every(line=>/^\d+\. /.test(line)))return <ol key={key}>{lines.map((line,k)=><li key={k}>{inline(line.replace(/^\d+\. /,''))}</li>)}</ol>;
+   return <p key={key}>{inline(paragraph)}</p>;
   });
  })}</article>;
 }
@@ -57,9 +74,10 @@ function DownloadsPage({employee=false}:{employee?:boolean}){
  const [data,setData]=useState<Downloads|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(''),[serial,setSerial]=useState(0);
  useEffect(()=>{const c=new AbortController();setError('');request<Downloads>('/developer/downloads',{signal:c.signal}).then(setData).catch(e=>{if(!c.signal.aborted)setError(e.message);});return()=>c.abort();},[serial,employee]);
  async function download(id:string,name:string){setBusy(id);setError('');try{const response=await fetch(`/api/${employee?'employee':'admin'}/developer/downloads/${id}`,{credentials:'same-origin'});if(!response.ok)throw Error('下载失败，请核对登录状态并重试。');saveFile(name,await response.blob(),'application/gzip');}catch(e){setError(e instanceof Error?e.message:'下载失败');}finally{setBusy('');}}
- return <><div className="developer-intro"><h2>工具与下载</h2><p>将同版本资料交给开发者或编程 Agent。下载本身不包含账号、私钥或实例业务数据。</p></div>{error&&<p role="alert" className="afc-error">{error} <Button variant="secondary" size="sm" onClick={()=>setSerial(v=>v+1)}>重新读取</Button></p>}{!data&&!error&&<p role="status">正在读取下载清单…</p>}{data&&!data.available&&<p>此环境尚未构建开发资料；平台维护者需执行 npm run build:sdk、npm run build:cli、npm run build:developer。</p>}
- {data?.available&&<><p className="afc-muted">资料版本 v{data.version} · 当前界面 v{metadata.version}</p>{data.version!==metadata.version&&<p role="alert">前后端版本不一致，请核对平台部署版本后使用。</p>}<div className="developer-download-grid">{data.downloads.map(item=><section className="admin-card" key={item.id}><h3>{item.title}</h3><p>{item.fileName}</p><p className="afc-muted">{(item.bytes/1024).toFixed(0)} KiB</p><details><summary>SHA-256</summary><code>{item.sha256}</code></details><Button variant="secondary" disabled={!!busy} onClick={()=>void download(item.id,item.fileName)}>{busy===item.id?'下载中…':'下载'}</Button></section>)}</div></>}
- <section className="developer-document"><h3>使用 Agent Skill</h3><p>解压 Skill 包，得到 metro-app-development/SKILL.md 和 references/。把整个目录放入编程 Agent 支持的技能目录，或让 Agent 阅读 SKILL.md。它支持新建应用，以及先阅读项目、提出方案、经确认后改造已有应用。</p><Code>{'请使用 metro-app-development 技能评估这个项目。\n先梳理业务、身份、权限、数据和外部依赖，列出可接入的平台能力。\n将保留/替换建议及待确认事项交给我确认，再开始改造。'}</Code><p>SDK/CLI 的 .tgz 用 npm 安装；示例和 Skill 的 .tar.gz 先解压。新应用用 mop-app init 建项目、mop-app build 生成单个 .mopkg（项目内自带 Skill）；应用更新也使用 .mopkg，由管理员安装。下载接口目录后，应另行提供给 Agent，并提醒其运行时重新核对开放与授权状态。</p></section></>;
+ return <><div className="developer-intro"><h2>Skill 与工具</h2><p>从完整 Skill 包开始：内含开发指引、SDK、CLI 和建项目脚本。Agent 可据此开发、测试并打包应用。开发机器需要 Node.js 22+、npm，普通依赖需要网络或缓存。</p></div>{error&&<p role="alert" className="afc-error">{error} <Button variant="secondary" size="sm" onClick={()=>setSerial(v=>v+1)}>重新读取</Button></p>}{!data&&!error&&<p role="status">正在读取下载清单…</p>}{data&&!data.available&&<p>此环境尚未构建开发资料；平台维护者需执行 npm run build:sdk、npm run build:cli、npm run build:developer。</p>}
+ {data?.available&&<><p className="afc-muted">资料版本 v{data.version} · 当前界面 v{metadata.version}</p>{data.version!==metadata.version&&<p role="alert">前后端版本不一致，请核对平台部署版本后使用。</p>}<div className="developer-download-grid">{[...data.downloads].sort((a,b)=>Number(b.id==='skill')-Number(a.id==='skill')).map(item=><section className="admin-card" key={item.id}><h3>{item.title}{item.id==='skill'?' · 推荐起点':''}</h3><p>{item.id==='skill'?'一包包含指引、参考文档、SDK、CLI 和建项目脚本。':item.id==='sdk'||item.id==='cli'?'完整 Skill 已包含此工具，也可单独下载更新已有项目。':'可单独查阅或用于参考。'}</p><p>{item.fileName}</p><p className="afc-muted">{(item.bytes/1024).toFixed(0)} KiB</p><details><summary>SHA-256</summary><code>{item.sha256}</code></details><Button variant="secondary" disabled={!!busy} onClick={()=>void download(item.id,item.fileName)}>{busy===item.id?'下载中…':'下载'}</Button></section>)}</div></>}
+ <section className="developer-document"><h3>让 Agent 开始开发</h3><p>解压 Skill 包，安装其中的 metro-app-development 目录到 Agent 支持的技能目录，或让它直接读取 SKILL.md。</p><Code>{'请读取 /absolute/path/metro-app-development/SKILL.md。\n使用包内工具创建应用，按统一接口契约开发，完成测试、检查和 .mopkg 打包。'}</Code><h3>连接当前平台</h3><p>本地开发和打包无需凭证。读取真实目录或在线获取工具时，在“我的凭证”创建密钥并在本机设置 MOP_DEV_KEY。正式应用通过平台身份调用接口。</p><Code>{`# 将平台根地址设为 MOP_URL，密钥设为 MOP_DEV_KEY\n# 当前页面所在地址：${window.location.origin}\ncurl --fail -H "Authorization: Bearer $MOP_DEV_KEY" "$MOP_URL/api/developer/downloads"\ncurl --fail -H "Authorization: Bearer $MOP_DEV_KEY" "$MOP_URL/api/developer/catalog"`}</Code><p>清单提供版本和 SHA-256。完整安装、测试与跨应用示例见“开发与改造”。</p></section></>;
+
 }
 export default function DeveloperPage({employee=false}:{employee?:boolean}){
  const tabs:readonly (readonly [string,string])[]=employee?[...sections,['directory','公共数据'],['interfaces','应用接口'],['keys','我的凭证']]:sections;
