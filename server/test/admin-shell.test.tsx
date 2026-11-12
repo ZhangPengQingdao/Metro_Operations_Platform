@@ -15,8 +15,14 @@ test('application navigation replaces platform menu inside the same sidebar',()=
  assert.doesNotMatch(html,/aria-label="管理功能"/);
  assert.match(html,/aria-label="返回一级菜单"/);
  assert.match(html,/aria-label="测试应用导航"/);
- assert.match(render('/admin/apps'),/data-rail="false" data-secondary="false"/);
+ assert.match(render('/admin'),/data-rail="false" data-secondary="false"/);
  assert.doesNotMatch(render('/admin/apps'),/class="afc-application-sidebar"/);
+});
+test('application management links to the review page in the existing sidebar',()=>{
+ const html=render('/admin/apps/submissions');
+ assert.match(html,/aria-label="应用管理导航"/);
+ assert.match(html,/<a[^>]*href="\/admin\/apps"[^>]*>已安装应用</);
+ assert.match(html,/<a(?=[^>]*href="\/admin\/apps\/submissions")(?=[^>]*aria-current="page")[^>]*>应用审核</);
 });
 test('only authorized app identities and namespaced navigation participate',()=>{
  assert.equal(applicationNavigation('/admin/app/other/home',[app]),undefined);

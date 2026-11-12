@@ -1,10 +1,10 @@
 {
   "id": "faults",
   "name": "故障记录",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "登记、查询、处置与导出设备故障",
   "color": "#DC2626",
-  "platform": ">=1.11.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -77,136 +77,159 @@
   ],
   "api": [
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "catalog"
+      "id": "catalog",
+      "mode": "read",
+      "title": "查询业务目录"
     },
     {
       "id": "list",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询记录"
     },
     {
       "id": "detail",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询记录详情"
     },
     {
       "id": "create",
-      "permission": "create"
+      "permission": "create",
+      "mode": "write",
+      "title": "创建记录"
     },
     {
       "id": "update",
-      "permission": "update"
+      "permission": "update",
+      "mode": "write",
+      "title": "更新记录"
     },
     {
       "id": "delete",
-      "permission": "delete"
+      "permission": "delete",
+      "mode": "write",
+      "title": "作废记录"
     },
     {
       "id": "export",
-      "permission": "export"
+      "permission": "export",
+      "mode": "read",
+      "title": "导出记录"
     },
     {
       "id": "dashboard-summary",
       "permission": "read",
-      "dashboard": true
+      "dashboard": true,
+      "mode": "read",
+      "title": "故障记录工作概况",
+      "ai": {
+        "examples": [
+          "查看故障记录的工作概况。"
+        ]
+      }
     },
     {
       "id": "public-query",
       "permission": "read",
-      "expose": {
-        "title": "故障摘要查询",
-        "mode": "read",
-        "documentation": {
-          "description": "查询当前员工有权查看的故障摘要，可按车站 ID 筛选，按发生时间倒序，每页 20 条。不会返回人员、处理详情或已作废记录。cursor 为空表示结束。",
-          "input": {
-            "type": "object",
-            "properties": {
-              "stationId": {
-                "type": "string",
-                "description": "公共目录中的车站 UUID；省略则查询授权范围内全部车站"
-              },
-              "cursor": {
-                "type": "string",
-                "description": "上一页返回的 cursor；首次省略"
-              }
+      "expose": true,
+      "mode": "read",
+      "title": "故障摘要查询",
+      "documentation": {
+        "description": "查询当前员工有权查看的故障摘要，可按车站 ID 筛选，按发生时间倒序，每页 20 条。不会返回人员、处理详情或已作废记录。cursor 为空表示结束。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "stationId": {
+              "type": "string",
+              "description": "公共目录中的车站 UUID；省略则查询授权范围内全部车站"
             },
-            "additionalProperties": false
+            "cursor": {
+              "type": "string",
+              "description": "上一页返回的 cursor；首次省略"
+            }
           },
-          "output": {
-            "type": "object",
-            "properties": {
-              "rows": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "stationName": {
-                      "type": "string"
-                    },
-                    "deviceNumber": {
-                      "type": "string"
-                    },
-                    "description": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    },
-                    "occurredAt": {
-                      "type": "string"
-                    }
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
                   },
-                  "required": [
-                    "id",
-                    "stationName",
-                    "deviceNumber",
-                    "description",
-                    "status",
-                    "occurredAt"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "cursor": {
-                "type": "string"
+                  "stationName": {
+                    "type": "string"
+                  },
+                  "deviceNumber": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "occurredAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "stationName",
+                  "deviceNumber",
+                  "description",
+                  "status",
+                  "occurredAt"
+                ],
+                "additionalProperties": false
               }
             },
-            "required": [
-              "rows",
-              "cursor"
-            ],
-            "additionalProperties": false
+            "cursor": {
+              "type": "string"
+            }
           },
-          "examples": [
-            {
-              "title": "查询第一页",
-              "params": {},
-              "result": {
-                "rows": [],
-                "cursor": ""
-              }
-            }
+          "required": [
+            "rows",
+            "cursor"
           ],
-          "errors": [
-            {
-              "code": "ACCESS_DENIED",
-              "description": "无目标应用查询权限或已撤权"
-            },
-            {
-              "code": "INVALID_PARAMS",
-              "description": "参数不符合接口声明"
-            },
-            {
-              "code": "GATEWAY_FAILED",
-              "description": "应用查询失败，请核对状态后重试"
+          "additionalProperties": false
+        },
+        "examples": [
+          {
+            "title": "查询第一页",
+            "params": {},
+            "result": {
+              "rows": [],
+              "cursor": ""
             }
-          ]
-        }
-      }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "无目标应用查询权限或已撤权"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口声明"
+          },
+          {
+            "code": "GATEWAY_FAILED",
+            "description": "应用查询失败，请核对状态后重试"
+          }
+        ]
+      },
+      "ai": true
     }
   ],
   "limits": {

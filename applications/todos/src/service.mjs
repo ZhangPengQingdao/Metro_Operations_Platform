@@ -209,7 +209,6 @@ export function createTodosService(gateway,{clock=()=>new Date()}={}){
    const result=await gateway.invoke('platform.locations.responsible_stations',{organizationUnitId:input.organizationId,...(input.search?{search:input.search}:{})},signal);
    return {rows:[...new Map(result.stations.map(row=>[row.id,{id:row.id,name:row.name}])).values()],nextCursor:null};
   },
-  async 'tool-list-todos'(input,employee,signal){guard(employee);return listRecords({kind:'tasks',status:input.status},employee,signal);},
   async list(input,employee,signal){guard(employee);shape(input,['kind'],['organizationId','after','status','search']);
    if(!['tasks','templates'].includes(input.kind)||input.organizationId!==undefined&&!uuid(input.organizationId)||input.after!==undefined&&(!input.after||typeof input.after!=='object'||Array.isArray(input.after)||Object.keys(input.after).sort().join(',')!=='id,value'||!uuid(input.after.id)||typeof input.after.value!=='string'||Number.isNaN(Date.parse(input.after.value)))||input.status!==undefined&&!['active','completed'].includes(input.status)||input.search!==undefined&&(!label(input.search,100)))fail('INVALID_INPUT');
    return listRecords(input,employee,signal);

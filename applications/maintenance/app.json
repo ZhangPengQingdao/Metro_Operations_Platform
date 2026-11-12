@@ -1,10 +1,10 @@
 {
   "id": "maintenance",
   "name": "检修管理",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "计划、派工、完成与检修归档",
   "color": "#0891B2",
-  "platform": ">=1.11.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -78,43 +78,69 @@
   ],
   "api": [
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "catalog"
+      "id": "catalog",
+      "mode": "read",
+      "title": "查询业务目录"
     },
     {
       "id": "list",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询记录"
     },
     {
       "id": "detail",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询记录详情"
     },
     {
       "id": "create",
-      "permission": "create"
+      "permission": "create",
+      "mode": "write",
+      "title": "创建记录"
     },
     {
       "id": "update",
-      "permission": "update"
+      "permission": "update",
+      "mode": "write",
+      "title": "更新记录"
     },
     {
       "id": "delete",
-      "permission": "delete"
+      "permission": "delete",
+      "mode": "write",
+      "title": "作废记录"
     },
     {
       "id": "export",
-      "permission": "export"
+      "permission": "export",
+      "mode": "read",
+      "title": "导出记录"
     },
     {
       "id": "dashboard-summary",
       "permission": "read",
-      "dashboard": true
+      "dashboard": true,
+      "mode": "read",
+      "title": "检修管理工作概况",
+      "ai": {
+        "examples": [
+          "查看检修管理的工作概况。"
+        ]
+      },
+      "expose": "apps"
     },
     {
       "id": "related-faults",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询关联故障"
     }
   ],
   "limits": {

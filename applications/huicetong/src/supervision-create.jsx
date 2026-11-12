@@ -13,7 +13,11 @@ const sourceErrors={
  ASR_FILE_PROTOCOL:'本地录音需要支持文件上传的语音模型，请联系管理员或改用会议纪要。',
  ASR_NOT_CONFIGURED:'尚未配置语音识别模型，可改用会议纪要。',
  INVALID_TEXT:'请使用 UTF-8 文本或 Word 纪要。',FILE_TOO_LARGE:'文件超过大小限制。',
- MODEL_PROVIDER_FAILED:'语音服务未能识别该文件，请核对模型和音频格式。'
+ MODEL_PROVIDER_FAILED:'语音服务未能识别该文件，请核对模型和音频格式。',
+ AI_UNAVAILABLE:'平台聊天模型调用失败。请联系管理员测试聊天模型连接，或先手动填写督办。',
+ AI_INVALID_RESULT:'模型没有返回可识别的督办事项，请重新整理或手动填写。',
+ TIMEOUT:'模型整理超时，请缩短会议纪要后重试。',
+ UNSUPPORTED_FILE:'请选择 Word（.docx）、TXT 或 Markdown 文件。'
 };
 
 function DraftRow({row,index,disabled,call,change,remove}){
@@ -53,7 +57,7 @@ export function SupervisionCreate({meeting,organizationId,call,files,confirm,dis
  async function work(label,fn){
   if(lock.current||disabled)return;lock.current=true;setActivity(label);setError('');
   const signal=lifetime.current.signal;
-  try{await fn(signal);}catch(e){if(!signal.aborted)setError(sourceErrors[e.code??e.message]??e.message);}
+  try{await fn(signal);}catch(e){if(!signal.aborted)setError((sourceErrors[e.code??e.message]??e.message)+(e.requestId?` 请求编号：${e.requestId}`:''));}
   finally{lock.current=false;if(!signal.aborted)setActivity('');}
  }
  async function close(){
@@ -70,7 +74,11 @@ export function SupervisionCreate({meeting,organizationId,call,files,confirm,dis
  }
  function pickMinutes(file){
   if(!file)return;
-  void work('读取纪要',async signal=>{const value=await readMinutes(file);signal.throwIfAborted();setAudio(null);setNotes(value);setStage('notes');});
+  void work('读取纪要',async signal=>{
+   const value=await readMinutes(file);signal.throwIfAborted();
+   if(!value.trim())throw Error('纪要没有可读取的文字，请粘贴会议内容。');
+   setAudio(null);setNotes(value);setStage('notes');
+  });
  }
  function extract(){
   void work('整理中',async signal=>{
@@ -87,11 +95,14 @@ export function SupervisionCreate({meeting,organizationId,call,files,confirm,dis
    const {items}=await call('supervision-extract',{notes:source},false,{signal});
    signal.throwIfAborted();
    if(!items.length)throw Error('未提取到督办事项，可补充会议纪要或手动填写。');
-   const owners=new Map();
-   for(const item of items){
-    if(!item.ownerName||owners.has(item.ownerName))continue;
-    const page=await call('members',{kind:'supervision',search:item.ownerName,exact:true},false,{signal});
-    owners.set(item.ownerName,page.rows.length===1&&!page.nextCursor?responsibleFor(page.rows[0]):null);
+   const owners=new Map(),names=[...new Set(items.map(item=>item.ownerName).filter(Boolean))];
+   for(let start=0;start<names.length;start+=4){
+    signal.throwIfAborted();
+    const batch=names.slice(start,start+4);
+    const results=await Promise.allSettled(batch.map(search=>call('members',{kind:'supervision',search,exact:true},false,{signal})));
+    results.forEach((result,index)=>{
+     if(result.status==='fulfilled'&&result.value.rows.length===1&&!result.value.nextCursor)owners.set(batch[index],responsibleFor(result.value.rows[0]));
+    });
    }
    signal.throwIfAborted();setRows(items.map(item=>makeRow({...item,responsible:owners.get(item.ownerName)??null})));setStage('review');
   });
@@ -113,8 +124,8 @@ export function SupervisionCreate({meeting,organizationId,call,files,confirm,dis
  const fileInput=(label,accept,select)=> <label className="hct-upload-label">{label}<input aria-label={label} type="file" disabled={locked} accept={accept} onChange={e=>{const f=e.target.files?.[0];e.target.value='';select(f);}}/></label>;
  const title={source:'新增督办',record:'会议录音',notes:'会议纪要',audio:'会议录音',review:'确认督办'}[stage];
  return <Dialog open closeOnBackdropClick={false} onClose={()=>void close()} size={stage==='review'?'lg':'md'} title={title} footer={<div className="hct-footer">
-  {stage==='review'?<><Button variant="ghost" className="hct-back" leadingIcon={<Plus size={15}/>} disabled={locked} onClick={()=>setRows(old=>[...old,makeRow()])}>新增一条</Button>{sent>0&&<small role="status">已派发 {sent} 条</small>}<Button type="submit" form="hct-dispatch" loading={!!activity} disabled={locked||!rows.length}>派发 {rows.length} 条</Button></>:
-  stage!=='source'?<><Button variant="ghost" className="hct-back" disabled={locked||recording} onClick={manual}>手动填写</Button>{stage!=='record'&&<Button variant="secondary" disabled={locked} onClick={()=>{setError('');setStage('source');}}>返回</Button>}<Button disabled={locked||recording||recognizing||(!audio&&!notes.trim())} loading={!!activity} onClick={extract}>{activity||'整理为督办'}</Button></>:<Button variant="secondary" onClick={()=>void close()}>取消</Button>}
+  {stage==='review'?<><Button variant="ghost" className="hct-back" leadingIcon={<Plus size={15}/>} disabled={locked} onClick={()=>setRows(old=>[...old,makeRow()])}>新增一条</Button>{sent>0&&<small role="status">已派发 {sent} 条</small>}<Button key="dispatch" type="submit" form="hct-dispatch" loading={!!activity} disabled={locked||!rows.length}>派发 {rows.length} 条</Button></>:
+  stage!=='source'?<><Button variant="ghost" className="hct-back" disabled={locked||recording} onClick={manual}>手动填写</Button>{stage!=='record'&&<Button variant="secondary" disabled={locked} onClick={()=>{setError('');setStage('source');}}>返回</Button>}<Button key="extract" disabled={locked||recording||recognizing||(!audio&&!notes.trim())} loading={!!activity} onClick={event=>{event.preventDefault();extract();}}>{activity||'整理为督办'}</Button></>:<Button variant="secondary" onClick={()=>void close()}>取消</Button>}
  </div>}>
   {error&&<p className="hct-alert" role="alert">{error}</p>}
   {stage==='source'&&<div className="hct-source">

@@ -19,6 +19,7 @@ import {createAppAttachmentTransfer,inspectAppAttachment,APP_ATTACHMENT_MAX_BYTE
 import {createMemoryAttachmentRepository} from '../src/platform/attachments/index.ts';
 import {zipStream,zipSize} from '../src/app-platform/employee/zip-stream.ts';
 import {createWorkgroupDirectoryOperation} from '../src/app-platform/gateway/people-directory.ts';
+import {createAiCompletionOperation} from '../src/app-platform/gateway/ai.ts';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import {registerEmployeeRoutes} from '../src/app-platform/employee/routes.ts';
@@ -35,8 +36,8 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
   await db.query('INSERT INTO platform_app_installations(id,app_id,revision,record) VALUES($1,$2,1,$3)',[installation.id,installation.appId,JSON.stringify(installation)]);
   const client={query:(sql:string,args?:readonly unknown[])=>db.query(sql,args?[...args]:undefined),release(){}};
   const migrations=await Promise.all((await readdir(new URL('../../applications/huicetong/migrations/',import.meta.url))).filter(name=>name.endsWith('.json')).sort().map(async name=>({id:name.slice(0,-5),text:await readFile(new URL('../../applications/huicetong/migrations/'+name,import.meta.url),'utf8')})));
-  await applyAppMigrationsV2(client as any,installation.id,migrations.slice(0,1));
-  // Upgrade an installed 2.0 schema without changing or dropping its original migration.
+  await applyAppMigrationsV2(client as any,installation.id,migrations.slice(0,3));
+  // Upgrade an installed 2.6 schema without changing its existing migration declarations.
   await applyAppMigrationsV2(client as any,installation.id,migrations);
   const context={actorType:'service',execution:{type:'service',appId:'huicetong',serviceIdentityId:installation.serviceIdentityId},authorize:async()=>({allowed:true})} as unknown as PlatformActorContext;
   const data=new AppDataServiceV2({pool:{connect:async()=>client} as any,findInstallation:async()=>installation});
@@ -47,6 +48,13 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
    if(operation.startsWith('platform.app_data.'))return data.execute(context,installation,operation.slice('platform.app_data.'.length) as any,input,signal);
    if(operation==='platform.people.organization_context')return {organizations:[{id:team,unitType:'workgroup'},{id:org,unitType:'department'}]};
    if(operation==='platform.people.assignees')return {rows:[{id:person,name:'张三',organizationUnitId:team}]};
+   if(operation==='platform.ai.complete'){
+    assert.match(input.system,/按已完成情况总结/);
+    const [plan]=JSON.parse(input.prompt).plans;
+    assert.equal(plan.状态,'已完成');
+    assert.equal(plan.办理进度,'完成');
+    return {content:'已完成本月设备检查。'};
+   }
    if(operation==='platform.attachments.list')return {attachments:[{attachmentId:randomUUID()}]};throw Error(operation);
   }};
   const employee={personId:person,organizationUnitId:team,businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'}],grants:['read','fill','review','complete','corpus','settings'].map(code=>({permission:`app.huicetong.${code}`,all:false,self:false,organizationIds:[org,team]}))}};
@@ -58,10 +66,13 @@ test('Huicetong actual v2 schema and public data gateway execute the new plan an
   await service['plan-prompt-save']({organizationId:org,prompt:'结合标准示例补全计划。',expectedVersion:1,requestId:randomUUID()},employee);
   await assert.rejects(service['plan-prompt-save']({organizationId:org,prompt:'过期覆盖',expectedVersion:1,requestId:randomUUID()},employee),/CONFLICT/);
   assert.equal((await service['plan-prompt-get']({organizationId:org},employee)).version,2);
+  await service['plan-prompt-save']({organizationId:org,kind:'summary',prompt:'按已完成情况总结。',expectedVersion:0,requestId:randomUUID()},employee);
+  assert.equal((await service['plan-prompt-get']({organizationId:org,kind:'summary'},employee)).prompt,'按已完成情况总结。');
   await service['record-save']({id,requestId:randomUUID(),organizationId:org,kind:'monthly',submit:true,draft:{content:'检查'.repeat(250),qualityStandard:'验收'.repeat(250),startDate:'2026-10-01',endDate:'2026-10-31',month:'2026-10',responsible:{personId:person,organizationUnitId:team},originalText:'原话'.repeat(750)}},employee);
   await service['record-review']({id,requestId:randomUUID(),expectedVersion:1,action:'approve'},employee);
   await service['record-progress']({id,requestId:randomUUID(),expectedVersion:2,summary:'完成',complete:true},employee);
   const page=await service['record-list']({organizationId:org,kind:'monthly',month:'2026-10'},employee);assert.equal(page.rows[0].status,'completed');assert.equal(page.rows[0].number,'月001');
+  assert.deepEqual(await service['plan-summary']({organizationId:org,ids:[id]},employee),{summary:'已完成本月设备检查。'});
   const responsibleTeamViewer={...employee,businessAuthorization:{...employee.businessAuthorization,grants:[{permission:'app.huicetong.read',all:false,self:false,organizationIds:[team]}]}};
   const summary=await service['dashboard-summary']({},responsibleTeamViewer);
   assert.equal(summary.completion.total,1);assert.equal(summary.completion.completed,1);
@@ -125,6 +136,43 @@ test('real Huicetong server entry runs its background hook and returns the raw a
    await app.start();const employee={version:'1.0',personId:person,organizationUnitId:team,requestId:randomUUID(),traceId:randomUUID(),businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'}],grants:['read','complete'].map(code=>({permission:`app.huicetong.${code}`,all:false,self:true,organizationIds:[]}))}} as any;
    assert.deepEqual(await app.call('authorize-attachment',{action:'read',entityType:'work_record',entityId:entity,requestId:randomUUID()},employee),{organizationId:org});
    const result=await app.call('record-progress',{id:entity,requestId:randomUUID(),expectedVersion:2,summary:'完成',complete:true},employee) as any;assert.equal(result.error.code,'ATTACHMENT_REQUIRED');assert.ok(calls.some(call=>call.operation==='platform.app_data.list'&&!call.callId));assert.ok(calls.some(call=>call.operation==='platform.attachments.list'&&call.callId));
+  }finally{await app.stop();}
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('Huicetong meeting notes reach the platform model operation through real app IPC',async()=>{
+ const {build}=await import('esbuild'),{AppProcessV2}=await import('../src/app-platform/v2/process.ts');
+ const root=await mkdtemp(join(tmpdir(),'hct-minutes-')),notes='张三在11月13日前检查设备并提交清单。补充应急备件。';
+ let configured=true;
+ const model=createAiCompletionOperation({
+  config:async()=>{
+   if(!configured)throw Error('private configuration details');
+   return {external:{endpoint:'https://model.example.test/v1/chat/completions',apiKey:'fixture',model:'fixture',timeoutMs:25000,toolsEnabled:false,reasoningEffort:'auto'}};
+  },
+  request:async(_config,messages)=>{
+   assert.match(messages[0].content??'',/拆成独立的督办事项/);
+   assert.ok(messages[1].content?.endsWith(notes));
+   return {role:'assistant',content:JSON.stringify({items:[
+    {content:'检查设备',qualityStandard:'提交清单',endDate:'2026-11-13',ownerName:'张三'},
+    {content:'补充应急备件',qualityStandard:'',endDate:null,ownerName:''}
+   ]})};
+  }
+ });
+ try{
+  await build({entryPoints:[new URL('../../applications/huicetong/src/server.js',import.meta.url).pathname],outfile:join(root,'server.js'),bundle:true,format:'esm',platform:'node',target:'node22',logLevel:'silent'});
+  const app=new AppProcessV2({appId:'huicetong',serverPath:join(root,'server.js'),cwd:root,log:()=>{},
+   onPlatform:async(operation,input:any,callId)=>{
+    if(operation==='platform.app_data.list'&&!callId)return {rows:[],nextCursor:null};
+    assert.equal(operation,model.name);assert.ok(callId);assert.ok(model.validateParams(input));
+    return model.execute({} as never,input,signal);
+   }});
+  try{
+   await app.start();
+   const employee={version:'1.0',personId:person,organizationUnitId:team,requestId:randomUUID(),traceId:randomUUID(),businessAuthorization:{revision:randomUUID(),organizations:[{id:team,name:'一班'}],grants:[{permission:'app.huicetong.supervision_manage',all:false,self:false,organizationIds:[org,team]}]}} as any;
+   const result=await app.call('supervision-extract',{notes},employee) as any;
+   assert.equal(result.ok,true);assert.deepEqual(result.result.items.map((item:any)=>item.content),['检查设备','补充应急备件']);
+   configured=false;
+   assert.deepEqual(await app.call('supervision-extract',{notes},employee),{ok:false,error:{code:'AI_NOT_CONFIGURED',writeOutcome:'not_started',requestId:employee.requestId}});
   }finally{await app.stop();}
  }finally{await rm(root,{recursive:true,force:true});}
 });

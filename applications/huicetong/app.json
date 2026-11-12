@@ -1,10 +1,10 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "2.6.0",
+  "version": "2.8.0",
   "description": "月度计划、上级督办、年度计划与AI语料管理",
   "color": "#059669",
-  "platform": ">=1.10.0 <2.0.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -209,7 +209,6 @@
     "webhook.send",
     "knowledge.read",
     "knowledge.write",
-    "tools.read",
     "asr.transcribe"
   ],
   "pages": [
@@ -242,101 +241,535 @@
       "title": "基础配置",
       "permission": "settings",
       "nav": true
+    },
+    {
+      "path": "/settings/prompts",
+      "title": "基础配置",
+      "permission": "corpus",
+      "nav": false
     }
   ],
   "api": [
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "members"
+      "id": "members",
+      "mode": "read",
+      "title": "查询可选人员"
     },
     {
-      "id": "record-list"
+      "id": "record-list",
+      "mode": "read",
+      "title": "查询工作计划",
+      "documentation": {
+        "description": "查询授权范围内月度计划、督办或年度计划。organizationId省略时使用当前员工所属部门；kind为monthly、supervision、annual。每页8条，nextCursor用于翻页，本页数量不是总数。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "monthly",
+                "supervision",
+                "annual"
+              ],
+              "maxLength": 11
+            },
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "month": {
+              "type": "string",
+              "maxLength": 7,
+              "description": "月份 YYYY-MM"
+            },
+            "year": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "submitted",
+                "in_progress",
+                "completed",
+                "returned"
+              ],
+              "maxLength": 11
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "mine": {
+              "type": "boolean"
+            },
+            "after": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "format": "uuid"
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "rows"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "查询工作计划",
+            "params": {
+              "kind": "monthly"
+            },
+            "result": {
+              "rows": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "查看本月月度计划。",
+          "查看我负责的督办。"
+        ]
+      },
+      "expose": "apps",
+      "sharedPermissions": [
+        "read",
+        "annual_read",
+        "supervision_read"
+      ]
     },
     {
-      "id": "record-get"
+      "id": "record-get",
+      "mode": "read",
+      "title": "查询计划详情"
     },
     {
-      "id": "record-save"
+      "id": "record-save",
+      "mode": "write",
+      "title": "保存工作计划"
     },
     {
-      "id": "record-review"
+      "id": "record-review",
+      "mode": "write",
+      "title": "审核工作计划"
     },
     {
-      "id": "record-progress"
+      "id": "record-progress",
+      "mode": "write",
+      "title": "更新办理进度"
     },
     {
-      "id": "record-delete"
+      "id": "record-delete",
+      "mode": "write",
+      "title": "删除工作计划"
     },
     {
-      "id": "extension-create"
+      "id": "extension-create",
+      "mode": "write",
+      "title": "申请延期"
     },
     {
-      "id": "extension-review"
+      "id": "extension-review",
+      "mode": "write",
+      "title": "审批延期"
     },
     {
-      "id": "annual-hints"
+      "id": "annual-hints",
+      "mode": "read",
+      "title": "查询年度计划建议"
     },
     {
-      "id": "annual-import"
+      "id": "annual-import",
+      "mode": "write",
+      "title": "导入年度计划"
     },
     {
-      "id": "corpus-list"
+      "id": "corpus-list",
+      "mode": "read",
+      "title": "查询语料"
     },
     {
-      "id": "corpus-reindex"
+      "id": "corpus-reindex",
+      "mode": "write",
+      "title": "重建语料索引"
     },
     {
-      "id": "corpus-save"
+      "id": "corpus-save",
+      "mode": "write",
+      "title": "保存语料"
     },
     {
       "id": "plan-prompt-get",
-      "permission": "corpus"
+      "permission": "corpus",
+      "mode": "read",
+      "title": "读取提示词"
     },
     {
       "id": "plan-prompt-save",
-      "permission": "corpus"
+      "permission": "corpus",
+      "mode": "write",
+      "title": "保存提示词"
     },
     {
       "id": "plan-prompt-test",
-      "permission": "corpus"
+      "permission": "corpus",
+      "mode": "read",
+      "title": "测试提示词"
     },
     {
-      "id": "plan-suggest"
+      "id": "plan-suggest",
+      "mode": "draft",
+      "title": "整理月度计划草稿",
+      "documentation": {
+        "description": "根据原话、计划提示词和部门知识库生成一条月度计划草稿，尚未提交。organizationId省略时使用本人所属部门。month必填YYYY-MM；rawText保留用户原话。责任人和日期需要核对。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "month": {
+              "type": "string",
+              "maxLength": 7,
+              "description": "月份 YYYY-MM"
+            },
+            "rawText": {
+              "type": "string",
+              "maxLength": 1500,
+              "description": "工作意图原文",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "month",
+            "rawText"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "maxLength": 1500
+            },
+            "qualityStandard": {
+              "type": "string",
+              "maxLength": 1500
+            }
+          },
+          "required": [
+            "content",
+            "qualityStandard"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "整理月度计划草稿",
+            "params": {
+              "month": "2026-11",
+              "rawText": "完成设备巡检"
+            },
+            "result": {
+              "content": "完成设备巡检",
+              "qualityStandard": "形成巡检记录"
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "帮我整理下个月的计划：完成设备巡检并完善记录。"
+        ]
+      },
+      "permission": "fill"
     },
     {
-      "id": "settings-get"
+      "id": "plan-summary",
+      "permission": "read",
+      "mode": "read",
+      "title": "生成月度计划总结",
+      "documentation": {
+        "description": "对已选择的月度计划生成总结，不修改计划。ids必须是用户提供或查询返回的真实记录ID；禁止编造。organizationId省略时使用本人所属部门。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 36,
+                "format": "uuid"
+              },
+              "minItems": 1,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "ids"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "maxLength": 12000
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "examples": [
+          {
+            "title": "生成月度计划总结",
+            "params": {
+              "ids": [
+                "00000000-0000-4000-8000-000000000001"
+              ]
+            },
+            "result": {
+              "summary": "本月计划开展设备巡检。"
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "帮我总结所选的月度计划。"
+        ]
+      }
     },
     {
-      "id": "settings-save"
+      "id": "settings-get",
+      "mode": "read",
+      "title": "读取提醒设置"
     },
     {
-      "id": "reminder-list"
+      "id": "settings-save",
+      "mode": "write",
+      "title": "保存提醒设置"
     },
     {
-      "id": "authorize-attachment"
+      "id": "reminder-list",
+      "mode": "read",
+      "title": "查询提醒记录"
+    },
+    {
+      "id": "authorize-attachment",
+      "mode": "read",
+      "title": "校验附件权限"
     },
     {
       "id": "dashboard-summary",
       "permission": "read",
-      "dashboard": true
-    },
-    {
-      "id": "agent-plan",
-      "permission": "fill"
-    },
-    {
-      "id": "tool-plan-reference",
-      "permission": "fill"
+      "dashboard": true,
+      "mode": "read",
+      "title": "慧策通·计划督办工作概况",
+      "ai": {
+        "examples": [
+          "查看慧策通·计划督办的工作概况。"
+        ]
+      }
     },
     {
       "id": "supervision-extract",
-      "permission": "supervision_manage"
+      "permission": "supervision_manage",
+      "mode": "draft",
+      "title": "从会议纪要提取督办草稿",
+      "documentation": {
+        "description": "将会议纪要中明确要求落实的事项拆成督办草稿，尚未派发，不修改业务数据。未明确的责任人和截止日期留空，需要到应用核对后派发。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "notes": {
+              "type": "string",
+              "maxLength": 11500,
+              "description": "会议纪要原文",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "notes"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "qualityStandard": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "endDate": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "ownerName": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "content",
+                  "qualityStandard",
+                  "endDate",
+                  "ownerName"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": false
+        },
+        "examples": [
+          {
+            "title": "从会议纪要提取督办草稿",
+            "params": {
+              "notes": "请张三本月底完成设备排查。"
+            },
+            "result": {
+              "items": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "page": "/supervision",
+        "examples": [
+          "把这份会议纪要整理成督办草稿。"
+        ]
+      }
     },
     {
       "id": "authorize-transcription",
-      "permission": "supervision_manage"
+      "permission": "supervision_manage",
+      "mode": "read",
+      "title": "校验转写权限"
     }
   ],
   "limits": {
@@ -359,44 +792,6 @@
       "readPermission": "fill",
       "writePermission": "corpus",
       "selfRead": true
-    }
-  ],
-  "agents": [
-    {
-      "id": "monthly-plan",
-      "name": "整理月度计划",
-      "description": "根据员工原话和慧策通知识库整理一条月度计划草稿，缺少月份或信息时追问，不提交计划。",
-      "examples": [
-        "帮我整理一条下月计划：完成车站设备巡检，并完善巡检记录。",
-        "我想整理月度计划，请先帮我梳理需要补充的信息。"
-      ],
-      "apiId": "agent-plan",
-      "permission": "fill",
-      "page": "/"
-    }
-  ],
-  "tools": [
-    {
-      "id": "plan-reference",
-      "name": "检索计划参考",
-      "description": "从当前员工所属部门的计划知识库检索专有名词和标准示例。只返回有权使用的参考内容。",
-      "apiId": "tool-plan-reference",
-      "permission": "fill",
-      "mode": "read",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1500
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "additionalProperties": false
-      }
     }
   ]
 }

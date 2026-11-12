@@ -1,3 +1,4 @@
+import type {AppContractSchema} from './app-api-documentation.js';
 import type {AppGatewayJson,createAppGatewayClient} from './app-gateway.js';
 
 /** First tool contract: a closed, flat object of bounded scalar arguments. */
@@ -13,7 +14,7 @@ export interface AppToolInputSchema {
   type:'object';properties:Record<string,AppToolProperty>;required:string[];additionalProperties:false;
 }
 export interface AppToolDefinition {
-  id:string;name:string;description:string;apiId:string;permission:string;mode:'read';inputSchema:AppToolInputSchema;
+  id:string;name:string;description:string;apiId:string;permission:string;sharedPermissions?:string[];mode:'read';inputSchema:AppContractSchema;
 }
 export type AppToolInfo=Pick<AppToolDefinition,'id'|'name'|'description'|'mode'|'inputSchema'>;
 export type AppToolTransport='direct'|'mcp';

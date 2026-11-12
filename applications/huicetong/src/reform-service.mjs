@@ -1,23 +1,32 @@
 import {extractSupervision} from './supervision-drafts.mjs';
-import {createAppToolClient} from '@metro/platform-sdk/app-tools';
-import {readAppAgentInput} from '@metro/platform-sdk/app-agent';
 import {createPlatformKnowledgeClient} from '@metro/platform-sdk/app-knowledge';
 import {randomUUID,createHash} from 'node:crypto';
 import {allowsAppResource} from '@metro/platform-sdk/app-backend';
 import {createAppDataClient,createPlatformAiClient,createPlatformWebhookClient,createPlatformAttachmentClient} from '@metro/platform-sdk/app-gateway';
 import {readAppDashboard} from '@metro/platform-sdk/app-dashboard';
 import {uuid,text,day,validMonth,shanghaiDay,fail,keys,permissions,relevantAnnual,reminderDue,parseWebhook,monthlyDates} from './reform-rules.mjs';
-import {DEFAULT_PLAN_PROMPT,PLAN_PROMPT_MAX_LENGTH,planSystemPrompt} from './plan-prompt.mjs';
+import {DEFAULT_PLAN_PROMPT,DEFAULT_SUMMARY_PROMPT,PLAN_PROMPT_MAX_LENGTH,PLAN_SUMMARY_MAX_RECORDS,planSystemPrompt,summarySystemPrompt} from './plan-prompt.mjs';
+import {completeText} from './text-model.mjs';
 import {PUBLIC_READ_ERRORS} from './request-error.mjs';
 
-const READS=new Set(['plan-prompt-get','plan-prompt-test','authorize-transcription','supervision-extract','tool-plan-reference','agent-plan','session','members','record-list','record-get','annual-hints','corpus-list','plan-suggest','settings-get','reminder-list','dashboard-summary','authorize-attachment']);
-const DEFINITIVE=new Set(['INVALID_INPUT','ACCESS_DENIED','NOT_FOUND','CONFLICT','PERSON_INVALID','ATTACHMENT_REQUIRED','AI_UNAVAILABLE','AI_INVALID_RESULT','TERM_CHANGED','INVALID_WEBHOOK','LIMIT_EXCEEDED','ANNUAL_INVALID','DEADLINE_PENDING','STORAGE_CONFLICT','KNOWLEDGE_CONFLICT','KNOWLEDGE_LIMIT','KNOWLEDGE_EMBEDDING_UNAVAILABLE','REQUEST_ID_REUSED','INVALID_PARAMS']);
+const READS=new Set(['plan-prompt-get','plan-prompt-test','plan-summary','authorize-transcription','supervision-extract','session','members','record-list','record-get','annual-hints','corpus-list','plan-suggest','settings-get','reminder-list','dashboard-summary','authorize-attachment']);
+const DEFINITIVE=new Set(['INVALID_INPUT','ACCESS_DENIED','NOT_FOUND','CONFLICT','PERSON_INVALID','ATTACHMENT_REQUIRED','AI_NOT_CONFIGURED','AI_PERMISSION_DENIED','AI_UNAVAILABLE','AI_INVALID_RESULT','TERM_CHANGED','INVALID_WEBHOOK','LIMIT_EXCEEDED','SUMMARY_INPUT_LIMIT','ANNUAL_INVALID','DEADLINE_PENDING','STORAGE_CONFLICT','KNOWLEDGE_CONFLICT','KNOWLEDGE_LIMIT','KNOWLEDGE_EMBEDDING_UNAVAILABLE','REQUEST_ID_REUSED','INVALID_PARAMS']);
+const DIAGNOSTIC_READS=new Set(['session','supervision-extract','plan-summary']);
+const promptSettings={
+ organize:{table:'plan_prompt_settings',defaultPrompt:DEFAULT_PLAN_PROMPT},
+ summary:{table:'summary_prompt_settings',defaultPrompt:DEFAULT_SUMMARY_PROMPT}
+};
+const promptKind=kind=>{
+ if(kind===undefined||kind==='organize')return promptSettings.organize;
+ if(kind==='summary')return promptSettings.summary;
+ fail('INVALID_INPUT');
+};
 const full=code=>`app.huicetong.${code}`;
 const deterministic=value=>{const hex=createHash('sha256').update(value).digest('hex');return `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;};
 
 /** New workflow is independent of the legacy category/cycle/signature state machine. */
 export function createReformService(gateway,{clock=()=>new Date(),newId=randomUUID}={}){
- const tools=createAppToolClient(gateway),knowledge=createPlatformKnowledgeClient(gateway),data=createAppDataClient(gateway),ai=createPlatformAiClient(gateway),webhook=createPlatformWebhookClient(gateway),attachments=createPlatformAttachmentClient(gateway);
+ const knowledge=createPlatformKnowledgeClient(gateway),data=createAppDataClient(gateway),ai=createPlatformAiClient(gateway),webhook=createPlatformWebhookClient(gateway),attachments=createPlatformAttachmentClient(gateway);
  const now=()=>clock().toISOString(),today=()=>shanghaiDay(clock());
  const identity=employee=>{if(!employee||!uuid(employee.personId)||!employee.businessAuthorization)fail('ACCESS_DENIED');};
  const can=(e,code,org,owner=null)=>allowsAppResource(e,full(code),{organizationUnitId:org,ownerPersonId:owner});
@@ -87,9 +96,22 @@ export function createReformService(gateway,{clock=()=>new Date(),newId=randomUU
   if(input.action==='export')requireRecord(e,'attachment_export',row);
   return {organizationId:row.organization_id};
  }
- async function planPrompt(org,signal){
-  const {row}=await data.get('plan_prompt_settings',org,signal);
-  return {prompt:row?.prompt??DEFAULT_PLAN_PROMPT,version:row?.version??0};
+ async function planPrompt(org,signal,{table,defaultPrompt}=promptSettings.organize){
+  const {row}=await data.get(table,org,signal);
+  return {prompt:row?.prompt??defaultPrompt,version:row?.version??0};
+ }
+ async function summarizePlans(plans,instructions,signal){
+  const prompt=JSON.stringify({plans});
+  if(prompt.length>12000)fail('SUMMARY_INPUT_LIMIT');
+  const summary=await completeText(ai,{system:summarySystemPrompt(instructions),prompt},signal);
+  return {summary};
+ }
+ async function defaultDepartment(e,signal){
+  identity(e);
+  const context=await gateway.invoke('platform.people.organization_context',{organizationUnitId:e.organizationUnitId},signal);
+  const department=context.organizations.find(unit=>unit.unitType==='department')??context.organizations.at(-1);
+  if(!department)fail('ACCESS_DENIED');
+  return department.id;
  }
  async function planReferences(org,query,signal){
   const [matched,related]=await Promise.all([
@@ -142,6 +164,7 @@ export function createReformService(gateway,{clock=()=>new Date(),newId=randomUU
    return {items:await extractSupervision(ai,input.notes,today(),signal)};
   },
   async 'record-list'(input,e,signal){
+   input={...input,organizationId:input.organizationId??await defaultDepartment(e,signal)};
    keys(input,['organizationId','kind','month','year','status','search','after','mine']);identity(e);const p=permissions[input.kind];if(!p||!uuid(input.organizationId)||input.month!==undefined&&!validMonth(input.month)||input.year!==undefined&&(!Number.isInteger(input.year)||input.year<2000||input.year>2100)||input.status!==undefined&&!['draft','submitted','in_progress','completed','returned'].includes(input.status)||!text(input.search??'',100,false)||input.mine!==undefined&&typeof input.mine!=='boolean')fail('INVALID_INPUT');
    const g=grant(e,p.read);if(g?.self&&!g.all&&!g.organizationIds.includes(input.organizationId))await currentOrg(e,input.organizationId,signal);const filters=[{column:'kind',value:input.kind},{column:'deleted',value:false},...(input.month?[{column:'month',value:input.month}]:[]),...(input.year?[{column:'year',value:input.year}]:[]),...(input.status?[{column:'status',value:input.status}]:[]),...(input.mine?[{column:'responsible_id',value:e.personId}]:[])];
    return data.list('work_records',{columns:['organization_id','kind','number','content','quality_standard','responsible_id','responsible_organization_id','responsible_name','status','month','year','start_month','end_month','start_date','end_date','remark','latest_progress','completed_at','created_by','version'],filters,...scoped(e,p.read,input.kind==='monthly'),order:{column:'created_at',direction:'desc'},pageSize:8,...(input.after?{after:input.after}:{}),...(input.search?{search:{column:'content',text:input.search}}:{})},signal);
@@ -183,52 +206,54 @@ export function createReformService(gateway,{clock=()=>new Date(),newId=randomUU
     title:input.kind==='term'?input.term.trim():input.content.trim().slice(0,100),content:input.kind==='term'?(input.explanation??'').trim():input.content.trim(),
     metadata:input.kind==='term'?{}:{qualityStandard:input.qualityStandard.trim()}},signal);
   },
-  async 'agent-plan'(input,e,signal){
-   const task=readAppAgentInput(input),messages=[...task.history.filter(item=>item.role==='user').map(item=>item.content),task.message];
-   let month;
-   for(const message of messages.slice().reverse()){
-    const explicit=[...message.matchAll(/(20\d{2})[-年/](0?[1-9]|1[0-2])(?:月|(?=\D|$))/g)].at(-1);
-    if(explicit){month=`${explicit[1]}-${explicit[2].padStart(2,'0')}`;break;}
-    if(/下月|下个月|本月|这个月/.test(message)){const d=new Date(`${task.today.slice(0,7)}-01T00:00:00Z`);if(/下月|下个月/.test(message))d.setUTCMonth(d.getUTCMonth()+1);month=d.toISOString().slice(0,7);break;}
-   }
-   if(!month)return {kind:'clarify',text:'这条计划安排在哪个月？请填写如“2026-11”或“下个月”，也可以一起补充具体工作内容。'};
-   const rawText=messages.join('\n');
-   if(rawText.length>1500)return {kind:'clarify',text:'当前补充内容较长，请新建对话，将这条计划的月份和工作内容合并为 1500 字以内。'};
-   const references=await tools.call('plan-reference',{query:rawText},signal);
-   const config=await planPrompt(references.organizationId,signal);
-   const result=await suggestPlan({month,rawText},signal,references,config.prompt);
-   return {kind:result.missingInfo.length?'clarify':'draft',text:[`${month} 月度计划草稿`,`工作内容：${result.content}`,`质量标准：${result.qualityStandard}`,`开始日期：${result.startDate??'待补充'}`,`完成日期：${result.endDate??'待补充'}`,result.missingInfo.length?`还需补充：${result.missingInfo.join('；')}`:'', result.retrieval?`示例检索：${result.retrieval.mode==='semantic'?'语义检索':`文本检索（${({unconfigured:'未配置向量模型',indexing:'索引建立中',failed:'部分索引失败'})[result.retrieval.reason]}）`}`:'',result.sources?.length?`参考语料（本次检索）：\n${result.sources.map(source=>`${source.title} · v${source.version} · ${source.id}`).join('\n')}`:'','草稿尚未提交。请到慧策通核对责任人和日期后提报。'].filter(Boolean).join('\n\n')};
-  },
-  async 'tool-plan-reference'(input,e,signal){
-   identity(e);
-   const context=await gateway.invoke('platform.people.organization_context',{organizationUnitId:e.organizationUnitId},signal);
-   const department=context.organizations.find(unit=>unit.unitType==='department')??context.organizations.at(-1);
-   if(!department)fail('ACCESS_DENIED');
-   require(e,'fill',department.id,e.personId);
-   return planReferences(department.id,input.query,signal);
-  },
   async 'plan-prompt-get'(input,e,signal){
-   keys(input,['organizationId']);require(e,'corpus',input.organizationId);
-   return {...await planPrompt(input.organizationId,signal),defaultPrompt:DEFAULT_PLAN_PROMPT};
+   keys(input,['organizationId','kind']);require(e,'corpus',input.organizationId);
+   const config=promptKind(input.kind);
+   return {...await planPrompt(input.organizationId,signal,config),defaultPrompt:config.defaultPrompt};
   },
   async 'plan-prompt-save'(input,e,signal){
-   keys(input,['organizationId','prompt','expectedVersion','requestId']);require(e,'corpus',input.organizationId);
+   keys(input,['organizationId','kind','prompt','expectedVersion','requestId']);require(e,'corpus',input.organizationId);
    if(!text(input.prompt,PLAN_PROMPT_MAX_LENGTH)||!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<0)fail('INVALID_INPUT');
-   const current=await planPrompt(input.organizationId,signal);
+   const config=promptKind(input.kind),{table}=config;
+   const current=await planPrompt(input.organizationId,signal,config);
    if(current.version!==input.expectedVersion)fail('CONFLICT');
    const values={prompt:input.prompt.trim(),version:current.version+1,updated_by:e.personId,updated_at:now()};
    await write(input.requestId,[current.version
-    ?{action:'update',table:'plan_prompt_settings',id:input.organizationId,expected:{version:current.version},values}
-    :{action:'insert',table:'plan_prompt_settings',id:input.organizationId,values:{...values,organization_id:input.organizationId}}],signal);
+    ?{action:'update',table,id:input.organizationId,expected:{version:current.version},values}
+    :{action:'insert',table,id:input.organizationId,values:{...values,organization_id:input.organizationId}}],signal);
    return {prompt:values.prompt,version:values.version};
   },
   async 'plan-prompt-test'(input,e,signal){
-   keys(input,['organizationId','prompt','month','rawText']);require(e,'corpus',input.organizationId);
+   keys(input,['organizationId','kind','prompt','month','rawText']);require(e,'corpus',input.organizationId);
    if(!text(input.prompt,PLAN_PROMPT_MAX_LENGTH)||!validMonth(input.month)||!text(input.rawText,1500))fail('INVALID_INPUT');
+   if(promptKind(input.kind)===promptSettings.summary)return summarizePlans([{month:input.month,content:input.rawText.trim()}],input.prompt.trim(),signal);
    const references=await planReferences(input.organizationId,input.rawText,signal);
    return suggestPlan(input,signal,references,input.prompt.trim());
   },
+  async 'plan-summary'(input,e,signal){
+   input={...input,organizationId:input.organizationId??await defaultDepartment(e,signal)};
+   keys(input,['organizationId','ids']);identity(e);
+   if(!uuid(input.organizationId)||!Array.isArray(input.ids)||!input.ids.length||input.ids.length>PLAN_SUMMARY_MAX_RECORDS||!input.ids.every(uuid))fail('INVALID_INPUT');
+   const ids=[...new Set(input.ids.map(id=>id.toLowerCase()))],scope=scoped(e,'read',true);
+   if(!can(e,'read',input.organizationId))await currentOrg(e,input.organizationId,signal);
+   const records=new Map();
+   for(let start=0;start<ids.length;start+=10){
+    const batch=ids.slice(start,start+10);
+    const {rows}=await data.list('work_records',{
+     columns:['number','month','content','quality_standard','responsible_name','status','latest_progress','start_date','end_date','completed_at'],
+     filters:[{column:'id',in:batch},{column:'kind',value:'monthly'},{column:'deleted',value:false}],...scope,pageSize:batch.length
+    },signal);
+    if(rows.length!==batch.length)fail('ACCESS_DENIED');
+    for(const row of rows){
+     records.set(row.id,{编号:row.number,月份:row.month,工作内容:row.content,完成标准:row.quality_standard,责任人:row.responsible_name,
+      状态:({draft:'草稿',submitted:'待审核',returned:'已退回',in_progress:'执行中',completed:'已完成'})[row.status],办理进度:row.latest_progress,开始日期:row.start_date,截止日期:row.end_date,完成时间:row.completed_at});
+    }
+   }
+   const config=await planPrompt(input.organizationId,signal,promptSettings.summary);
+   return summarizePlans(ids.map(id=>records.get(id)),config.prompt,signal);
+  },
   async 'plan-suggest'(input,e,signal){
+   input={...input,organizationId:input.organizationId??await defaultDepartment(e,signal)};
    keys(input,['organizationId','month','rawText']);require(e,'fill',input.organizationId,e.personId);await currentOrg(e,input.organizationId,signal);
    if(!validMonth(input.month)||!text(input.rawText,1500))fail('INVALID_INPUT');
    const [references,config]=await Promise.all([planReferences(input.organizationId,input.rawText,signal),planPrompt(input.organizationId,signal)]);
@@ -259,4 +284,4 @@ export function createReformService(gateway,{clock=()=>new Date(),newId=randomUU
  return {service,scanReminders};
 }
 
-export function createReformHandlers(gateway,options){const {service,scanReminders}=createReformService(gateway,options);const handlers=Object.fromEntries(Object.entries(service).map(([name,run])=>[name,async(input,ctx)=>{if(name==='authorize-attachment')return run(input,ctx.employee,ctx.signal);try{return {ok:true,result:await run(input,ctx.employee,ctx.signal)};}catch(error){const source=error?.code??error?.message;const code=DEFINITIVE.has(source)?source:READS.has(name)&&PUBLIC_READ_ERRORS.has(source)?source:READS.has(name)?'READ_FAILED':'OPERATION_UNCONFIRMED';const requestId=ctx.employee?.requestId;if(name==='session')ctx.log?.(JSON.stringify({event:'hct.session.failed',code,requestId,errorType:error?.name??'Error'}));return {ok:false,error:{code,writeOutcome:DEFINITIVE.has(code)||READS.has(name)?'not_started':'unknown',...(name==='session'&&requestId?{requestId}:{})}};}}]));return {handlers,scanReminders};}
+export function createReformHandlers(gateway,options){const {service,scanReminders}=createReformService(gateway,options);const handlers=Object.fromEntries(Object.entries(service).map(([name,run])=>[name,async(input,ctx)=>{if(name==='authorize-attachment')return run(input,ctx.employee,ctx.signal);try{return {ok:true,result:await run(input,ctx.employee,ctx.signal)};}catch(error){const source=error?.code??error?.message;const code=DEFINITIVE.has(source)?source:READS.has(name)&&PUBLIC_READ_ERRORS.has(source)?source:READS.has(name)?'READ_FAILED':'OPERATION_UNCONFIRMED';const requestId=ctx.employee?.requestId;if(DIAGNOSTIC_READS.has(name))ctx.log?.(JSON.stringify({event:'hct.'+name+'.failed',code,requestId,errorType:error?.name??'Error'}));return {ok:false,error:{code,writeOutcome:DEFINITIVE.has(code)||READS.has(name)?'not_started':'unknown',...(DIAGNOSTIC_READS.has(name)&&requestId?{requestId}:{})}};}}]));return {handlers,scanReminders};}

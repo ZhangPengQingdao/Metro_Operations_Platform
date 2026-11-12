@@ -9,3 +9,11 @@ export const appSubmissionPackageMigration:MigrationDefinition={id:'app-submissi
  await client.query('ALTER TABLE platform_app_submissions ALTER COLUMN package DROP NOT NULL');
  await client.query(`UPDATE platform_app_submissions SET status='rejected',reason='旧版签名包提交已不再支持，请重新提交 .mopkg 文件',revision=gen_random_uuid(),updated_at=now() WHERE package_bytes IS NULL AND status='pending'`);
 }};
+
+/** Retain the request IDs acknowledged when an identical pending upload was coalesced. */
+export const appSubmissionRetryMigration:MigrationDefinition={
+ id:'app-submissions-retry-ids',title:'Remember coalesced submission requests',ownerTaskId:'PLATFORM-APPV2-004',phase:'expand',layer:'L4',
+ dataRows:[],migrationRows:['MIG-APP-SUBMISSION-RETRIES'],sourceTables:['platform_app_submissions'],targetTables:['platform_app_submissions'],
+ dependsOn:['app-submissions-mopkg'],recoveryNotes:'Additive empty array for existing applications. No package data is copied.',
+ async run({client}){await client.query("ALTER TABLE platform_app_submissions ADD COLUMN IF NOT EXISTS retry_ids text[] NOT NULL DEFAULT '{}'::text[]");},
+};

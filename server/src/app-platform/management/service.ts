@@ -1,10 +1,11 @@
+import {appAgents,appTools,appApiExposure} from '@metro/platform-sdk/manifest';
 import {AppInterfaces,type PublishedInterface} from '../developer/app-interfaces.js';
 import {publicDirectoryOperation} from '../developer/directory.js';
 import {requireDeveloperAccount} from '../developer/keys.js';
 import {AppToolService,type ToolBinding} from '../tools/index.js';
 import {createToolOperations} from '../gateway/tools.js';
 import {readEmployeeDashboard} from '../employee/dashboard.js';
-import type {ChatCapability} from '../../platform/chat/index.js';
+import {runApiAgent,type ChatCapability} from '../../platform/chat/index.js';
 import type {AppAgentInput} from '@metro/platform-sdk/app-agent';
 import {randomUUID,createHash} from 'node:crypto';
 import {join} from 'node:path';
@@ -56,14 +57,22 @@ export async function createAppManagement(configFile:string,origin:string){
  const lookups=new PostgresAppRegistryRepository(pool);
  const findInstallation=(appId:string)=>lookups.findByAppId(appId);
  const data=new AppDataServiceV2({pool,findInstallation});
+ async function authorizeEntry(actor:Parameters<typeof apiAuthorization.authorize>[0],appId:string,permission?:string,alternatives?:string[]){
+  for(const code of permission?[permission]:alternatives??[]){
+   if(await apiAuthorization.authorize(actor,`app.${appId}.${code}`))return true;
+  }
+  return false;
+ }
  const tools=new AppToolService({
   async catalog({appId,personId}){
+   apiAuthorization.clearSessions();
    const admission=await admitEmployee(appId,async()=>({source:'session',userId:personId}));
    const installation=admission.installation,manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
    const requestId=randomUUID();
    const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:admission.identity,execution:{type:'application',appId},requestId,traceId:requestId});
+   const accessKey=createHash('sha256').update(JSON.stringify({business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
    const result:ToolBinding[]=[];
-   for(const tool of manifest?.tools??[])if(await apiAuthorization.authorize(actor,`app.${appId}.${tool.permission}`))result.push({...tool,installationId:installation.id,revision:installation.revision});
+   for(const tool of manifest?appTools(manifest):[])if(await authorizeEntry(actor,appId,tool.permission,tool.sharedPermissions))result.push({...tool,installationId:installation.id,revision:installation.revision,accessKey});
    return result;
   },
   async invoke({appId,personId},tool,args,signal){
@@ -71,11 +80,11 @@ export async function createAppManagement(configFile:string,origin:string){
    const resolveIdentity=async()=>({source:'session' as const,userId:personId}),admission=await admitEmployee(appId,resolveIdentity);
    if(admission.installation.id!==tool.installationId||admission.installation.revision!==tool.revision)throw new GatewayError('ACCESS_DENIED',403);
    const api=admission.installation.manifest.api.find(api=>api.id===tool.apiId)!;
-   return apps.host(appId).invokeEmployeeApi(employeeApi(appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:args},signal);
+   return apps.host(appId).invokeEmployeeApi(employeeApi(appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:args,consumer:'tool'},signal);
   }
  });
  const interfaces=new AppInterfaces({
-  async catalog(personId,targetAppId){
+  async catalog(personId,targetAppId,channel){
    await requireDeveloperAccount(pool,personId);apiAuthorization.clearSessions();
    const result:PublishedInterface[]=[];
    for(const {appId} of targetAppId?[{appId:targetAppId}]:await employeeAccess.candidates(personId)){
@@ -85,7 +94,7 @@ export async function createAppManagement(configFile:string,origin:string){
      const manifest=installation.runtime?.manifest;if(!manifest)continue;
      const requestId=randomUUID(),actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:{source:'session',userId:personId},execution:{type:'application',appId},requestId,traceId:requestId});
      const accessKey=createHash('sha256').update(JSON.stringify({access:access.revision,business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
-     for(const api of manifest.api)if(api.expose&&api.permission&&await apiAuthorization.authorize(actor,`app.${appId}.${api.permission}`))result.push({appId,appName:manifest.name,version:manifest.version,revision:installation.revision,accessKey,apiId:api.id,permission:api.permission,expose:api.expose});
+     for(const api of manifest.api){const expose=appApiExposure(api,channel??'developer');if(expose&&await authorizeEntry(actor,appId,api.permission,api.sharedPermissions))result.push({appId,appName:manifest.name,version:manifest.version,revision:installation.revision,accessKey,apiId:api.id,permission:api.permission??api.sharedPermissions!.join(' / '),expose});}
     }catch(e){if(e instanceof GatewayError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}
    }
    return result;
@@ -100,7 +109,7 @@ export async function createAppManagement(configFile:string,origin:string){
    const identity=async()=>{await requireDeveloperAccount(pool,personId);await employeeAccess.assert(appId,personId);return {source:'session' as const,userId:personId};};
    await identity();const installation=await apps.host(appId).admittedSnapshot();
    if(!installation.runtime?.manifest.api.some(api=>api.id===apiId&&api.expose))throw new GatewayError('ACCESS_DENIED',403);
-   return apps.host(appId).invokeEmployeeApi(identity,{apiId,method:'POST',path:`/${apiId}`,payload:input},signal);
+   return apps.host(appId).invokeEmployeeApi(identity,{apiId,method:'POST',path:`/${apiId}`,payload:input,consumer:'integration'},signal);
   }
  });
  const gateway=createManagementGateway(pool,[...data.operations(),...createToolOperations(tools),publicDirectoryOperation(pool),interfaces.operation()]);
@@ -148,7 +157,7 @@ export async function createAppManagement(configFile:string,origin:string){
  // Local development only: `mop-app dev` drops packages here and they are installed automatically.
  const stopDevWatcher=process.env.MOP_DEV_APPS_DIR?await startDevAppsWatcher({directory:process.env.MOP_DEV_APPS_DIR,log:line=>console.log(line),
   install:bytes=>queue.run(async()=>{try{const result=await apps.installer.install(devAdministratorContext(),bytes,{dev:true});return `${result.appId} ${result.version} ${result.state}`;}finally{invalidateAppSessions();}})}):undefined;
- return {
+ const service={
   interfaces,
   invalidateEmployeeSessions:invalidateAppSessions,
   maintenanceActive:()=>maintenanceBlocked,
@@ -178,27 +187,37 @@ export async function createAppManagement(configFile:string,origin:string){
    assertOpen();
    const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
    return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
-    invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{}})});
+    invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{},consumer:'dashboard'})});
   },
-  async employeeAgentCapabilities(resolveIdentity:ResolveIdentity){
+  async employeeAgentCapabilities(resolveIdentity:ResolveIdentity,targetAppId?:string):Promise<ChatCapability[]>{
+   apiAuthorization.clearSessions();
    assertOpen();
    const identity=await resolveIdentity(),capabilities:ChatCapability[]=[];
    if(identity.source==='service'||!identity.userId)throw new GatewayError('ACCESS_DENIED',403);
-   const candidates=await employeeAccess.candidates(identity.userId);
+   const candidates=targetAppId?[{appId:targetAppId}]:await employeeAccess.candidates(identity.userId);
    for(const {appId} of candidates){
     let admission;
     try{admission=await admitEmployee(appId,async()=>identity);}
     catch(error){if(error instanceof GatewayError||error instanceof AppManagementError||error instanceof EmployeeIdentityError&&[403,404].includes(error.statusCode))continue;throw error;}
     const installation=admission.installation,manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
-    if(!manifest?.agents?.length)continue;
+    if(!manifest)continue;
+    const agents=appAgents(manifest);if(!agents.length)continue;
     const requestId=randomUUID();
     const actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:identity,execution:{type:'application',appId},requestId,traceId:requestId});
     const accessKey=createHash('sha256').update(JSON.stringify({revision:installation.revision,business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
-    for(const agent of manifest.agents){
-     const page=manifest.pages.find(page=>page.path===agent.page)!;
-     if(!await apiAuthorization.authorize(actor,`app.${appId}.${agent.permission}`))continue;
-     if(page.permission&&page.permission!==agent.permission&&!await apiAuthorization.authorize(actor,`app.${appId}.${page.permission}`))continue;
-     capabilities.push({...agent,accessKey,key:`${installation.id}:${agent.id}`,appId,appName:manifest.name,revision:installation.revision});
+    for(const agent of agents){
+     if(!await authorizeEntry(actor,appId,agent.permission,agent.sharedPermissions))continue;
+     const definition=manifest.api.find(api=>api.id===agent.apiId);
+     const fixedPage=agent.execution!=='api'||(typeof definition?.ai==='object'&&definition.ai.page!==undefined);
+     const pages=fixedPage?manifest.pages.filter(p=>p.path===agent.page):manifest.pages.filter(p=>!p.path.includes(':'));
+     let page='';
+     for(const candidate of pages){
+      if(!candidate.permission||await authorizeEntry(actor,appId,candidate.permission)){
+       page=candidate.path;break;
+      }
+     }
+     if(fixedPage&&!page)continue;
+     capabilities.push({...agent,page,accessKey,key:`${installation.id}:${agent.id}`,appId,appName:manifest.name,revision:installation.revision});
     }
    }
    return capabilities;
@@ -207,12 +226,19 @@ export async function createAppManagement(configFile:string,origin:string){
    assertOpen();
    const admission=await admitEmployee(capability.appId,resolveIdentity),installation=admission.installation;
    const manifest=installation.runtime?.model==='v2'?installation.runtime.manifest:null;
-   const agent=manifest?.agents?.find(agent=>`${installation.id}:${agent.id}`===capability.key);
+   const agent=manifest?appAgents(manifest).find(agent=>`${installation.id}:${agent.id}`===capability.key):undefined;
    if(!agent||installation.revision!==capability.revision)throw new GatewayError('ACCESS_DENIED',403);
    const api=installation.manifest.api.find(api=>api.id===agent.apiId)!;
-   const result=await apps.host(capability.appId).invokeEmployeeApi(employeeApi(capability.appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload:input},signal);
-   if(!result||typeof result!=='object'||Array.isArray(result)||!('ok' in result)||result.ok!==true)throw new GatewayError('INVALID_RESULT',502);
-   return (result as {result:unknown}).result;
+   const invoke=async(payload:unknown)=>{
+    const current=(await service.employeeAgentCapabilities(resolveIdentity,capability.appId)).find(item=>item.key===capability.key);
+    if(!current||current.accessKey!==capability.accessKey)throw new GatewayError('ACCESS_DENIED',403);
+    const result=await apps.host(capability.appId).invokeEmployeeApi(employeeApi(capability.appId,resolveIdentity,employeeAdmissionKey(admission)),{apiId:api.id,method:api.method,path:api.path,payload,consumer:'chat'},signal);
+    const fresh=(await service.employeeAgentCapabilities(resolveIdentity,capability.appId)).find(item=>item.key===capability.key);
+    if(!fresh||fresh.accessKey!==capability.accessKey)throw new GatewayError('ACCESS_DENIED',403);
+    if(!result||typeof result!=='object'||Array.isArray(result)||!('ok' in result)||result.ok!==true)throw new GatewayError('INVALID_RESULT',502);
+    return (result as {result:unknown}).result;
+   };
+   return agent.execution==='api'?runApiAgent(agent,input,invoke,signal):invoke(input);
   },
   async invokeEmployeeApi(appId:string,resolveIdentity:ResolveIdentity,request:{apiId:string;method:string;path:string;payload:unknown},admissionKey:string){
    assertOpen();const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
@@ -300,7 +326,10 @@ export async function createAppManagement(configFile:string,origin:string){
     catch(error){if(error instanceof AppRegistryError&&error.code==='APP_NOT_FOUND')return null;throw error;}
    },
   }),
-  installPackage:(context:PlatformManagementContext,bytes:Uint8Array)=>queue.run(async()=>{try{return await apps.installer.install(context,bytes);}finally{invalidateAppSessions();}}),
+  installPackage:(context:PlatformManagementContext,bytes:Uint8Array,beforeInstall?:()=>Promise<void>)=>queue.run(async()=>{
+   await beforeInstall?.();
+   try{return await apps.installer.install(context,bytes);}finally{invalidateAppSessions();}
+  }),
   uploadRoot:config.uploadRoot,
   async getHost(appId:string){
    if(!await findInstallation(appId))return null;
@@ -312,6 +341,7 @@ export async function createAppManagement(configFile:string,origin:string){
   },
   close:()=>queue.close(async()=>{stopDevWatcher?.();await apps.close();db.release();}),
  };
+ return service;
  }catch(error){db.release();throw error;}
 }
 export type AppManagement=Awaited<ReturnType<typeof createAppManagement>>;

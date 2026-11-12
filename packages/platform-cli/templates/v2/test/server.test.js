@@ -27,3 +27,13 @@ test('create is denied without the create permission', async () => {
   const {ctx} = context([grant('read')]);
   await assert.rejects(server.handlers.create({requestId: '44444444-4444-4444-8444-444444444444', title: '第一条'}, ctx), {code: 'ACCESS_DENIED'});
 });
+
+
+test('shared list applies employee scope before choosing the first page', async () => {
+  const {calls, ctx} = context([grant('read')]);
+  await server.handlers.list({}, ctx);
+  assert.deepEqual(calls[0].params.anyOf, [[{column: 'created_by', value: person}]]);
+  const denied = context([grant('create')]);
+  await assert.rejects(server.handlers.list({}, denied.ctx), {code: 'ACCESS_DENIED'});
+  assert.equal(denied.calls.length, 0);
+});
