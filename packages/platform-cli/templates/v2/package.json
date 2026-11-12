@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "check": "mop check",
-    "build": "mop build",
+    "check": "mop-app check",
+    "build": "mop-app build",
     "test": "node --test test/"
   },
   "dependencies": {

@@ -156,3 +156,41 @@ test('default keys have no expiry, include both read scopes and keep legacy key 
   await assert.rejects(f.keys.authenticate(`Bearer ${replacement.token}`),/DEVELOPER_AUTH_REQUIRED/);
  }finally{await f.pg.close();}
 });
+
+test('app-only documentation is discoverable without granting personal execution; declared apps still invoke once',async()=>{
+ const manifest=JSON.parse(await readFile(new URL('../../applications/faults/app.json',import.meta.url),'utf8'));
+ const api={...manifest.api.find((a:any)=>a.expose),expose:'apps' as const};
+ let allowed=true,dependency=true,calls=0;
+ const entry={appId:'faults',appName:'故障',version:'1.2.0',revision:2,accessKey:'private-scope-fingerprint',apiId:api.id,permission:'read',consumers:['page','apps'],expose:appApiExposure(api,'apps')!};
+ const interfaces=new AppInterfaces({
+  catalog:async(_person,_target,channel)=>allowed&&appApiExposure(api,channel??'developer')?[entry]:[],
+  assertDependency:async()=>{if(!dependency)throw Error('DEPENDENCY_DENIED');},
+  invoke:async()=>{calls++;return {ok:true,result:{rows:[],cursor:''}};},
+ });
+ const described=await interfaces.describe('person');assert.equal(described.length,1);
+ assert.deepEqual(described[0].consumers,['page','apps']);assert.ok(!('accessKey' in described[0]));assert.ok(!('revision' in described[0]));
+ assert.deepEqual(await interfaces.catalog('person'),[]);
+ const value={appId:'faults',apiId:api.id,input:{}};
+ await assert.rejects(interfaces.call('person',value),/ACCESS_DENIED/);assert.equal(calls,0);
+ assert.deepEqual(JSON.parse(JSON.stringify(await interfaces.call('person',value,undefined,'maintenance'))),{rows:[],cursor:''});assert.equal(calls,1);
+ dependency=false;await assert.rejects(interfaces.call('person',value,undefined,'maintenance'),/DEPENDENCY_DENIED/);assert.equal(calls,1);
+ allowed=false;assert.deepEqual(await interfaces.describe('person'),[]);
+});
+
+test('Agent tool downloads require a live key, while shared documentation retains the apps scope',async()=>{
+ const f=await fixture(),app=Fastify();try{
+  const management={interfaces:{describe:async(personId:string)=>{assert.equal(personId,f.person);return [{appId:'demo',apiId:'list',consumers:['apps']}];}}} as any;
+  registerDeveloperApi(app,{pool:f.pool,origin:'https://platform.test',management});
+  for(const path of ['/downloads','/downloads/sdk','/catalog'])assert.equal((await app.inject(`/api/developer${path}`)).statusCode,401);
+  const key=await f.keys.create(f.person,{requestId:randomUUID(),name:'Agent'}),headers={authorization:`Bearer ${key.token}`};
+  assert.equal((await app.inject({url:'/api/developer/downloads',headers})).statusCode,200);
+  assert.deepEqual((await app.inject({url:'/api/developer/catalog',headers})).json().interfaces[0].consumers,['apps']);
+  const legacy=await f.keys.create(f.person,{requestId:randomUUID(),name:'Directory only',scopes:['directory']});
+  const legacyHeaders={authorization:`Bearer ${legacy.token}`};
+  assert.equal((await app.inject({url:'/api/developer/downloads',headers:legacyHeaders})).statusCode,200);
+  assert.equal((await app.inject({url:'/api/developer/catalog',headers:legacyHeaders})).statusCode,403);
+  assert.equal((await app.inject({url:'/api/developer/downloads',headers:{...headers,origin:'https://evil.test'}})).statusCode,403);
+  await f.keys.revoke(f.person,key.id!,randomUUID());
+  for(const path of ['/downloads','/downloads/sdk','/catalog'])assert.equal((await app.inject({url:`/api/developer${path}`,headers})).statusCode,401);
+ }finally{await app.close();await f.pg.close();}
+});

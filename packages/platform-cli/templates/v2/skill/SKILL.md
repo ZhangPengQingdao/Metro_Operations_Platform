@@ -1,93 +1,79 @@
 ---
 name: metro-app
-description: 开发运管平台应用（应用模型 v2）：编写 app.json、React 页面、Node 接口和数据迁移，用 mop check / mop build 产出单个 .mopkg 安装文件。新建应用或修改本项目时使用。
+description: 为运管开放平台新建或改造独立应用，获取同版本 SDK/CLI，声明页面、AI、MCP 和跨应用共用的接口，测试并打包 .mopkg，指导提交更新和授权联调。适用于应用开发，不用于运维平台服务器。
 ---
 
-# 运管平台应用开发（v2）
+# 运管平台应用开发
 
-平台提供登录、员工身份、角色与数据范围、人员/车站/设备目录、数据存储和部署运行。应用只写业务：页面、接口、数据表。交付物是 `dist/` 里唯一的 `.mopkg` 文件。
+交付独立应用源码和 `dist/<id>-<version>.mopkg`。平台提供身份、角色、数据范围、存储、目录、AI、通知和应用运行。应用编写业务接口、说明和所需页面，不依赖平台仓库源码。
 
-## 工作流程
+## 开始工作
 
-1. 确认业务目标、应用 ID（小写英文加连字符）、名称、要区分的权限（如查看/提交/管理）和每个权限允许的数据范围。
-2. 先改 `app.json`，再写 `migrations/`、`src/server.js`、`src/ui.jsx`。
-3. 每次改动后运行 `npm test`、`npm run check`；本地有平台时用 `npx mop-app dev --out <目录>` 联调（平台以同一目录设置 `MOP_DEV_APPS_DIR`）；完成后 `npm run build`。
-4. 汇报：`.mopkg` 路径、权限清单（含数据范围）、需要管理员确认的平台能力、已通过和未执行的检查。
+先检查已有项目和用户目标。新建应用走下方工具准备；已有项目保留应用 ID、接口 ID、已发布迁移和用户修改，核对 `app.json` 的平台版本范围。权限与实际业务不明确时只追问影响实现的信息，已有授权内继续工作。
 
-不要引用平台仓库源码，不要自建登录、用户表或权限表，不要在代码中写死人员或组织 ID。
+平台 1.12.0 起，一份 `api[]` 声明和一个处理函数供不同入口使用。不要为聊天、工具、工作台和跨应用重复编写业务逻辑。接口声明不会自动生成完整业务页面，页面仍按需求使用 SDK 组件实现。
 
-## app.json
+## 工具准备
 
-| 字段 | 说明 |
-|---|---|
-| `id` `name` `version` `description` | 必填。`version` 每次交付递增 |
-| `color` | 图标底色 `#RRGGBB`；`icon.svg` 用白色线条 |
-| `platform` | 平台版本范围，如 `>=0.26.0` |
-| `permissions` | `{code, name, scopes}`；`code` 用短代码（`read`），`scopes` 取自 `self` `workgroup` `department` `organizations` `all` |
-| `platformAccess` | 需要的平台能力：`people.read` `locations.read` `assets.read` `ai.complete` `attachments.create` `attachments.read` `notifications.create` `notifications.manage` `signatures.create` `signatures.read` `signatures.sign` `webhook.send`。只申请用到的 |
-| `pages` | `{path, title, permission, nav}`；`path` 可带参数 `/records/:id`；`nav: true` 进入侧栏，按数组顺序排列 |
-| `api` | `{id, title, mode, permission, documentation, ai?, tool?, dashboard?, expose?}`；`id` 与 `server.js` 中的函数名一致；`dashboard: true` 表示工作台摘要（最多一个） |
-| `appAccess` | 可选跨应用查询依赖 `[{appId,apiId}]`，同时申请 `apps.read`；需要平台 >=1.11.0 |
-| `limits` | 可选 `{memoryMiB, timeoutSeconds}` |
+要求 Node.js 22+、npm。开发者中心下载的完整 Skill 包带 `tools/toolchain.json`、同版本 SDK/CLI `.tgz`、建项目脚本和 `references/`。在其他 Agent 中可安装整个 Skill 目录，或直接让其读取本文件。公共 npm 上没有这些私有包，不要执行裸的 `npm install @metro/platform-sdk`。
 
-## 页面 src/ui.jsx
+对于新建项目，从完整下载包运行：
 
-```jsx
-import {defineApp, useApp} from '@metro/platform-sdk/app';
-import {Button, Table, Dialog, Field, Input, QueryList} from '@metro/platform-sdk/ui';
-function Page({params}) {
-  const {api, user, route, navigate, toast, confirm, directory, files} = useApp();
-  // await api.call('list', {...})；user.has('create') 判断按钮是否显示
-}
-export default defineApp({pages: {'/': Page, '/records/:id': Detail}, dashboard: Summary});
+```sh
+node /absolute/path/metro-app-development/scripts/create-app.mjs /absolute/path/fire-check 灭火器巡检
+cd /absolute/path/fire-check
+npm test
+npm run check
+npm run build
 ```
 
-- 页面渲染在平台内容区，标题与侧栏由平台根据 `pages` 生成，页面里不要再放大标题或侧栏。
-- 使用 `@metro/platform-sdk/ui` 组件；颜色、字号用平台 CSS 变量，不写固定色值（暗色主题下会白底白字）：文字 `--afc-color-ink`/`--afc-color-muted`，底色 `--afc-color-paper`/`--afc-color-neutral-soft`，边框 `--afc-color-line`，主色 `--afc-color-primary`（其上文字 `--afc-on-primary`），状态 `--afc-color-danger-ink`/`--afc-color-danger-soft` 等。样式写在 `src/ui.css` 并在 `ui.jsx` 中 `import './ui.css'`（未引用时构建报错），构建时自动限定在本应用内。
-- 只从 `react` 导入需要的名称（如 `Fragment`、`useState`），不要使用全局 `React.xxx`（构建会报错）。
-- 页面生成的文件（如导出的 Excel）用 `saveAs(blob, 文件名)` 交给浏览器保存，`saveAs` 从 `@metro/platform-sdk/app` 导入。
-- 前端的 `user.has()` 只控制显示；真正的权限在接口里检查。
-- 只读目录查询可在页面直接调用：`directory.members({organizationUnitId: user.organizationUnitId})`（工班成员）、`directory.organizationContext(id)`、`directory.responsibleStations({...})`、`directory.locations()`、`directory.assets()`；需在 `platformAccess` 申请 `people.read` / `locations.read` / `assets.read`。写操作一律经本应用接口。
-- 附件：`files.upload(file, {entityType, entityId})`、`files.list({entityType, entityId})`、`files.save(attachmentId)`。需要申请 `attachments.create`、`attachments.read`，并提供接口 `authorize-attachment`：输入 `{action:'upload'|'read', entityType, entityId}`，校验记录存在且员工有权后返回 `{organizationId: 记录所属组织}`。支持 Word、Excel、PDF、ZIP 和图片，单个不超过 50MB。
+脚本先校验包摘要，在临时目录运行 CLI，向空目录生成项目，将 SDK/CLI 放到项目 `.mop/toolchain/` 并安装。拒绝覆盖非空目录。普通依赖（React、esbuild 等）仍需 npm 网络或缓存；这不是完全离线安装。工具归档不提交，换机器时从同版本 Skill 恢复 `.mop/toolchain/` 后运行 `npm ci`。
 
-## 接口 src/server.js
+已有项目或项目内的 Skill 没有 `tools/` 时，读 [工具安装与连接](references/toolchain.md)，使用完整 Skill 包或从当前实例下载同版本工具。项目内 Skill 自带参考文档，项目依赖正常时直接使用已有工具。不要索取平台数据库密码、管理员 Cookie 或服务密钥。
 
-```js
-import {defineServer} from '@metro/platform-sdk/server';
-export default defineServer({
-  async list(input, ctx) { return ctx.data.list('records', {pageSize: 50}); },
-  async create(input, ctx) {
-    ctx.require('create', {organizationUnitId: ctx.employee.organizationUnitId, ownerPersonId: ctx.employee.personId});
-    await ctx.data.transaction(input.requestId, [{action: 'insert', table: 'records', id: ctx.uuid(), values: {/* ... */}}]);
-  },
-}, {start(ctx) { /* 可选：定时任务 */ }});
+## 单一接口契约
+
+先读 [统一业务接口](references/shared-api.md)，再修改 `app.json` 和 `src/server.js`。
+
+- `api[].id` 对应处理函数名。声明 `title`、`mode`、`permission`、`documentation`。文档包含 description、input、output、examples、errors，输入根对象须封闭，示例须符合 schema。
+- `mode: read` 查询或总结，`draft` 生成待用户核对的草稿，`write` 正式写入。读和草稿入口禁止平台写操作。
+- 本应用页面通过 `useApp().api.call(id, input)` 调用。
+- `ai: true` 让统一对话和受管工具使用此接口；`tool: true` 只开放受管工具。平台负责身份、参数校验和调用适配。
+- `dashboard: true` 复用为工作台摘要，每个应用最多一个，遵循专用输出契约。
+- `expose: "apps"` 允许获准应用查询，`expose: true` 还允许个人开发凭证和网页调试。不要为实现跨应用调用另写一套业务接口。
+- 使用 `defineServer` 时直接返回业务结果，`documentation.output` 描述该结果。旧函数表的 `{ok:true,result}` 包装仅为兼容。
+
+调用其他应用时，读 [跨应用接入](references/integration.md)。发现接口用开发者中心“应用接口”或 `/api/developer/catalog`，按其实际参数声明 `appAccess: [{appId, apiId}]`，并申请 `apps.read`。后端使用 `ctx.apps.call(appId, apiId, input)`，沿用触发员工在目标应用中的权限与数据范围。接口可在目录查看不表示当前个人密钥可以执行。仅支持员工触发的一层只读跨应用调用，开放处理器不能继续调用其他应用。
+
+## 实现与数据安全
+
+- 平台按接口权限拦截，处理函数对具体记录调用 `ctx.can/ctx.require`；列表先过滤授权范围再分页。身份取 `ctx.employee`，不接受请求体伪造员工或组织范围。`user.has()` 仅控制页面显示。
+- 平台能力只申请实际用到的 `platformAccess`，见 [SDK 参考](references/platform-sdk.md)（完整下载包提供）及各专项指南。常用能力与调用示例也在开发者中心“平台 SDK”。
+- 页面使用 `@metro/platform-sdk/ui`、主题变量和平台导航。读 [页面与导航](references/ui-navigation.md)，不要重复平台侧栏、页头和登录。
+- 业务表保留组织和创建人，迁移只追加，已发布文件不得改删。写入经 `ctx.data.transaction(requestId, operations)`，更新/删除带 `expected` 并发校验。结果不明先核对，同一请求重试保留 requestId，外部副作用不自动重放。
+- 密钥放本地环境变量 `MOP_DEV_KEY`，实例地址放 `MOP_URL`；密钥不进入源码、日志、聊天或安装包。正式应用使用宿主身份，不使用个人密钥。新建项目、单元测试和打包无需真实平台凭证。
+
+## 测试、联调与打包
+
+读 [测试与验收](references/testing.md)。每次可交付改动执行：
+
+```sh
+npm test
+npm run check
+npm run build
 ```
 
-- 平台已按 `api[].permission` 拦截调用；涉及具体记录时再用 `ctx.can/ctx.require(权限, {organizationUnitId, ownerPersonId})` 按数据范围判断，列表要过滤掉无权查看的记录。
-- `ctx.data`：`get(table,id)`、`list(table,{filters,order,pageSize,after,search,range})`、`readBatch([...])`、`transaction(requestId, [insert|update|delete])`。`update/delete` 需带 `expected` 旧值做并发校验。
-- 写操作由前端生成 `requestId`（UUID）传入；同一 `requestId` 重试返回第一次的结果，不会重复写入。结果未知时先查询记录，不要换新的 `requestId` 重发。
-- `ctx.platform.invoke('platform.people.members', {...})` 等调用平台能力，须先在 `platformAccess` 申请。
-- 输入一律校验类型与长度；出错时 `throw new Error('INVALID_INPUT')` 之类的代码。
+`check` 校验清单和结构，`build` 检查并打包，均不代替业务测试。至少覆盖本次受影响的正常行为、非法参数、无权限、跨组织数据、重复写入与版本冲突。共享接口增加未声明依赖、目标无权限、撤权/停用和只读写入拒绝的联调验证。
 
-## 数据迁移 migrations/
+有本地平台时，使用 `npx --no-install mop-app dev --out <开发目录>`；平台在非生产环境设置同一 `MOP_DEV_APPS_DIR`。没有平台时完成可执行的离线测试，并明确列出未完成的真实角色、AI 配置和页面操作验收，不能把打包成功报告为线上验收通过。
 
-- 文件名 `001-initial.json`、`002-add-photo.json`……从 001 连续编号；**已发布的文件不能修改或删除**，只能追加。
-- 格式：`{"migrationVersion":"1.0","operations":[...]}`，操作仅支持 `createTable`（列类型 `text` `boolean` `integer` `bigint` `uuid` `date` `timestamptz` `jsonb`）、`addColumn`（只能可空）、`createIndex`。
-- 每张业务表建议包含 `id`、`organization_id`、`created_by`、`created_at`，以便按数据范围过滤。
+更新递增应用版本，只追加迁移，核对最低平台版本。读 [打包与更新](references/packaging.md)。负责人提交 `.mopkg` 更新，首次上架可由员工申请，管理员在应用审核中预览批准。安装后配置负责人、使用人员和业务角色。提交/发布遵循用户授权，安装包生成不表示已上线。
 
-## 测试
+交付说明包含源码与包路径、版本、接口开放入口、调用依赖、权限和数据范围、已通过的检查以及尚需现场核验的项目。
 
-`test/` 中用 `createAppServerContext({appId, gateway, employee, signal})` 加假 gateway 测接口：至少覆盖正常写入、无权限拒绝、跨组织拒绝、非法输入。
+## 按需参考
 
-## 交付
-
-`npm run build` 生成 `dist/<id>-<version>.mopkg`。该文件包含 app.json、图标、页面、接口和迁移，管理员上传后可预览并安装，员工也可在员工端“应用管理 → 申请上架”提交给管理员审核。平台 0.27.0 起支持安装运行，0.28.0 起支持 `directory`、`files` 与 `mop-app dev`，0.30.0 起支持 `saveAs`。安装后由管理员指定应用负责人，负责人配置角色和使用人员，员工才能看到应用。
-
-## 开发者中心与跨应用查询（平台 1.11.0）
-
-- 员工开发者中心可下载工具、浏览真实公共目录和按本人权限导出接口文档。本地脚本/Agent 使用个人只读开发 Key，经环境变量传入；不写入前端、源码或应用包。正式应用使用宿主身份，不使用个人 Key。
-- 全员可读目录只包含启用的线路、车站、组织工班、管辖关系、岗位和设备分类。后端申请 `directory.read` 后调用 `ctx.directory.list('stations', {pageSize:50})`；跟随 `nextCursor` 分页。人员、具体设备和业务数据继续按权限查询。
-- 调用其他应用：声明 `appAccess:[{appId:'faults',apiId:'public-query'}]`，申请 `apps.read`，后端调用 `ctx.apps.call('faults','public-query',{stationId})`。函数表写法使用 `gateway.invoke('platform.apps.call',{appId,apiId,input},signal)`。目标权限来自当前员工在目标应用中的角色和范围，不能伪造员工身份。
-- 提供查询接口：在 `api[]` 声明 `mode:'read'`、`title`、`documentation`（description/input/output/examples/errors）。`ai:true` 根据同一份契约生成聊天和 MCP 工具，`expose:"apps"` 允许获准应用调用，`expose:true` 同时开放给员工开发凭证。输入根对象须 `additionalProperties:false`，接口必须显式绑定业务权限。handler 返回 `{ok:true,result}`，output 描述 result。列表须先按授权范围过滤再分页。
-- 只支持员工触发的一层只读跨应用调用，开放处理器禁止平台写操作和继续跨应用调用。不要把普通内部接口自动公开，不做后台服务身份或自动重试。
-- 完整示例、错误与 HTTP 接口见离线资料 `references/integration.md`；AI 能力范围见 `references/ai.md`（通过开发者中心下载 Skill 包获取）。以实际安装的版本和授权为准。
+- [开始开发](references/start.md)、[工具安装与连接](references/toolchain.md)、[测试与验收](references/testing.md)
+- [统一业务接口](references/shared-api.md)、[身份与权限](references/identity-permissions.md)、[跨应用接入](references/integration.md)
+- [存储与文件](references/storage-files.md)、[通知](references/notifications.md)
+- [AI 总览](references/ai.md)、[应用对话](references/agents.md)、[受管工具与 MCP](references/tools.md)、[知识库](references/knowledge.md)

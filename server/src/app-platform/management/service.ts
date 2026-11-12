@@ -94,7 +94,15 @@ export async function createAppManagement(configFile:string,origin:string){
      const manifest=installation.runtime?.manifest;if(!manifest)continue;
      const requestId=randomUUID(),actor=await apiAuthorization.contextResolver.resolve({actorType:'person',trustedIdentity:{source:'session',userId:personId},execution:{type:'application',appId},requestId,traceId:requestId});
      const accessKey=createHash('sha256').update(JSON.stringify({access:access.revision,business:await apiAuthorization.businessAuthorization(actor),organization:actor.actorType==='person'?actor.person.organization:null})).digest('hex');
-     for(const api of manifest.api){const expose=appApiExposure(api,channel??'developer');if(expose&&await authorizeEntry(actor,appId,api.permission,api.sharedPermissions))result.push({appId,appName:manifest.name,version:manifest.version,revision:installation.revision,accessKey,apiId:api.id,permission:api.permission??api.sharedPermissions!.join(' / '),expose});}
+     for(const api of manifest.api){
+      const expose=appApiExposure(api,channel??'developer');
+      if(expose&&await authorizeEntry(actor,appId,api.permission,api.sharedPermissions))result.push({
+       appId,appName:manifest.name,version:manifest.version,revision:installation.revision,accessKey,apiId:api.id,
+       permission:api.permission??api.sharedPermissions!.join(' / '),expose,
+       consumers:['page',...(api.dashboard?['dashboard']:[]),...(api.ai?['ai']:[]),
+        ...(appTools(manifest).some(tool=>tool.apiId===api.id)?['tool']:[]),'apps',...(appApiExposure(api,'developer')?['developer']:[])],
+      });
+     }
     }catch(e){if(e instanceof GatewayError||e instanceof EmployeeIdentityError&&[403,404].includes(e.statusCode))continue;throw e;}
    }
    return result;

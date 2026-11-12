@@ -2,14 +2,15 @@
 
 运管平台应用（应用模型 v2）。
 
+先按 `.claude/skills/metro-app/references/toolchain.md` 安装同版本 SDK/CLI。若由完整 Skill 的建项目脚本创建，依赖已安装。换机器时恢复 `.mop/toolchain/` 的工具归档后执行 `npm ci`。
+
 ```sh
-npm install
 npm test
 npm run check
 npm run build      # 输出 dist/__APP_ID__-<版本>.mopkg
 ```
 
-把 `dist/` 中的 `.mopkg` 文件交给平台管理员，在管理端“应用管理 → 安装应用”上传。
+把 `dist/` 中的 `.mopkg` 交付管理员安装，或在员工端“应用管理”申请上架；已有应用由负责人提交更新给管理员审核。
 
 ## 目录
 

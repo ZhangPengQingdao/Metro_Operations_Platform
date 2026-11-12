@@ -4,7 +4,7 @@ import type {AppApiExposure} from '@metro/platform-sdk/manifest';
 import {GatewayError,jsonSnapshot,type AppGatewayOperation} from '../gateway/model.js';
 const id=z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(64);
 export const appCallInput=z.object({appId:id,apiId:id,input:z.unknown().refine(v=>v!==undefined)}).strict();
-export type PublishedInterface={appId:string;appName:string;version:string;revision:number;accessKey?:string;apiId:string;permission:string;expose:AppApiExposure};
+export type PublishedInterface={appId:string;appName:string;version:string;revision:number;accessKey?:string;apiId:string;permission:string;expose:AppApiExposure;consumers?:string[]};
 export interface AppInterfaceBackend {
  catalog(personId:string,appId?:string,channel?:'apps'|'developer'):Promise<PublishedInterface[]>;
  invoke(personId:string,appId:string,apiId:string,input:unknown,signal?:AbortSignal):Promise<unknown>;
@@ -14,6 +14,8 @@ export interface AppInterfaceBackend {
 export class AppInterfaces {
  constructor(private readonly backend:AppInterfaceBackend){}
  catalog(personId:string){return this.backend.catalog(personId);}
+ /** Documentation discovery includes app-only interfaces. It never grants execution through a personal key. */
+ async describe(personId:string){return (await this.backend.catalog(personId,undefined,'apps')).map(({accessKey,revision,...entry})=>entry);}
  async call(personId:string,value:unknown,signal?:AbortSignal,source?:string){
   const p=appCallInput.parse(value);
   if(source)await this.backend.assertDependency(source,p.appId,p.apiId,personId);
