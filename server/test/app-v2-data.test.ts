@@ -32,6 +32,29 @@ async function fixture() {
 }
 const signal = new AbortController().signal;
 
+test('cancelled read batches skip queued queries and release their connection',async t=>{
+ const {db,client,installation,context}=await fixture();
+ try{
+  await applyAppMigrationsV2(client,installation.id,[{id:'001-initial',text:initial}]);
+  const controller=new AbortController(),queries:string[]=[];
+  let connections=0;
+  const original=client.query.bind(client);
+  t.mock.method(client,'query',async(sql:string,values?:readonly unknown[])=>{
+   queries.push(sql);const result=await original(sql,values);
+   if(sql.startsWith('SELECT count(*)'))controller.abort();
+   return result;
+  });
+  const released=t.mock.method(client,'release');
+  const service=new AppDataServiceV2({pool:{connect:async()=>{connections++;return client;}},findInstallation:async()=>installation});
+  const input={operations:Array.from({length:4},()=>({kind:'count',table:'records'}))};
+  await assert.rejects(service.execute(context,installation,'read_batch',input,controller.signal),{code:'ABORTED'});
+  assert.equal(queries.filter(sql=>sql.startsWith('SELECT count(*)')).length,1);
+  assert.ok(queries.includes('ROLLBACK'));assert.equal(released.mock.callCount(),1);
+  await assert.rejects(service.execute(context,installation,'read_batch',input,controller.signal),{code:'ABORTED'});
+  assert.equal(connections,1,'already cancelled work must not acquire a connection');
+ }finally{await db.close();}
+});
+
 test('migrations create the app schema, apply in order and refuse changed history', async () => {
   const { db, client, installation } = await fixture();
   assert.deepEqual(await applyAppMigrationsV2(client, installation.id, [{ id: '001-initial', text: initial }]), ['001-initial']);

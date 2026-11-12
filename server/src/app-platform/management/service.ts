@@ -191,11 +191,11 @@ export async function createAppManagement(configFile:string,origin:string){
    const fresh=await resolveIdentity();if(fresh.userId!==identity.userId)throw new GatewayError('ACCESS_DENIED',403);
    return {applications};
   },
-  async employeeDashboard(appId:string,resolveIdentity:ResolveIdentity){
+  async employeeDashboard(appId:string,resolveIdentity:ResolveIdentity,signal?:AbortSignal){
    assertOpen();
    const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
-   return readEmployeeDashboard({admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
-    invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{},consumer:'dashboard'})});
+   return readEmployeeDashboard({signal,admit:()=>admitEmployee(appId,resolveIdentity),navigation:employeeNavigation,
+    invoke:(api,resolve)=>host.invokeEmployeeApi(resolve,{apiId:api.id,method:api.method,path:api.path,payload:{},consumer:'dashboard'},signal)});
   },
   async employeeAgentCapabilities(resolveIdentity:ResolveIdentity,targetAppId?:string):Promise<ChatCapability[]>{
    apiAuthorization.clearSessions();

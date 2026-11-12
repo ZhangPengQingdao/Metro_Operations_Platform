@@ -76,6 +76,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{pool?:Connec
   scoped.patch('/profile',{bodyLimit:4096},async req=>options.service.updateProfile(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body));
   scoped.patch('/auth/password',{bodyLimit:4096},async(req,reply)=>{await options.service.changePassword(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.body);options.management?.invalidateEmployeeSessions();reply.clearCookie(EMPLOYEE_SESSION_COOKIE,cookie);return {ok:true};});
   scoped.get('/notifications',async req=>options.service.notifications(req.cookies[EMPLOYEE_SESSION_COOKIE]));
+  scoped.get('/notifications/unread-count',async req=>options.service.notificationUnreadCount(req.cookies[EMPLOYEE_SESSION_COOKIE]));
   scoped.post<{Params:{id:string}}>('/notifications/:id/read',{bodyLimit:1024},async req=>options.service.markNotificationRead(req.cookies[EMPLOYEE_SESSION_COOKIE]!,req.params.id));
   scoped.get('/managed-apps',async req=>({applications:options.business?await options.business.ownedApps((await resolveRequestIdentity(req)).userId):[]}));
   async function ownerId(req:FastifyRequest){return (await resolveRequestIdentity(req)).userId;}
@@ -96,9 +97,16 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{pool?:Connec
    if(!options.management)return {applications:[]};
    return options.management.employeeApps(()=>resolveRequestIdentity(req));
   });
-  scoped.get<{Params:{appId:string}}>('/apps/:appId/dashboard',async req=>{
+  scoped.get<{Params:{appId:string}}>('/apps/:appId/dashboard',async(req,reply)=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
-   return options.management.employeeDashboard(req.params.appId,()=>resolveRequestIdentity(req));
+   // Reload/navigation closes the old response: cancel read-only app work as well.
+   const controller=new AbortController(),abort=()=>controller.abort();
+   const timeout=setTimeout(abort,15000);
+   reply.raw.once('close',abort);
+   try{
+    if(reply.raw.destroyed)controller.abort();
+    return await options.management.employeeDashboard(req.params.appId,()=>resolveRequestIdentity(req),controller.signal);
+   }finally{clearTimeout(timeout);reply.raw.off('close',abort);}
   });
   // Application pages: page session, immutable page bundle and icon.
   scoped.get<{Params:{appId:string}}>('/apps/:appId/v2-session',async req=>{

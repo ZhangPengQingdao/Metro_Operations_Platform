@@ -1,9 +1,21 @@
 {$MOP_DOMAIN} {
   handle /api/* {
+    @bundles path /api/employee/apps/*/v2/*/ui.js /api/employee/apps/*/v2/*/ui.css
+    encode @bundles zstd gzip
     reverse_proxy api:3101
+  }
+  handle /assets/* {
+    root * /srv
+    encode zstd gzip
+    header Cache-Control "public, max-age=31536000, immutable" {
+      match status 200 304
+    }
+    file_server
   }
   handle {
     root * /srv
+    encode zstd gzip
+    header Cache-Control "no-cache"
     try_files {path} /index.html
     file_server
   }

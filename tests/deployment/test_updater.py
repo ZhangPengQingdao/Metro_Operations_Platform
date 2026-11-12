@@ -137,6 +137,9 @@ class ProxyDeployment(unittest.TestCase):
    self.assertFalse(any('docker.sock' in v for v in services['api']['volumes']),'applications run in the API process; no Docker socket')
    self.assertIn(str(root)+'/secrets/app-management.json:/run/secrets/app-management.json:ro',services['api']['volumes'])
    self.assertNotIn('3103',(release/'Caddyfile').read_text())
+   # Generated production config must retain the image's cache/compression policy.
+   template=(pathlib.Path(__file__).parents[2]/'deploy/Caddyfile').read_text()
+   self.assertEqual((release/'Caddyfile').read_text(),template.replace('{$MOP_DOMAIN}',':80').replace('api:3101','database:3101'))
 
 class ImageIdentity(unittest.TestCase):
  def archive(self,root):

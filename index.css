@@ -6,8 +6,8 @@
 @import '@fontsource/manrope/latin-600.css';
 @import '@fontsource/manrope/latin-700.css';
 
-/* Noto Sans SC 仅保留简体中文 400 字重；中粗体由浏览器按统一规则合成。 */
-@import '@fontsource/noto-sans-sc/chinese-simplified-400.css';
+/* 按 unicode-range 加载当前页面使用的字形子集；中粗体由浏览器合成。 */
+@import '@fontsource/noto-sans-sc/400.css';
 
 /* AI: Tailwind CSS 指令 - 由 Vite + PostCSS 编译，替代之前的 CDN 在线加载 */
 @tailwind base;

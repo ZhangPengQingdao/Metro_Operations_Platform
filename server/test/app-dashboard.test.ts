@@ -115,6 +115,10 @@ test('employee dashboard binds API execution to admission and rechecks after the
  await assert.rejects(readEmployeeDashboard({...deps,navigation:async()=>({routes:[]})}),/ACCESS_DENIED/);assert.equal(calls,1);
  await assert.rejects(readEmployeeDashboard({...deps,invoke:async()=>({...snapshot,href:'https://example.org'})}),/INVALID_RESULT/);
  await assert.rejects(readEmployeeDashboard({...deps,invoke:async()=>{state.access.revision='grant-2';return {ok:true,result:snapshot};}}),/ACCESS_DENIED/);
+ const cancelled=new AbortController();cancelled.abort();
+ await assert.rejects(readEmployeeDashboard({...deps,signal:cancelled.signal,admit:async()=>{throw Error('must not start');}}),/ABORTED/);
+ const navigating=new AbortController();
+ await assert.rejects(readEmployeeDashboard({...deps,signal:navigating.signal,invoke:async()=>{navigating.abort();return {ok:true,result:snapshot};}}),/ABORTED/);
 });
 
 

@@ -160,6 +160,17 @@ export class EmployeeIdentityService{
    await appendAdminAudit(db,{actorId:account.id,action:'employee.password-change',targetId:account.id});
   });
  }
+ async notificationUnreadCount(token?:string){
+  const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  const [result]=await this.read(db=>rows<{count:string}>(db,`SELECT count(*)::text AS count FROM (
+   SELECT n.id,n.read_behavior FROM platform_notifications n
+   JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1
+   WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50
+  ) recent LEFT JOIN platform_notification_reads r ON r.notification_id=recent.id AND r.person_id=$1
+  WHERE recent.read_behavior='state_bound' OR r.read_at IS NULL`,[account.personId]));
+  if(!await this.authenticate(token))throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
+  return {count:Number(result.count)};
+ }
  async notifications(token?:string){
   const account=await this.authenticate(token);if(!account)throw new EmployeeIdentityError(401,'EMPLOYEE_AUTH_REQUIRED');
   const notifications=await this.read(db=>rows(db,`SELECT n.id,n.display_snapshot AS display,n.navigation_ref AS navigation,n.created_at AS "createdAt",n.read_behavior AS "readBehavior",r.read_at AS "readAt" FROM platform_notifications n JOIN platform_notification_recipients recipient ON recipient.notification_id=n.id AND recipient.person_id=$1 LEFT JOIN platform_notification_reads r ON r.notification_id=n.id AND r.person_id=$1 WHERE n.status='active' ORDER BY n.created_at DESC,n.id DESC LIMIT 50`,[account.personId]));

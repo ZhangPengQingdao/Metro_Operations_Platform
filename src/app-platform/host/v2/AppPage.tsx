@@ -2,16 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppRuntimeProvider, isAppDefinition, type AppDefinition, type AppFiles, type AppRuntime } from '@metro/platform-sdk/app';
 import { createPlatformDirectoryClient } from '@metro/platform-sdk/app-directory';
 import type { AppGatewayJson } from '@metro/platform-sdk/app-gateway';
-import { Button, ConfirmDialog, useToast } from '../../../components/ui';
+import { ConfirmDialog, useToast } from '../../../components/ui';
 import { employeeRequest, EmployeeRequestError } from '../../employee/client';
 import { installSharedModules } from './shared';
+import {AppErrorBoundary} from './AppErrorBoundary';
+import type {AppV2Entry, Session} from './AppPageEntry';
 
-export interface AppV2Entry { appId: string; name: string; runtimeRevision: number; v2: { sha256: string; color: string | null; pages: { path: string; title: string; permission?: string }[] } }
-interface Session {
-  appId: string; name: string; admissionKey: string; sha256: string; moduleUrl: string; cssUrl?: string;
-  route: { path: string; pattern: string; params: Record<string, string>; title: string };
-  user: { personId: string; name: string; organizationUnitId: string | null; permissions: string[] };
-}
 type Loaded = { session: Session; definition: AppDefinition };
 
 const modules = new Map<string, Promise<AppDefinition>>();
@@ -90,49 +86,21 @@ function createFiles(appId: string, admissionKey: string): AppFiles {
   };
 }
 
-const messageFor = (error: unknown) =>
-  error instanceof EmployeeRequestError && error.status === 403 ? '没有访问此页面的权限，或应用授权已变更。'
-  : error instanceof Error && error.message === 'INVALID_APP_MODULE' ? '应用页面文件无效，请联系应用开发者重新打包。'
-  : '应用页面暂时无法打开。';
-
-export class AppErrorBoundary extends React.Component<{ children: React.ReactNode; onRetry(): void }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch(error: unknown) { console.error('应用页面出错', error); }
-  render() {
-    if (!this.state.failed) return this.props.children;
-    return <div className="app-v2-error" role="alert"><p>应用页面出错。</p><Button variant="secondary" onClick={() => { this.setState({ failed: false }); this.props.onRetry(); }}>重新加载</Button></div>;
-  }
+export async function preparePage(appId: string, session: Session): Promise<Loaded> {
+  ensureStylesheet(appId, session.cssUrl);
+  return {session, definition: await loadDefinition(session.moduleUrl)};
 }
 
-/** Renders a v2 application page in place, inside the platform shell (same origin, no iframe). */
-export function AppPageV2({ app, path, onNavigate }: { app: AppV2Entry; path: string; onNavigate(path: string): void }) {
-  const [attempt, setAttempt] = useState(0);
-  // A route/version change must never mount the previous page with its old admission.
-  const key = JSON.stringify([app.appId, app.v2.sha256, app.runtimeRevision, path, attempt]);
-  return <AppPageSession key={key} app={app} path={path} onNavigate={onNavigate} onRetry={() => setAttempt(value => value + 1)} />;
-}
-
-function AppPageSession({ app, path, onNavigate, onRetry }: { app: AppV2Entry; path: string; onNavigate(path: string): void; onRetry(): void }) {
+export function AppPage({app, loaded, onNavigate, onRetry}: {
+  app: AppV2Entry; loaded: Loaded; onNavigate(path: string): void; onRetry(): void
+}) {
   const toast = useToast();
-  const [loaded, setLoaded] = useState<Loaded | null>(null), [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<{ title: string; message?: string; confirmLabel?: string; danger?: boolean; resolve(value: boolean): void } | null>(null);
   // Navigating away also cancels a pending confirmation instead of leaving its caller waiting.
   useEffect(() => () => confirmation?.resolve(false), [confirmation]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setError('');
-    employeeRequest<Session>(`/apps/${app.appId}/v2-session?path=${encodeURIComponent(path)}`, { signal: controller.signal })
-      .then(async session => { controller.signal.throwIfAborted(); ensureStylesheet(app.appId, session.cssUrl); return { session, definition: await loadDefinition(session.moduleUrl) }; })
-      .then(value => { if (!controller.signal.aborted) setLoaded(value); })
-      .catch(reason => { if (!controller.signal.aborted) { setLoaded(null); setError(messageFor(reason)); } });
-    return () => controller.abort();
-  }, [app.appId, app.v2.sha256, app.runtimeRevision, path]);
-
-  const session = loaded?.session;
-  const runtime = useMemo<AppRuntime | null>(() => {
-    if (!session) return null;
+  const session = loaded.session;
+  const runtime = useMemo<AppRuntime>(() => {
     const short = (code: string) => code.startsWith(`app.${session.appId}.`) ? code.slice(session.appId.length + 5) : code;
     const platform = {
       async invoke(operation: string, params?: AppGatewayJson, signal?: AbortSignal) {
@@ -160,8 +128,6 @@ function AppPageSession({ app, path, onNavigate, onRetry }: { app: AppV2Entry; p
   }, [session, onNavigate, toast]);
   const settle = useCallback((value: boolean) => setConfirmation(current => { current?.resolve(value); return null; }), []);
 
-  if (error) return <section className="app-v2" data-app={app.appId}><div className="app-v2-error" role="alert"><p>{error}</p><Button variant="secondary" onClick={onRetry}>重新加载</Button></div></section>;
-  if (!loaded || !runtime) return <section className="app-v2" data-app={app.appId} aria-busy="true"><p className="app-v2-loading" role="status">正在打开{app.name}…</p></section>;
   const Page = loaded.definition.pages[loaded.session.route.pattern];
   return <section className="app-v2" data-app={app.appId}>
     <header className="app-v2-heading"><h1>{loaded.session.route.title}</h1></header>
