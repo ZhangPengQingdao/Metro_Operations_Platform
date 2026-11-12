@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
-import {AppToolService} from '../src/app-platform/tools/index.ts';
+import {runApiAgent} from '../src/platform/chat/api-agent.ts';
 import {AppProcessV2} from '../src/app-platform/v2/process.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {PGlite} from '@electric-sql/pglite';
@@ -16,7 +16,7 @@ import {ChatService,type ChatCapability,type ChatDependencies,chatMessageInput} 
 import {CHAT_SQL} from '../src/platform/chat/migration.ts';
 import {registerEmployeeRoutes} from '../src/app-platform/employee/routes.ts';
 import {readAppAgentInput} from '@metro/platform-sdk/app-agent';
-import {validateAppManifestV2} from '@metro/platform-sdk/manifest';
+import {appAgents,validateAppManifestV2} from '@metro/platform-sdk/manifest';
 
 const a:ChatCapability={id:'plan',key:'installation-a:plan',accessKey:'scope-a',appId:'a',appName:'计划',revision:1,name:'整理计划',description:'整理月度计划草稿',examples:['整理下月计划'],apiId:'agent-plan',permission:'fill',page:'/'};
 const b:ChatCapability={...a,key:'installation-b:todos',appId:'b',appName:'待办',name:'查看待办',page:'/tasks'};
@@ -34,7 +34,8 @@ async function fixture(overrides:Partial<ChatDependencies>={}){
 
 test('agent manifests bind API permissions and static pages; input rejects extra context',async()=>{
  const manifest=JSON.parse(await readFile(new URL('../../applications/huicetong/app.json',import.meta.url),'utf8'));
- const valid=validateAppManifestV2(manifest);assert.ok(valid.ok);assert.equal(valid.manifest.agents?.[0].apiId,'agent-plan');
+ const valid=validateAppManifestV2(manifest);assert.ok(valid.ok);assert.equal(appAgents(valid.manifest).find(a=>a.apiId==='plan-suggest')?.execution,'api');
+ manifest.api.push({id:'legacy-agent',permission:'fill'});manifest.agents=[{id:'legacy-agent',name:'旧编排',description:'旧编排兼容测试',examples:['整理计划'],permission:'fill',apiId:'legacy-agent',page:'/'}];assert.ok(validateAppManifestV2(manifest).ok);
  for(const fields of [{apiId:'missing'},{permission:'read'},{page:'/missing'},{examples:[]},{admin:true}])assert.equal(validateAppManifestV2({...manifest,agents:[{...manifest.agents[0],...fields}]}).ok,false);
  assert.throws(()=>readAppAgentInput({message:'hello',history:[],today:'2026-10-27',personId:randomUUID()}),/INVALID_INPUT/);
  assert.throws(()=>chatMessageInput.parse({sessionId:randomUUID(),requestId:randomUUID(),message:'x',target:'a'}));
@@ -149,26 +150,21 @@ test('chat HTTP uses employee authentication, same-origin writes and one boundar
 test('chat dispatches real Huicetong and Todos child handlers with employee-bound platform calls',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'mop-chat-apps-')),processes=new Map<string,AppProcessV2>(),calls:{operation:string;callId?:string;transport?:string}[]=[];
  const org=randomUUID(),person=randomUUID(),revision=randomUUID();
- const catalog=[{...a,appId:'huicetong',apiId:'agent-plan'},{...b,appId:'todos',apiId:'agent-todos'}];
+ const manifests=await Promise.all(['huicetong','todos'].map(async id=>JSON.parse(await readFile(new URL(`../../applications/${id}/app.json`,import.meta.url),'utf8'))));
+ const catalog=manifests.map((manifest,i)=>({...appAgents(manifest).find(a=>a.apiId===(i===0?'plan-suggest':'list'))!,key:i===0?a.key:b.key,accessKey:'scope',appId:manifest.id,appName:manifest.name,revision:1}));
  const f=await fixture({capabilities:async()=>catalog,route:async message=>({target:message.includes('待办')?b.key:a.key,message:''}),
   invoke:async(_person,cap,input,signal)=>{
    const employee={version:'1.0' as const,personId:person,organizationUnitId:org,requestId:randomUUID(),traceId:randomUUID(),businessAuthorization:{revision,organizations:[{id:org,name:'工班'}],grants:[{permission:`app.${cap.appId}.${cap.appId==='huicetong'?'fill':'read'}`,all:false,self:true,organizationIds:[]}]}};
-   const result=await processes.get(cap.appId)!.call(cap.apiId,input,employee,signal) as any;
-   assert.equal(result.ok,true);return result.result;
+   return runApiAgent(cap,input,async args=>{const result=await processes.get(cap.appId)!.call(cap.apiId,args,employee,signal) as any;assert.equal(result.ok,true);return result.result;},signal,async(_system,data:any)=>data.result?JSON.stringify({kind:cap.appId==='huicetong'?'draft':'reply',text:cap.appId==='huicetong'?data.result.content:data.result.rows.map((r:any)=>r.title).join('；')}):JSON.stringify({kind:'call',input:cap.appId==='huicetong'?{month:'2026-11',rawText:input.message}:{kind:'tasks',status:'active'}}));
   }});
  try{
   for(const appId of ['huicetong','todos']){
    const outfile=join(directory,`${appId}.mjs`);
    await build({entryPoints:[fileURLToPath(new URL(`../../applications/${appId}/src/server.js`,import.meta.url))],outfile,bundle:true,format:'esm',platform:'node',target:'node22',logLevel:'silent'});
-   const manifest=JSON.parse(await readFile(new URL(`../../applications/${appId}/app.json`,import.meta.url),'utf8'));
-   const toolService=new AppToolService({catalog:async()=>manifest.tools,invoke:async(_scope,tool,args,signal)=>processes.get(appId)!.call(tool.apiId,args,{version:'1.0',personId:person,organizationUnitId:org,requestId:randomUUID(),traceId:randomUUID(),businessAuthorization:{revision,organizations:[{id:org,name:'工班'}],grants:[{permission:`app.${appId}.${appId==='huicetong'?'fill':'read'}`,all:false,self:true,organizationIds:[]}] }},signal)});
    const process=new AppProcessV2({appId,serverPath:outfile,cwd:directory,log:()=>{},onPlatform:async(operation,params:any,callId)=>{
     calls.push({operation,callId,transport:params?.transport});
-    if(operation==='platform.tools.call'){
-     const scope={appId,personId:person},signal=new AbortController().signal;
-     return params.transport==='mcp'?toolService.mcp(scope,{toolId:params.toolId,arguments:params.arguments},signal):toolService.call(scope,params.toolId,params.arguments,signal);
-    }
     if(operation==='platform.people.organization_context')return {organizations:[{id:org,name:'维保部',unitType:'department'}]};
+    if(operation==='platform.people.members'||operation==='platform.people.assignees')return {rows:[{id:person,name:'本人',organizationUnitId:org}],nextCursor:null};
     if(operation==='platform.knowledge.search')return {entries:[]};
     if(operation==='platform.ai.complete')return {content:JSON.stringify({content:'完成AFC巡检',qualityStandard:'提交巡检清单',startDate:null,endDate:null,missingInfo:['完成日期']})};
     if(operation==='platform.app_data.list'){
@@ -185,7 +181,7 @@ test('chat dispatches real Huicetong and Todos child handlers with employee-boun
   await f.service.send(f.owner,f.input('查看待办',first.sessionId));
   assert.match((await f.finish(first.sessionId)).turns.at(-1)!.reply!.text,/本人巡检待办/);
   assert.ok(calls.filter(call=>call.operation.startsWith('platform.knowledge')||call.operation==='platform.ai.complete').every(call=>call.callId));
-  assert.deepEqual(calls.filter(call=>call.operation==='platform.tools.call').map(call=>call.transport),['direct','mcp']);
+  assert.equal(calls.filter(call=>call.operation==='platform.tools.call').length,0);
   assert.ok(!calls.some(call=>call.operation.includes('transaction')));
  }finally{await f.close();for(const process of processes.values())await process.stop();await rm(directory,{recursive:true,force:true});}
 });

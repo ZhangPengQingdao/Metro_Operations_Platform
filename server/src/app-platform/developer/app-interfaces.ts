@@ -1,12 +1,12 @@
 import {z} from 'zod';
 import {matchesAppContract} from '@metro/platform-sdk/app-api-documentation';
-import type {AppApiV2} from '@metro/platform-sdk/manifest';
+import type {AppApiExposure} from '@metro/platform-sdk/manifest';
 import {GatewayError,jsonSnapshot,type AppGatewayOperation} from '../gateway/model.js';
 const id=z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(64);
 export const appCallInput=z.object({appId:id,apiId:id,input:z.unknown().refine(v=>v!==undefined)}).strict();
-export type PublishedInterface={appId:string;appName:string;version:string;revision:number;accessKey?:string;apiId:string;permission:string;expose:NonNullable<AppApiV2['expose']>};
+export type PublishedInterface={appId:string;appName:string;version:string;revision:number;accessKey?:string;apiId:string;permission:string;expose:AppApiExposure};
 export interface AppInterfaceBackend {
- catalog(personId:string,appId?:string):Promise<PublishedInterface[]>;
+ catalog(personId:string,appId?:string,channel?:'apps'|'developer'):Promise<PublishedInterface[]>;
  invoke(personId:string,appId:string,apiId:string,input:unknown,signal?:AbortSignal):Promise<unknown>;
  assertDependency(source:string,target:string,apiId:string,personId:string):Promise<void>;
 }
@@ -17,7 +17,7 @@ export class AppInterfaces {
  async call(personId:string,value:unknown,signal?:AbortSignal,source?:string){
   const p=appCallInput.parse(value);
   if(source)await this.backend.assertDependency(source,p.appId,p.apiId,personId);
-  const entry=(await this.backend.catalog(personId,p.appId)).find(e=>e.appId===p.appId&&e.apiId===p.apiId);
+  const entry=(await this.backend.catalog(personId,p.appId,source?'apps':'developer')).find(e=>e.appId===p.appId&&e.apiId===p.apiId);
   if(!entry)throw new GatewayError('ACCESS_DENIED',403);
   const input=jsonSnapshot(p.input,60*1024);
   if(!matchesAppContract(entry.expose.documentation.input,input))throw new GatewayError('INVALID_PARAMS');
@@ -25,7 +25,7 @@ export class AppInterfaces {
   if(!response||typeof response!=='object'||Array.isArray(response)||!('ok' in response)||response.ok!==true||!('result' in response))throw new GatewayError('GATEWAY_FAILED',502);
   if(!matchesAppContract(entry.expose.documentation.output,response.result))throw new GatewayError('INVALID_RESULT',502);
   // Do not release a result after an application upgrade, account/role revocation or dependency change.
-  const fresh=(await this.backend.catalog(personId,p.appId)).find(e=>e.appId===p.appId&&e.apiId===p.apiId);
+  const fresh=(await this.backend.catalog(personId,p.appId,source?'apps':'developer')).find(e=>e.appId===p.appId&&e.apiId===p.apiId);
   if(!fresh||JSON.stringify(fresh)!==JSON.stringify(entry))throw new GatewayError('ACCESS_DENIED',403);
   if(source)await this.backend.assertDependency(source,p.appId,p.apiId,personId);
   return response.result;

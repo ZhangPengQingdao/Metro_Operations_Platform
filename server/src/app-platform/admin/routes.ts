@@ -22,6 +22,7 @@ import {AppMigrationV2Error} from '../v2/migration.js';
 import {AppV2CallError} from '../v2/host.js';
 import {MopkgError} from '@metro/platform-sdk/mopkg';
 import {LocationDirectoryError} from '../../platform/locations/index.js';
+import {pendingReviewNotifications} from './pending-reviews.js';
 
 export interface AdminConsoleOptions {
  origin:string; identity:AdminIdentityService; pool:ConnectablePool;
@@ -82,9 +83,9 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(['APP_CAPABILITIES_NOT_SUPPORTED','DISABLE_REQUIRED'].includes(code))return reply.code(409).send({error:code});
    return reply.code(503).send({error:/^[A-Z][A-Z_]{3,80}$/.test(code)?code:'ADMIN_SERVICE_UNAVAILABLE'});
   });
-  async function withRegistry<T>(req:FastifyRequest,work:(service:AppRegistryService,context:PlatformAdministratorContext)=>Promise<T>) {
+  async function withRegistry<T>(req:FastifyRequest,work:(service:AppRegistryService,context:PlatformAdministratorContext,db:QueryableClient)=>Promise<T>) {
    const context=await createAdministratorContext(req,options.identity);const db=await options.pool.connect();
-   try{return await work(registry(db),context);}finally{db.release();}
+   try{return await work(registry(db),context,db);}finally{db.release();}
   }
   async function withData<T>(req:FastifyRequest,work:(service:ReturnType<typeof createAdminDataService>,context:PlatformAdministratorContext)=>Promise<T>) {
    const context=await createAdministratorContext(req,options.identity);const db=await options.pool.connect();
@@ -122,7 +123,13 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    const apps=await service.list(context);
    return {installed:apps.length,enabled:apps.filter(a=>a.enabled).length,attention:apps.filter(a=>a.lifecycle&&a.lifecycle.status!=='completed').length,runtimeConfigured:!!options.lifecycle,installConfigured:!!options.management};
   }));
-  scoped.get('/notifications',async req=>withRegistry(req,async(service,context)=>({notifications:(await service.list(context)).filter(app=>app.lifecycle&&app.lifecycle.status!=='completed'&&app.lifecycle.status!=='cancelled').map(app=>({id:app.id,title:`${app.manifest.name}：需要核对应用操作`,description:`${app.lifecycle!.action} / ${app.lifecycle!.status}`,path:'/admin/apps'}))})));
+  scoped.get('/notifications',async req=>withRegistry(req,async(service,context,db)=>{
+   const lifecycle=(await service.list(context)).flatMap(app=>app.lifecycle&&app.lifecycle.status!=='completed'&&app.lifecycle.status!=='cancelled'
+    ?[{id:app.id,title:`${app.manifest.name}：需要核对应用操作`,description:`${app.lifecycle.action} / ${app.lifecycle.status}`,path:'/admin/apps'}]:[]);
+   const reviews=(await context.authorize('platform.authorization.manage',{})).allowed
+    ?await pendingReviewNotifications(db):{total:0,notifications:[]};
+   return {total:lifecycle.length+reviews.total,notifications:[...reviews.notifications,...lifecycle]};
+  }));
   scoped.get('/capabilities',async()=>({capabilities:PLATFORM_CAPABILITY_CATALOG.map(({id,contractVersion,permissions})=>({id,contractVersion,permissions})),runtimeConfigured:!!options.lifecycle,installConfigured:!!options.management}));
   scoped.get<{Params:{appId:string}}>('/apps/:appId/history',async req=>withRegistry(req,(service,context)=>service.listHistory(context,req.params.appId)));
   scoped.post<{Params:{appId:string}}>('/apps/:appId/grants',{bodyLimit:16384},async req=>{

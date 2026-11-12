@@ -11,7 +11,7 @@ import {registerDeveloperApi} from '../src/app-platform/developer/routes.ts';
 import {registerEmployeeRoutes} from '../src/app-platform/employee/routes.ts';
 import {EmployeeIdentityService,EMPLOYEE_SESSION_COOKIE} from '../src/platform/employee-identity/index.ts';
 import {AppInterfaces} from '../src/app-platform/developer/app-interfaces.ts';
-import {validateAppManifestV2} from '@metro/platform-sdk/manifest';
+import {appApiExposure,validateAppManifestV2} from '@metro/platform-sdk/manifest';
 import {createAppServerContext} from '@metro/platform-sdk/server';
 import {readFile} from 'node:fs/promises';
 
@@ -98,7 +98,7 @@ test('public directory whitelist, paging, active relations and bearer/session ro
 test('manifest contracts and SDK helpers do not accept implicit exposure or undeclared dependencies',async()=>{
  const manifest=JSON.parse(await readFile(new URL('../../applications/faults/app.json',import.meta.url),'utf8'));
  assert.ok(validateAppManifestV2(manifest).ok);const api=manifest.api.find((a:any)=>a.expose);
- for(const change of [{permission:undefined},{expose:{...api.expose,mode:'write'}},{expose:{...api.expose,documentation:{...api.expose.documentation,input:{type:'object'}}}}])assert.equal(validateAppManifestV2({...manifest,api:[{...api,...change}]}).ok,false);
+ for(const change of [{permission:'missing'},{mode:'write'},{documentation:{...api.documentation,input:{type:'object'}}}])assert.equal(validateAppManifestV2({...manifest,api:[{...api,...change}]}).ok,false);
  for(const dependencies of [[{appId:'faults',apiId:'public-query'}],[{appId:'maintenance',apiId:'list'}]])assert.equal(validateAppManifestV2({...manifest,appAccess:dependencies}).ok,false);
  const calls:unknown[]=[];const ctx=createAppServerContext({appId:'demo',employee:{} as any,gateway:{invoke:async(...args:any[])=>{calls.push(args);return {};}} as any,signal:new AbortController().signal});
  await ctx.apps.call('faults','public-query',{});await ctx.directory.list('stations');assert.equal((calls[0] as any)[0],'platform.apps.call');assert.equal((calls[1] as any)[1].resource,'stations');
@@ -106,7 +106,7 @@ test('manifest contracts and SDK helpers do not accept implicit exposure or unde
 
 test('shared application adapter enforces input/output, dependencies and permission revocation before returning data',async()=>{
  const manifest=JSON.parse(await readFile(new URL('../../applications/faults/app.json',import.meta.url),'utf8')),api=manifest.api.find((a:any)=>a.expose);
- const entry={appId:'faults',appName:'故障',version:'1.1.0',revision:1,apiId:api.id,permission:'read',expose:api.expose};let allowed=true,dependency=true,revoke=false,revision=1,wrong=false,upgrade=false,scopeChange=false,accessKey='scope1',calls=0;
+ const entry={appId:'faults',appName:'故障',version:'1.1.0',revision:1,apiId:api.id,permission:'read',expose:appApiExposure(api)!};let allowed=true,dependency=true,revoke=false,revision=1,wrong=false,upgrade=false,scopeChange=false,accessKey='scope1',calls=0;
  const interfaces=new AppInterfaces({catalog:async()=>allowed?[{...entry,revision,accessKey}]:[],assertDependency:async()=>{if(!dependency)throw Error('DEPENDENCY_DENIED');},invoke:async()=>{calls++;if(revoke)allowed=false;if(upgrade)revision++;if(scopeChange)accessKey='scope2';return {ok:true,result:wrong?{secret:'bad'}:{rows:[],cursor:''}};}});
  const value={appId:'faults',apiId:api.id,input:{}};assert.deepEqual(JSON.parse(JSON.stringify(await interfaces.call('person',value))),{rows:[],cursor:''});
  await assert.rejects(interfaces.call('person',{...value,input:{personId:'forged'}}),/INVALID_PARAMS/);assert.equal(calls,1);

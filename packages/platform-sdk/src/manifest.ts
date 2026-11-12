@@ -1,3 +1,4 @@
+import {dashboardDocumentation} from './app-dashboard.js';
 import {isAppApiDocumentation,type AppApiDocumentation} from './app-api-documentation.js';
 import {isAppToolInputSchema,type AppToolDefinition} from './app-tools.js';
 /** Application model v2 manifest (app.json). Shared by the CLI and the platform; validation grants nothing. */
@@ -15,7 +16,44 @@ export type AppDataScope = typeof APP_DATA_SCOPES[number];
 
 export interface AppPermissionV2 { code: string; name: string; scopes?: AppDataScope[] }
 export interface AppPageV2 { path: string; title: string; permission?: string; nav?: boolean }
-export interface AppApiV2 { id: string; permission?: string; dashboard?: boolean; expose?: {mode:'read';title:string;documentation:AppApiDocumentation} }
+export interface AppApiExposure {mode:'read';title:string;documentation:AppApiDocumentation}
+/** One business contract; each consumer is an adapter over this same handler. */
+export interface AppApiV2 {
+  id:string;permission?:string;sharedPermissions?:string[];mode?:'read'|'draft'|'write';title?:string;documentation?:AppApiDocumentation;
+  dashboard?:boolean;
+  ai?:true|{examples?:string[];page?:string};
+  tool?:true;
+  /** true uses the API contract; object form is legacy package compatibility. */
+  expose?:true|'apps'|AppApiExposure;
+}
+export type AppAgentCapability=AppAgentV2&{sharedPermissions?:string[];draft?:boolean;execution?:'api';documentation?:AppApiDocumentation};
+export function appApiExposure(api:AppApiV2,channel?:'apps'|'developer'):AppApiExposure|undefined {
+  if(channel==='developer'&&api.expose==='apps')return undefined;
+  return api.expose===true||api.expose==='apps'?{mode:'read',title:api.title!,documentation:appApiDocumentation(api)!}:api.expose;
+}
+export function appApiDocumentation(api:AppApiV2):AppApiDocumentation|undefined {
+  if(api.documentation)return api.documentation;
+  if(typeof api.expose==='object')return api.expose.documentation;
+  return api.dashboard&&api.mode?dashboardDocumentation:undefined;
+}
+export function appApiReadOnly(manifest:AppManifestV2,api:AppApiV2):boolean {
+  return api.mode==='read'||api.mode==='draft'||!!api.dashboard||!!api.expose||!!manifest.tools?.some(tool=>tool.apiId===api.id);
+}
+export function appTools(manifest:AppManifestV2):AppToolDefinition[] {
+  return [...(manifest.tools??[]),...manifest.api.filter(api=>api.ai||api.tool).map(api=>({
+    id:api.id,apiId:api.id,name:api.title!,description:appApiDocumentation(api)!.description,
+    permission:api.permission??'',...(api.sharedPermissions?{sharedPermissions:api.sharedPermissions}:{}),mode:'read' as const,inputSchema:appApiDocumentation(api)!.input,
+  }))];
+}
+export function appAgents(manifest:AppManifestV2):AppAgentCapability[] {
+  return [...(manifest.agents??[]),...manifest.api.filter(api=>api.ai).map(api=>{
+    const documentation=appApiDocumentation(api)!;
+    const settings=typeof api.ai==='object'?api.ai:{};
+    return {id:api.id,apiId:api.id,name:api.title!,description:appApiDocumentation(api)!.description,
+      permission:api.permission??'',...(api.sharedPermissions?{sharedPermissions:api.sharedPermissions}:{}),page:settings.page??manifest.pages.find(p=>p.nav&&!p.path.includes(':'))?.path??manifest.pages.find(p=>!p.path.includes(':'))?.path??'/',
+      examples:settings.examples??documentation.examples.map(e=>e.title),...(api.mode==='draft'?{draft:true}:{}),execution:'api' as const,documentation};
+  })];
+}
 export interface AppDependencyV2 {appId:string;apiId:string}
 export interface AppLimitsV2 { memoryMiB?: number; timeoutSeconds?: number }
 export interface AppKnowledgeBaseV2 {
@@ -177,13 +215,34 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
   else {
     api.forEach((item: unknown, index) => {
       const path = `api[${index}]`;
-      if (!record(item) || Object.keys(item).some(key => !['id', 'permission', 'dashboard', 'expose'].includes(key))) { fail(path, '应只包含 id、permission、dashboard、expose'); return; }
+      if (!record(item) || Object.keys(item).some(key => !['id', 'permission', 'dashboard', 'expose','sharedPermissions','mode','title','documentation','ai','tool'].includes(key))) { fail(path, '应只包含 id、permission、dashboard、expose'); return; }
       if (typeof item.id !== 'string' || item.id.length > 64 || !ID.test(item.id)) fail(`${path}.id`, '接口 ID 应为小写字母开头、以连字符分隔的英文标识');
       else if (apiIds.has(item.id)) fail(`${path}.id`, '接口 ID 重复');
       else apiIds.add(item.id);
       if (item.permission !== undefined && !declared(item.permission)) fail(`${path}.permission`, '权限未在 permissions 中声明');
       if (item.dashboard !== undefined && item.dashboard !== true) fail(`${path}.dashboard`, '只能为 true');
-      if (item.expose !== undefined && (!record(item.expose) || Object.keys(item.expose).some(key=>!['mode','title','documentation'].includes(key)) || item.expose.mode !== 'read' || !text(item.expose.title,80) || !isAppApiDocumentation(item.expose.documentation) || item.expose.documentation.input.type !== 'object' || item.expose.documentation.input.additionalProperties !== false || !declared(item.permission))) fail(`${path}.expose`, '开放接口须声明业务权限、只读模式、标题及完整文档；输入须为封闭对象');
+      if (item.expose !== undefined && item.expose !== true && item.expose !== 'apps' && (!record(item.expose) || Object.keys(item.expose).some(key=>!['mode','title','documentation'].includes(key)) || item.expose.mode !== 'read' || !text(item.expose.title,80) || !isAppApiDocumentation(item.expose.documentation) || item.expose.documentation.input.type !== 'object' || item.expose.documentation.input.additionalProperties !== false || !declared(item.permission))) fail(`${path}.expose`, '开放接口须声明业务权限、只读模式、标题及完整文档；输入须为封闭对象');
+      if(item.mode!==undefined&&!['read','draft','write'].includes(String(item.mode)))fail(`${path}.mode`,'执行模式应为 read、draft 或 write');
+      if(item.title!==undefined&&!text(item.title,80))fail(`${path}.title`,'接口名称应为1–80个字符');
+      if(item.documentation!==undefined&&!isAppApiDocumentation(item.documentation))fail(`${path}.documentation`,'接口契约、示例或错误说明无效');
+      if(item.tool!==undefined&&item.tool!==true)fail(`${path}.tool`,'工具入口只能为 true');
+      if(item.ai!==undefined&&item.ai!==true){
+        if(!record(item.ai)||Object.keys(item.ai).some(key=>!['examples','page'].includes(key)))fail(`${path}.ai`,'AI 配置只包含 examples 和 page');
+        else {
+          const ai=item.ai;
+          if(item.ai.examples!==undefined&&(!Array.isArray(item.ai.examples)||!item.ai.examples.length||item.ai.examples.length>4||item.ai.examples.some(e=>!text(e,300))))fail(`${path}.ai.examples`,'AI示例应为1–4条短句');
+          if(item.ai.page!==undefined&&(!Array.isArray(pages)||!pages.some(p=>record(p)&&p.path===ai.page&&!String(p.path).includes(':'))))fail(`${path}.ai.page`,'需引用无参数页面');
+        }
+      }
+      if(item.sharedPermissions!==undefined&&(item.permission!==undefined||!Array.isArray(item.sharedPermissions)||!item.sharedPermissions.length||new Set(item.sharedPermissions).size!==item.sharedPermissions.length||!item.sharedPermissions.every(declared)))fail(`${path}.sharedPermissions`,'按业务参数授权的接口须列出可进入的业务权限');
+      if(item.ai||item.tool||item.expose===true||item.expose==='apps'){
+        if(!declared(item.permission)&&!Array.isArray(item.sharedPermissions))fail(path,'共享接口须明确绑定权限或列出可进入的业务权限');
+        const contract=item.documentation??(item.dashboard===true?dashboardDocumentation:undefined);
+        if((item.mode!=='read'&&item.mode!=='draft')||!text(item.title,80)||!isAppApiDocumentation(contract)||contract.input.type!=='object'||contract.input.additionalProperties!==false)fail(path,'共享接口须声明只读模式、名称及封闭输入输出契约');
+        if(item.ai&&(!Array.isArray(pages)||!pages.some(p=>record(p)&&typeof p.path==='string'&&!p.path.includes(':'))))fail(`${path}.ai`,'AI能力需要无参数的应用页面');
+      }
+      if(item.mode==='write'&&(item.dashboard||item.expose||Array.isArray(value.tools)&&value.tools.some(t=>record(t)&&t.apiId===item.id)))fail(path,'写接口不能声明为只读入口');
+      if(item.documentation&&record(item.expose))fail(path,'契约不能同时在接口及旧 expose 中声明');
       if (item.dashboard === true && item.permission === undefined) fail(`${path}.permission`, '工作台摘要接口必须声明权限');
     });
     if (api.filter(item => record(item) && item.dashboard === true).length > 1) fail('api', '最多一个工作台摘要接口');
@@ -234,6 +293,11 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
     });
   }
 
+  if(Array.isArray(api))for(const entry of api){
+    if(!record(entry))continue;
+    if((entry.ai||entry.tool)&&Array.isArray(value.tools)&&value.tools.some(t=>record(t)&&(t.id===entry.id||t.apiId===entry.id)))fail('tools','请移除与接口重复的旧工具声明');
+    if(entry.ai&&Array.isArray(value.agents)&&value.agents.some(a=>record(a)&&(a.id===entry.id||a.apiId===entry.id)))fail('agents','请移除与接口重复的旧编排声明');
+  }
   if (value.knowledgeBases !== undefined) {
     const bases = value.knowledgeBases, ids = new Set<string>();
     if (!Array.isArray(bases) || bases.length > 16) fail('knowledgeBases', '知识库应为不超过16项的数组');
@@ -269,7 +333,7 @@ export function validateAppManifestV2(value: unknown): AppManifestV2Result {
     permissions: (permissions as AppPermissionV2[]).map(p => ({ code: short(p.code), name: p.name, ...(p.scopes ? { scopes: [...p.scopes] } : {}) })),
     platformAccess: [...access as AppPlatformAccess[]],
     pages: (pages as AppPageV2[]).map(p => ({ path: p.path, title: p.title, ...(p.permission !== undefined ? { permission: short(p.permission) } : {}), ...(p.nav !== undefined ? { nav: p.nav } : {}) })),
-    api: (api as AppApiV2[]).map(a => ({ id: a.id, ...(a.permission !== undefined ? { permission: short(a.permission) } : {}), ...(a.dashboard ? { dashboard: true } : {}), ...(a.expose ? {expose:structuredClone(a.expose)} : {}) })),
+    api: (api as AppApiV2[]).map(a => ({ ...structuredClone(a), ...(a.sharedPermissions?{sharedPermissions:a.sharedPermissions.map(short)}:{}), id: a.id, ...(a.permission !== undefined ? { permission: short(a.permission) } : {}), ...(a.dashboard ? { dashboard: true } : {}), ...(a.expose ? {expose:structuredClone(a.expose)} : {}) })),
     ...(value.knowledgeBases !== undefined ? { knowledgeBases: (value.knowledgeBases as AppKnowledgeBaseV2[]).map(base => ({...base, readPermission: short(base.readPermission), writePermission: short(base.writePermission)})) } : {}),
     ...(value.agents !== undefined ? {agents: (value.agents as AppAgentV2[]).map(agent=>({...agent,permission:short(agent.permission),examples:[...agent.examples]}))} : {}),
     ...(value.tools !== undefined ? {tools:(value.tools as AppToolDefinition[]).map(tool=>({...tool,permission:short(tool.permission),inputSchema:structuredClone(tool.inputSchema)}))} : {}),

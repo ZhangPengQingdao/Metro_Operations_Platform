@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {createReformService,createReformHandlers} from './src/reform-service.mjs';
 import {annualMonths,relevantAnnual,reminderDue,parseWebhook,day} from './src/reform-rules.mjs';
-import {DEFAULT_PLAN_PROMPT,PLAN_PROMPT_MAX_LENGTH,planSystemPrompt} from './src/plan-prompt.mjs';
+import {DEFAULT_PLAN_PROMPT,DEFAULT_SUMMARY_PROMPT,PLAN_PROMPT_MAX_LENGTH,planSystemPrompt} from './src/plan-prompt.mjs';
 
 const migrations=await Promise.all((await readdir(new URL('./migrations/',import.meta.url))).filter(name=>name.endsWith('.json')).sort().map(async name=>JSON.parse(await readFile(new URL('./migrations/'+name,import.meta.url),'utf8'))));
 const schema={operations:migrations.flatMap(value=>value.operations)};
@@ -14,9 +14,8 @@ export function fixture(){
  const tables=new Map(schema.operations.filter(op=>op.kind==='createTable').map(op=>[op.table,new Map()])),people=[{id:person,name:'张三',employeeNo:'001',organizationUnitId:team},{id:colleague,name:'李四',employeeNo:'002',organizationUnitId:otherTeam},{id:outside,name:'外部门',employeeNo:'003',organizationUnitId:foreignTeam}];
  const orgs=new Map([[team,department],[otherTeam,department],[foreignTeam,otherDepartment]]),writes=[],sent=[],attachments=new Map(),recorded=new Map();let instant=new Date('2026-10-26T01:05:00Z'),aiResult={content:'完成AFC设备排查',qualityStandard:'提交排查清单',startDate:'2026-10-01',endDate:'2026-10-31',missingInfo:[]};
  const clone=value=>structuredClone(value);
- const hostEmployee=new AsyncLocalStorage();
+ const hostEmployee=new AsyncLocalStorage(),aiRequests=[];
  const gateway={async invoke(operation,payload){
-  if(operation==='platform.tools.call')return {ok:true,result:await result.service['tool-plan-reference'](payload.arguments,hostEmployee.getStore()??employee)};
   if(operation.startsWith('platform.knowledge.')){
    const e=hostEmployee.getStore()??employee,required=operation==='platform.knowledge.search'?['fill','corpus']:['corpus'];
    const grants=e.businessAuthorization.grants.filter(g=>required.includes(g.permission.split('.').at(-1)));
@@ -47,7 +46,11 @@ export function fixture(){
   }
   if(operation==='platform.people.members')return {organizationUnitId:payload.organizationUnitId,rows:people.filter(row=>row.organizationUnitId===payload.organizationUnitId&&(!payload.personIds||payload.personIds.includes(row.id))&&(!payload.search||row.name.includes(payload.search)||row.employeeNo.includes(payload.search)))};
   if(operation==='platform.attachments.list')return {attachments:clone(attachments.get(payload.entityId)??[]),nextCursor:null};
-  if(operation==='platform.ai.complete')return {content:JSON.stringify(aiResult)};
+  if(operation==='platform.ai.complete'){
+   aiRequests.push(clone(payload));
+   if(aiResult instanceof Error)throw aiResult;
+   return {content:typeof aiResult==='string'?aiResult:JSON.stringify(aiResult)};
+  }
   if(operation==='platform.webhook.send'){sent.push(payload);return {sent:true};}
   if(operation==='platform.app_data.get')return {row:clone(tables.get(payload.table)?.get(payload.id)??null)};
   if(operation==='platform.app_data.list'){
@@ -69,14 +72,15 @@ export function fixture(){
  result.service=Object.fromEntries(Object.entries(result.service).map(([name,run])=>[name,(input,e,signal)=>hostEmployee.run(e,()=>run(input,e,signal))]));
  const draft=(kind='monthly',extra={})=>({content:'AFC设备排查',qualityStandard:kind==='annual'?'':'提交排查清单',responsible:{personId:person,organizationUnitId:team},month:'2026-10',startDate:'2026-10-01',endDate:'2026-10-31',year:2026,startMonth:2,endMonth:5,...extra});
  const create=async(kind='monthly',extra={},actor=employee)=>{const id=randomUUID();await result.service['record-save']({id,requestId:randomUUID(),organizationId:department,kind,draft:draft(kind,extra),submit:kind==='monthly'},actor);return tables.get('work_records').get(id);};
- return {...result,department,otherDepartment,team,otherTeam,foreignTeam,person,colleague,outside,tables,people,writes,sent,attachments,gateway,employee,role,draft,create,setClock:value=>{instant=new Date(value);},setAi:value=>{aiResult=value;}};
+ return {...result,department,otherDepartment,team,otherTeam,foreignTeam,person,colleague,outside,tables,people,writes,sent,attachments,gateway,employee,role,draft,create,aiRequests,setClock:value=>{instant=new Date(value);},setAi:value=>{aiResult=value;}};
 }
 const write=(f,name,payload,actor=f.employee)=>f.service[name]({...payload,requestId:randomUUID()},actor);
 const review=(f,row,action='approve',comment='')=>write(f,'record-review',{id:row.id,expectedVersion:row.version,action,comment});
 
 test('five pages and granular permissions replace the entire legacy workflow',async()=>{
  const manifest=JSON.parse(await readFile(new URL('./app.json',import.meta.url),'utf8'));
- assert.deepEqual(manifest.pages.map(p=>p.title),['月度计划','督办提醒','年度计划','语料库','基础配置']);
+ assert.deepEqual(manifest.pages.filter(p=>p.nav).map(p=>p.title),['月度计划','督办提醒','年度计划','语料库','基础配置']);
+ assert.deepEqual(manifest.pages.find(p=>p.path==='/settings/prompts'),{path:'/settings/prompts',title:'基础配置',permission:'corpus',nav:false});
  assert.ok(!manifest.api.some(api=>/binding|category|cycle|signature|legacy|completion-review/.test(api.id)));
  const ui=await readFile(new URL('./src/plan-fields.jsx',import.meta.url),'utf8');assert.doesNotMatch(ui,/业务模块|更多选项|牵头人|拟提报中心/);
 });
@@ -218,14 +222,14 @@ test('term explanations can be created and edited, validate length and reach the
  assert.equal((await f.service['corpus-list']({organizationId:f.department},f.employee)).terms[0].explanation,'重新维护的解释');
 });
 
-test('unified plan agent asks for month then uses knowledge and returns a draft without writes',async()=>{
- const f=fixture(),agent=f.service['agent-plan'],first={message:'帮我整理AFC设备排查计划',history:[],today:'2026-12-27'};
- const question=await agent(first,f.employee);assert.equal(question.kind,'clarify');assert.match(question.text,/哪个月/);
+test('shared plan suggestion resolves trusted department and returns a draft without writes',async()=>{
+ const f=fixture(),suggest=f.service['plan-suggest'],input={month:'2027-01',rawText:'完成AFC设备排查'};
  const before=f.writes.length;
- const draft=await agent({message:'下个月',history:[{role:'user',content:first.message},{role:'assistant',content:question.text}],today:first.today},f.employee);
- assert.match(draft.text,/2027-01/);assert.match(draft.text,/AFC/);assert.match(draft.text,/尚未提交/);assert.equal(f.writes.length,before);
- await assert.rejects(agent({...first,message:'2026-11 完成AFC排查'},f.role(['read'])),/ACCESS_DENIED/);
- await assert.rejects(agent({...first,organizationId:f.otherDepartment},f.employee),/INVALID_INPUT/);
+ const draft=await suggest(input,f.employee);
+ assert.match(draft.content,/AFC/);assert.equal(f.writes.length,before);
+ await assert.rejects(suggest({rawText:input.rawText},f.employee),/INVALID_INPUT/);
+ await assert.rejects(suggest(input,f.role(['read'])),/ACCESS_DENIED/);
+ await assert.rejects(suggest({...input,organizationId:f.otherDepartment},f.employee),/ACCESS_DENIED/);
 });
 
 test('session reuses verified ancestor paths only within one request and preserves nearest departments',async()=>{
@@ -290,13 +294,25 @@ test('assignees include department employees, search by number and revalidate sc
 
 test('meeting extraction returns multiple editable drafts without writes and rejects invalid model output',async()=>{
  const f=fixture(),items=[{content:'检查车站设备',qualityStandard:'提交检查记录',endDate:'2026-11-02',ownerName:'张三'},{content:'补充备件',qualityStandard:'',endDate:null,ownerName:''}];
- f.setAi({items});const before=f.writes.length;
+ f.setAi(' \n```json\n'+JSON.stringify(items)+'\n``` \n');const before=f.writes.length;
  const result=await f.service['supervision-extract']({notes:'张三周一检查设备，另外要补充备件'},f.employee);
  assert.equal(result.items.length,2);assert.equal(result.items[1].endDate,'');assert.equal(f.writes.length,before);
  await assert.rejects(f.service['supervision-extract']({notes:'会议纪要'},f.role(['supervision_read'])),/ACCESS_DENIED/);
  await assert.rejects(f.service['supervision-extract']({notes:'字'.repeat(11501)},f.employee),/INVALID_INPUT/);
  f.setAi({items:[{...items[0],endDate:'2026-02-31'}]});await assert.rejects(f.service['supervision-extract']({notes:'会议纪要'},f.employee),/AI_INVALID_RESULT/);
  f.setAi({items:[]});assert.deepEqual((await f.service['supervision-extract']({notes:'暂无督办'},f.employee)).items,[]);
+});
+
+test('meeting extraction exposes actionable platform model failures without leaking meeting text',async()=>{
+ const f=fixture(),{handlers}=createReformHandlers(f.gateway);
+ const employee={...f.employee,requestId:randomUUID()},notes='会议正文不写入诊断日志',logs=[];
+ for(const [providerCode,code] of [['AI_NOT_CONFIGURED','AI_NOT_CONFIGURED'],['ACCESS_DENIED','AI_PERMISSION_DENIED'],['TIMEOUT','TIMEOUT'],['AI_UNAVAILABLE','AI_UNAVAILABLE']]){
+  f.setAi(Object.assign(Error('private upstream details'),{code:providerCode}));
+  const result=await handlers['supervision-extract']({notes},{employee,log:message=>logs.push(message)});
+  assert.deepEqual(result,{ok:false,error:{code,writeOutcome:'not_started',requestId:employee.requestId}});
+ }
+ assert.equal(logs.length,4);
+ assert.ok(logs.every(message=>!message.includes(notes)&&!message.includes('private upstream details')));
 });
 
 test('transcription requires supervision management independently of plan permissions',async()=>{
@@ -361,14 +377,14 @@ test('plan prompts are defaulted per department and only corpus maintainers can 
  assert.equal(foreign.prompt,DEFAULT_PLAN_PROMPT);assert.equal(foreign.version,0);
 });
 
-test('saved prompts reach both monthly suggestion and unified conversation, without changing other departments',async()=>{
+test('saved prompts reach explicit and trusted-default department calls, without changing other departments',async()=>{
  const f=fixture(),requests=[],invoke=f.gateway.invoke.bind(f.gateway);
  f.gateway.invoke=async(name,input,signal)=>{if(name==='platform.ai.complete')requests.push(input);return invoke(name,input,signal);};
  const prompt='借鉴相关示例的句式，补全工作对象、动作和成果要求。';
  await write(f,'plan-prompt-save',{organizationId:f.department,prompt,expectedVersion:0});
  const before=f.writes.length;
  await f.service['plan-suggest']({organizationId:f.department,month:'2026-11',rawText:'开展风险辨识工作'},f.role(['fill'],{self:true}));
- await f.service['agent-plan']({message:'2026-11 开展风险辨识工作',history:[],today:'2026-11-06'},f.role(['fill'],{self:true}));
+ await f.service['plan-suggest']({month:'2026-11',rawText:'开展风险辨识工作'},f.role(['fill'],{self:true}));
  assert.equal(requests.length,2);for(const request of requests)assert.equal(request.system,planSystemPrompt(prompt));
  const outsider=f.role(['fill'],{foreign:true,personId:f.outside,organizationUnitId:f.foreignTeam});
  await f.service['plan-suggest']({organizationId:f.otherDepartment,month:'2026-11',rawText:'开展设备检查'},outsider);
@@ -418,4 +434,45 @@ test('prompt limits fit the AI gateway contract and invalid preview/save inputs 
  assert.equal(calls,0);assert.equal(f.writes.length,0);
  await write(f,'plan-prompt-save',{...org,prompt:'字'.repeat(PLAN_PROMPT_MAX_LENGTH),expectedVersion:0});
  await f.service['plan-suggest']({...org,month:'2026-11',rawText:'测试计划'},f.employee);assert.equal(calls,1);
+});
+
+test('summaries use only the selected readable monthly records and their real status',async()=>{
+ const f=fixture(),first=await f.create(),second=await f.create('monthly',{content:'排查站台设备'});
+ const unselected=await f.create('monthly',{content:'未选计划'}),annual=await f.create('annual');
+ const foreign=await f.create('monthly',{content:'他人不可见计划',responsible:{personId:f.colleague,organizationUnitId:f.otherTeam}},
+  f.role(['fill','read'],{self:true,personId:f.colleague,organizationUnitId:f.otherTeam}));
+ await review(f,first);
+ const actor=f.role(['read'],{self:true}),input={organizationId:f.department,ids:[second.id,first.id,second.id]};
+ await write(f,'plan-prompt-save',{organizationId:f.department,kind:'summary',prompt:'按工作主题汇报。',expectedVersion:0});
+ f.setAi('  工作主题汇总\n已进入执行阶段  ');
+ const writes=f.writes.length;
+ const result=await f.service['plan-summary'](input,actor);
+ assert.deepEqual(result,{summary:'工作主题汇总\n已进入执行阶段'});
+ const [{system,prompt}]=f.aiRequests;
+ assert.match(system,/按工作主题汇报/);
+ const plans=JSON.parse(prompt).plans;
+ assert.deepEqual(plans.map(row=>[row.编号,row.状态]),[[second.number,'待审核'],[first.number,'执行中']]);
+ assert.ok(!prompt.includes(unselected.content)&&!prompt.includes(foreign.content)&&!prompt.includes('original_text'));
+ for(const id of [annual.id,foreign.id,randomUUID()])await assert.rejects(f.service['plan-summary']({...input,ids:[first.id,id]},actor),/ACCESS_DENIED/);
+ await assert.rejects(f.service['plan-summary'](input,f.role(['attachment_export'])),/ACCESS_DENIED/);
+ assert.equal(f.aiRequests.length,1);assert.equal(f.writes.length,writes);
+});
+
+test('summary prompts preserve the saved organize rule and test unsaved text without writing',async()=>{
+ const f=fixture(),org={organizationId:f.department},summary={...org,kind:'summary'};
+ assert.equal((await f.service['plan-prompt-get'](summary,f.employee)).prompt,DEFAULT_SUMMARY_PROMPT);
+ await write(f,'plan-prompt-save',{...org,prompt:'原整理规则',expectedVersion:0});
+ await write(f,'plan-prompt-save',{...summary,prompt:'按状态写总结',expectedVersion:0});
+ assert.equal((await f.service['plan-prompt-get'](org,f.employee)).prompt,'原整理规则');
+ assert.equal((await f.service['plan-prompt-get'](summary,f.employee)).prompt,'按状态写总结');
+ await assert.rejects(f.service['plan-prompt-get'](summary,f.role(['settings'])),/ACCESS_DENIED/);
+ f.setAi('测试总结');
+ const writes=f.writes.length;
+ assert.deepEqual(await f.service['plan-prompt-test']({...summary,prompt:'未保存的写法',month:'2026-10',rawText:'站台设备巡检已完成'},f.employee),{summary:'测试总结'});
+ assert.match(f.aiRequests[0].system,/未保存的写法/);
+ assert.equal(f.writes.length,writes);
+ const ids=[];
+ for(let index=0;index<12;index++)ids.push((await f.create('monthly',{content:'字'.repeat(500),qualityStandard:'验'.repeat(500)})).id);
+ await assert.rejects(f.service['plan-summary']({...org,ids},f.employee),/SUMMARY_INPUT_LIMIT/);
+ assert.equal(f.aiRequests.length,1);
 });

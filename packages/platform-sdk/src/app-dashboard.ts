@@ -1,3 +1,4 @@
+import type {AppApiDocumentation} from './app-api-documentation.js';
 import type {AppDataFilter,AppDataListOptions,AppDataRead} from './app-gateway.js';
 
 export interface AppDashboardSnapshot {
@@ -9,6 +10,17 @@ export interface AppDashboardSnapshot {
  series?:{kind:'line'|'heatmap';label:string;unit:string;points:{date:string;value:number}[]};
  items:{id:string;title:string;description?:string;occurredAt?:string}[];
 }
+/** Shared manifest documentation for the fixed workbench snapshot shape. */
+export const dashboardDocumentation:AppApiDocumentation={
+ description:'读取当前员工授权范围内的工作摘要，包含统计、近期记录及可选趋势。按照 scopeLabel 解释统计范围。',
+ input:{type:'object',properties:{},additionalProperties:false},
+ output:{type:'object',properties:{version:{type:'string',enum:['1.0']},generatedAt:{type:'string'},scopeLabel:{type:'string'},
+  metrics:{type:'array',items:{type:'object',properties:{id:{type:'string'},label:{type:'string'},value:{type:'integer'},unit:{type:'string'}},required:['id','label','value','unit'],additionalProperties:false}},
+  items:{type:'array',items:{type:'object'}},completion:{type:'object'},series:{type:'object'}},
+  required:['version','generatedAt','scopeLabel','metrics','items'],additionalProperties:false},
+ examples:[{title:'查看工作概况',params:{},result:{version:'1.0',generatedAt:'2026-11-12T00:00:00Z',scopeLabel:'当前授权范围',metrics:[{id:'total',label:'总数',value:0,unit:'项'}],items:[]}}],
+ errors:[{code:'ACCESS_DENIED',description:'无权查看工作摘要'}],
+};
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const text=(v:unknown,max:number):v is string=>typeof v==='string'&&v.trim().length>0&&v.length<=max&&!/[\x00-\x1f\x7f]/.test(v);
 const count=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;

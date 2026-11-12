@@ -1,5 +1,5 @@
 import {matchesAppContract} from '@metro/platform-sdk/app-api-documentation';
-import {matchesAppToolInput} from '@metro/platform-sdk/app-tools';
+import {appApiDocumentation,appApiReadOnly} from '@metro/platform-sdk/manifest';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { parseAppBackendEmployeeContext, type AppBackendEmployeeContext } from '@metro/platform-sdk/app-backend';
@@ -31,7 +31,7 @@ export interface AppHostV2Options {
   maintenanceBlocked?(): boolean;
   log?(line: string): void;
 }
-type ApiRequest = { apiId: string; method: string; path: string; payload: unknown };
+type ApiRequest = { apiId: string; method: string; path: string; payload: unknown; consumer?: 'tool' | 'integration' | 'dashboard' | 'chat' };
 /** Read-only directory operations an app page may call directly; everything else goes through the app's own API. */
 export const PAGE_PLATFORM_OPERATIONS = new Set(['platform.people.members', 'platform.people.organization_context', 'platform.locations.get', 'platform.locations.list', 'platform.locations.responsible_stations', 'platform.assets.get', 'platform.assets.list']);
 const PLATFORM_FAILURE = new Set(['APP_NOT_RUNNING', 'APP_BUSY', 'APP_PROCESS_EXITED', 'TIMEOUT', 'ABORTED', 'APP_START_FAILED', 'APP_START_TIMEOUT']);
@@ -41,7 +41,7 @@ export class AppHostV2 {
   private process: AppProcessV2 | null = null;
   private active: AppInstallation | null = null;
   /** Employee actor for each in-flight call, so the app's platform calls run with that employee bound. */
-  private readonly employees = new Map<string, {actor:PlatformPersonActorContext;signal?:AbortSignal;readOnly:boolean}>();
+  private readonly employees = new Map<string, {actor:PlatformPersonActorContext;signal?:AbortSignal;readOnly:boolean;noAppCalls:boolean}>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: AppHostV2Options) {}
@@ -152,16 +152,32 @@ export class AppHostV2 {
     const employee = parseAppBackendEmployeeContext({ version: '1.0', personId: actor.person.id, organizationUnitId: actor.person.organization.id, requestId, traceId: requestId, permissions, ...(business ? { businessAuthorization: business } : {}) });
     let payload: GatewayJson;
     try { payload = jsonSnapshot(request.payload, 60 * 1024); } catch { throw new AppV2CallError('INVALID_PAYLOAD', 400); }
-    const exposed=installation.runtime?.model==='v2'?installation.runtime.manifest.api?.find(entry=>entry.id===api.id)?.expose:undefined;
-    if(exposed&&!matchesAppContract(exposed.documentation.input,payload))throw new AppV2CallError('INVALID_PARAMS',400);
-    const tool=installation.runtime?.model==='v2'?installation.runtime.manifest.tools?.find(tool=>tool.apiId===api.id):undefined;
-    if(tool&&!matchesAppToolInput(tool.inputSchema,payload))throw new AppV2CallError('INVALID_PARAMS',400);
+    const source=installation.runtime?.model==='v2'?installation.runtime.manifest:undefined;
+    const definition=source?.api.find(entry=>entry.id===api.id);
+    if(request.consumer&&definition?.sharedPermissions&&!definition.sharedPermissions.some(code=>permissions.includes(`app.${this.options.appId}.${code}`)))throw new GatewayError('ACCESS_DENIED',403);
+    const documentation=definition?appApiDocumentation(definition):undefined;
+    const tool=source?.tools?.find(tool=>tool.apiId===api.id);
+    if(documentation&&!matchesAppContract(documentation.input,payload)||tool&&!matchesAppContract(tool.inputSchema,payload))throw new AppV2CallError('INVALID_PARAMS',400);
+    const readOnly=!!source&&!!definition&&appApiReadOnly(source,definition);
     const process = this.process;
     if (!process) throw new AppV2CallError('APP_NOT_RUNNING', 503);
-    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly:!!tool||!!exposed});
+    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly,noAppCalls:request.consumer==='tool'||!!tool||!!definition?.expose});
     try {
-      return jsonSnapshot(await process.call(api.handler, payload, employee, signal, requestId), 256 * 1024);
+      const result=jsonSnapshot(await process.call(api.handler, payload, employee, signal, requestId), 256 * 1024);
+      if(documentation){
+        // Existing function-table apps return an envelope. defineServer handlers can return the value directly.
+        const envelope=result!==null&&typeof result==='object'&&!Array.isArray(result)&&'ok' in result&&typeof result.ok==='boolean';
+        if(envelope&&result.ok===false){
+          if(!('error' in result)||!result.error||typeof result.error!=='object'||Array.isArray(result.error)||!('code' in result.error)||typeof result.error.code!=='string')throw new AppV2CallError('INVALID_RESULT',502);
+        }else{
+          const value=envelope?('result' in result?result.result:undefined):result;
+          if(!matchesAppContract(documentation.output,value))throw new AppV2CallError('INVALID_RESULT',502,readOnly?'not_started':'unknown');
+          if(request.consumer&&!envelope)return {ok:true,result};
+        }
+      }
+      return result;
     } catch (error) {
+      if (error instanceof AppV2CallError) throw error;
       if (error instanceof AppProcessError) throw new AppV2CallError(error.code, PLATFORM_FAILURE.has(error.code) ? 503 : 400, error.writeOutcome);
       throw new AppV2CallError('INVALID_RESULT', 502, 'unknown');
     } finally { this.employees.delete(requestId); }
@@ -192,7 +208,7 @@ export class AppHostV2 {
   /** Platform operation requested by the app process, executed as the app's service identity (and the bound employee). */
   private async platform(operation: string, params: unknown, callId: string | undefined): Promise<unknown> {
     const employee = callId ? this.employees.get(callId) : undefined;
-    if (employee?.readOnly && operation==='platform.apps.call') throw new GatewayError('OPERATION_DENIED',403);
+    if (employee?.noAppCalls && operation==='platform.apps.call') throw new GatewayError('OPERATION_DENIED',403);
     if (callId && !employee) throw new GatewayError('ACCESS_DENIED', 403);
     const response = await this.options.gateway.invokeHosted(this.options.appId, () => this.serviceIdentity(), { version: '1.0', operation, params: (params ?? null) as GatewayJson }, employee?.signal, employee ? async () => employee.actor : undefined,employee?.readOnly);
     return response.result;

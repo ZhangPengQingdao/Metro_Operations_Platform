@@ -82,7 +82,7 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{pool?:Connec
   if(options.pool)registerEmployeeDeveloperRoutes(scoped,{pool:options.pool,management:options.management,personId:ownerId});
   if(options.chat){
    const chat=options.chat;
-   scoped.get('/chat/capabilities',async req=>({capabilities:await chat.capabilities(await ownerId(req))}));
+   scoped.get('/chat/capabilities',async req=>({capabilities:(await chat.capabilities(await ownerId(req))).map(({key,id,appId,appName,name,description,examples,page})=>({key,id,appId,appName,name,description,examples,page}))}));
    scoped.get('/chats',async req=>({sessions:await chat.list(await ownerId(req))}));
    scoped.get<{Params:{id:string}}>('/chats/:id',async req=>chat.read(await ownerId(req),z.string().uuid().parse(req.params.id)));
    scoped.post('/chats/messages',{bodyLimit:8192},async(req,reply)=>{const input=chatMessageInput.parse(req.body);return reply.code(202).send(await chat.send(await ownerId(req),input));});

@@ -1,4 +1,5 @@
 import React from 'react';
+import {appApiExposure} from '@metro/platform-sdk/manifest';
 import type {AppDataScope,AppManifestV2} from '@metro/platform-sdk/manifest';
 
 const MAX_BYTES=50*1024*1024;
@@ -59,7 +60,7 @@ export function MopkgPreviewDetails({preview}:{preview:MopkgPreview}){
    <dt>平台能力</dt><dd>{manifest.platformAccess.length?manifest.platformAccess.map(code=>ACCESS_LABELS[code]??code).join('、'):'无'}{preview.change&&preview.change.addedPlatformAccess.length>0&&preview.installed&&<p className="afc-muted">新增：{preview.change.addedPlatformAccess.map(code=>ACCESS_LABELS[code]??code).join('、')}</p>}</dd>
    {preview.change&&preview.installed&&<><dt>权限变化</dt><dd>新增：{preview.change.addedPermissions.join('、')||'无'}；移除：{preview.change.removedPermissions.join('、')||'无'}</dd></>}
    <dt>页面</dt><dd>{manifest.pages.length?<ul className="mopkg-preview-list">{manifest.pages.map(page=><li key={page.path}>{page.title} <code>{page.path}</code>{page.nav&&<span className="afc-muted"> · 侧栏</span>}{page.permission&&<span className="afc-muted"> · {permissionName(page.permission)}</span>}</li>)}</ul>:'无'}</dd>
-   <dt>接口</dt><dd>{manifest.api.length?<ul className="mopkg-preview-list">{manifest.api.map(api=><li key={api.id}><code>{api.id}</code>{api.permission&&<span className="afc-muted"> · {permissionName(api.permission)}</span>}{api.expose&&<span className="afc-muted"> · 开放查询：{api.expose.title}</span>}{api.dashboard&&<span className="afc-muted"> · 工作台摘要</span>}</li>)}</ul>:'无'}</dd>
+   <dt>接口</dt><dd>{manifest.api.length?<ul className="mopkg-preview-list">{manifest.api.map(api=><li key={api.id}><code>{api.id}</code>{api.permission&&<span className="afc-muted"> · {permissionName(api.permission)}</span>}{api.sharedPermissions&&<span className="afc-muted"> · {api.sharedPermissions.map(permissionName).join(' / ')}</span>}{api.expose&&<span className="afc-muted"> · {api.expose==='apps'?'应用间查询':'开放查询'}：{appApiExposure(api)?.title}</span>}{api.ai&&<span className="afc-muted"> · AI / MCP</span>}{api.tool&&!api.ai&&<span className="afc-muted"> · 工具 / MCP</span>}{api.mode&&<span className="afc-muted"> · {api.mode==='read'?'只读':api.mode==='draft'?'生成草稿':'写入'}</span>}{api.dashboard&&<span className="afc-muted"> · 工作台摘要</span>}</li>)}</ul>:'无'}</dd>
    {!!manifest.appAccess?.length&&<><dt>跨应用依赖</dt><dd>{manifest.appAccess.map(item=><p key={`${item.appId}/${item.apiId}`}><code>{item.appId}/{item.apiId}</code> · 按当前员工权限查询</p>)}</dd></>}
    <dt>数据迁移</dt><dd>{preview.migrations.length?<ul className="mopkg-preview-list">{preview.migrations.map(migration=><li key={migration.id}><code>{migration.id}</code><span className="afc-muted"> · {migration.statements} 条结构语句</span></li>)}</ul>:'无'}</dd>
    <dt>文件</dt><dd>{preview.files.map(file=>`${file.path}（${size(file.bytes)}）`).join('、')}</dd>

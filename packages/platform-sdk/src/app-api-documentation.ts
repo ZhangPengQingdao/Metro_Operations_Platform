@@ -9,6 +9,8 @@ export interface AppContractSchema {
   additionalProperties?:boolean;
   items?:AppContractSchema;
   enum?:AppGatewayJson[];
+  minLength?:number;maxLength?:number;minimum?:number;maximum?:number;
+  minItems?:number;maxItems?:number;format?:'uuid';
 }
 export interface AppApiDocumentation {
   description:string;
@@ -45,9 +47,18 @@ export function isAppApiDocumentation(value:unknown):value is AppApiDocumentatio
     const text=(v:unknown,max=1024):v is string=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
     let nodes=0;
     const schema=(v:unknown,depth=0):v is AppContractSchema=>{
-      if(++nodes>128||depth>8||!object(v)||!keys(v,['type','description','properties','required','additionalProperties','items','enum'])||!['object','array','string','number','integer','boolean','null'].includes(String(v.type)))return false;
+      if(++nodes>128||depth>8||!object(v)||!keys(v,['type','description','properties','required','additionalProperties','items','enum','minLength','maxLength','minimum','maximum','minItems','maxItems','format'])||!['object','array','string','number','integer','boolean','null'].includes(String(v.type)))return false;
       if(v.description!==undefined&&!text(v.description))return false;
       if(v.enum!==undefined&&(!Array.isArray(v.enum)||!v.enum.length||v.enum.length>32))return false;
+      for(const [lo,hi,type] of [['minLength','maxLength','string'],['minItems','maxItems','array'],['minimum','maximum','number']] as const){
+        const a=v[lo],b=v[hi];
+        if(a!==undefined||b!==undefined){
+          if(v.type!==type&&!(type==='number'&&v.type==='integer'))return false;
+          if([a,b].some(n=>n!==undefined&&(typeof n!=='number'||!Number.isFinite(n)||(type!=='number'&&(!Number.isSafeInteger(n)||n<0)))))return false;
+          if(a!==undefined&&b!==undefined&&(a as number)>(b as number))return false;
+        }
+      }
+      if(v.format!==undefined&&(v.type!=='string'||v.format!=='uuid'))return false;
       if(v.type==='object') {
         if(v.items!==undefined||v.properties!==undefined&&(!object(v.properties)||Object.keys(v.properties).some(k=>k.length>128||['__proto__','constructor','prototype'].includes(k))||!Object.values(v.properties).every(s=>schema(s,depth+1))))return false;
         if(v.required!==undefined&&(!Array.isArray(v.required)||new Set(v.required).size!==v.required.length||v.required.some(k=>typeof k!=='string'||!object(v.properties)||!Object.hasOwn(v.properties,k))))return false;
@@ -68,11 +79,11 @@ export function matchesAppContract(schema:AppContractSchema,value:unknown,depth=
   if(schema.enum&&!schema.enum.some(item=>JSON.stringify(item)===JSON.stringify(value)))return false;
   switch(schema.type){
     case 'null':return value===null;
-    case 'string':return typeof value==='string';
+    case 'string':return typeof value==='string'&&value.length>=(schema.minLength??0)&&value.length<=(schema.maxLength??Infinity)&&(schema.format!=='uuid'||/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
     case 'boolean':return typeof value==='boolean';
-    case 'number':return typeof value==='number'&&Number.isFinite(value);
-    case 'integer':return typeof value==='number'&&Number.isSafeInteger(value);
-    case 'array':return Array.isArray(value)&&value.every(item=>!!schema.items&&matchesAppContract(schema.items,item,depth+1));
+    case 'number':return typeof value==='number'&&Number.isFinite(value)&&value>=(schema.minimum??-Infinity)&&value<=(schema.maximum??Infinity);
+    case 'integer':return typeof value==='number'&&Number.isSafeInteger(value)&&value>=(schema.minimum??-Infinity)&&value<=(schema.maximum??Infinity);
+    case 'array':return Array.isArray(value)&&value.length>=(schema.minItems??0)&&value.length<=(schema.maxItems??Infinity)&&value.every(item=>!!schema.items&&matchesAppContract(schema.items,item,depth+1));
     case 'object':{
       if(!value||typeof value!=='object'||Array.isArray(value))return false;
       const record=value as Record<string,unknown>;

@@ -1,10 +1,10 @@
 {
   "id": "signatures",
   "name": "在线签字",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "四种业务模板、签字列表与本人电子签名",
   "color": "#7C3AED",
-  "platform": ">=0.30.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -64,31 +64,147 @@
   ],
   "api": [
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
       "id": "templates",
-      "permission": "create"
+      "permission": "create",
+      "mode": "read",
+      "title": "查询签字模板"
     },
     {
-      "id": "members"
+      "id": "members",
+      "mode": "read",
+      "title": "查询可选人员"
     },
     {
-      "id": "list"
+      "id": "list",
+      "mode": "read",
+      "title": "查询签字记录",
+      "documentation": {
+        "description": "查询本人有权查看或参与签署的记录，保留查看和签署角色原有的数据范围。每页15条，nextCursor非空可翻页；这里只查询，不执行签字。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "templateKey": {
+              "type": "string",
+              "enum": [
+                "offline-training-sheet",
+                "competition-score-sheet",
+                "safety-meeting-ledger",
+                "employee-shift-adjustment"
+              ],
+              "maxLength": 25
+            },
+            "after": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "format": "uuid"
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "rows"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "查询签字记录",
+            "params": {},
+            "result": {
+              "rows": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "查看我的签字记录。"
+        ]
+      },
+      "expose": "apps",
+      "sharedPermissions": [
+        "read",
+        "sign"
+      ]
     },
     {
-      "id": "detail"
+      "id": "detail",
+      "mode": "read",
+      "title": "查询记录详情"
     },
     {
-      "id": "evidence"
+      "id": "evidence",
+      "mode": "read",
+      "title": "查询签字凭证"
     },
     {
       "id": "create",
-      "permission": "create"
+      "permission": "create",
+      "mode": "write",
+      "title": "创建记录"
     },
     {
       "id": "sign",
-      "permission": "sign"
+      "permission": "sign",
+      "mode": "write",
+      "title": "签署记录"
     }
   ],
   "limits": {

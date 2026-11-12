@@ -1,12 +1,12 @@
 import {Server,InMemoryTransport,ProtocolError,ProtocolErrorCode,type Tool} from '@modelcontextprotocol/server';
 import {Client} from '@modelcontextprotocol/client';
 import {z} from 'zod';
-import type {AppToolDefinition,AppToolInputSchema,AppToolInfo} from '@metro/platform-sdk/app-tools';
+import type {AppToolDefinition,AppToolInfo} from '@metro/platform-sdk/app-tools';
 import {GatewayError,type GatewayJson} from '../gateway/model.js';
 import {AppV2CallError} from '../v2/host.js';
 
 export type ToolScope={appId:string;personId:string};
-export type ToolBinding=AppToolDefinition&{installationId:string;revision:number};
+export type ToolBinding=AppToolDefinition&{installationId:string;revision:number;accessKey?:string};
 export interface ToolDependencies {
   catalog(scope:ToolScope):Promise<ToolBinding[]>;
   invoke(scope:ToolScope,tool:ToolBinding,args:unknown,signal:AbortSignal):Promise<unknown>;
@@ -28,6 +28,8 @@ export class AppToolService {
     let value:unknown;
     try{value=await this.deps.invoke(scope,tool,args,signal);}
     catch(error){if(error instanceof AppV2CallError)throw new GatewayError(error.code,error.statusCode);throw error;}
+    const fresh=(await this.deps.catalog(scope)).find(item=>item.id===tool.id);
+    if(!fresh||JSON.stringify(fresh)!==JSON.stringify(tool))throw new GatewayError('ACCESS_DENIED',403);
     const parsed=reply.safeParse(value);
     if(!parsed.success)throw new GatewayError('INVALID_RESULT',502);
     const result=parsed.data;
@@ -43,7 +45,7 @@ export class AppToolService {
       await client.connect(clientTransport,{signal,timeout:30000});
       if(!request.toolId){
         const result=await client.listTools(undefined,{signal,timeout:30000});
-        return {tools:result.tools.map(tool=>({id:tool.name,name:tool.title??tool.name,description:tool.description??'',mode:'read' as const,inputSchema:tool.inputSchema as unknown as AppToolInputSchema}))};
+        return {tools:result.tools.map(tool=>({id:tool.name,name:tool.title??tool.name,description:tool.description??'',mode:'read' as const,inputSchema:tool.inputSchema as unknown as AppToolInfo['inputSchema']}))};
       }
       const result=await client.callTool({name:request.toolId,arguments:request.arguments as Record<string,unknown>},{signal,timeout:30000});
       return result.structuredContent as {ok:true;result:GatewayJson}|{ok:false;error:{code:string}};

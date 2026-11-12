@@ -24,6 +24,9 @@ const dataNavigation:AdminApplication={id:'platform-data',name:'基础数据',na
  ['people','人员'],['organizations','组织与工班'],['positions','岗位'],['line-stations','线路与车站'],['asset-systems','设备系统'],['asset-categories','设备分类'],['asset-types','设备类型'],['assets','设备'],['dictionaries','公共字典']
 ].map(([id,label])=>({id,label,path:`/admin/data/${id}`}))};
 const accountNavigation:AdminApplication={id:'platform-accounts',name:'账号与权限',navigation:[{id:'administrators',label:'管理员账号',path:'/admin/accounts'},{id:'employees',label:'员工账号',path:'/admin/accounts/employees'},{id:'registrations',label:'注册审核',path:'/admin/accounts/registrations'}]};
+const appManagementNavigation:AdminApplication={id:'platform-apps',name:'应用管理',navigation:[
+ {id:'installed',label:'已安装应用',path:'/admin/apps'},{id:'submissions',label:'应用审核',path:'/admin/apps/submissions'}
+]};
 export function applicationNavigation(pathname: string, applications: AdminApplication[],base='/admin') {
   const app = applications.find(item => pathname === `${base}/app/${encodeURIComponent(item.id)}` || pathname.startsWith(`${base}/app/${encodeURIComponent(item.id)}/`));
   if (!app) return undefined;
@@ -56,7 +59,10 @@ export function AdminShell({mode='admin',user, applications, children, onLogout,
   const savedPanel=()=>{setPanel(null);setNotice('已保存。');};
   const account = useRef<HTMLDivElement>(null);
   const accountTrigger = useRef<HTMLButtonElement>(null);
-  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/')?accountNavigation:applicationNavigation(pathname, applications,base);
+  const app = pathname==='/admin/data'||pathname.startsWith('/admin/data/') ? dataNavigation
+    : pathname==='/admin/accounts'||pathname.startsWith('/admin/accounts/') ? accountNavigation
+    : pathname==='/admin/apps'||pathname==='/admin/apps/submissions' ? appManagementNavigation
+    : applicationNavigation(pathname, applications,base);
   const appMenu = app?.navigation??[];
   const hasSecondaryNavigation = appMenu.length > 1;
   const secondary = hasSecondaryNavigation && navigationMode !== 'primary';

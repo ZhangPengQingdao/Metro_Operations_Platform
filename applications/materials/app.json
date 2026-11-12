@@ -1,10 +1,10 @@
 {
   "id": "materials",
   "name": "物料管理",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "入库、出库、库存查询及关联冲销",
   "color": "#D97706",
-  "platform": ">=0.29.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read-stock",
@@ -128,56 +128,179 @@
   ],
   "api": [
     {
-      "id": "recipients"
+      "id": "recipients",
+      "mode": "read",
+      "title": "查询领用人员"
     },
     {
       "id": "update",
-      "permission": "update"
+      "permission": "update",
+      "mode": "write",
+      "title": "更新记录"
     },
     {
       "id": "correct-inbound",
-      "permission": "inbound"
+      "permission": "inbound",
+      "mode": "write",
+      "title": "更正入库"
     },
     {
       "id": "correct-outbound",
-      "permission": "modify-consumption"
+      "permission": "modify-consumption",
+      "mode": "write",
+      "title": "更正领用"
     },
     {
       "id": "create",
-      "permission": "create"
+      "permission": "create",
+      "mode": "write",
+      "title": "创建记录"
     },
     {
       "id": "inbound",
-      "permission": "inbound"
+      "permission": "inbound",
+      "mode": "write",
+      "title": "物资入库"
     },
     {
       "id": "outbound",
-      "permission": "outbound"
+      "permission": "outbound",
+      "mode": "write",
+      "title": "物资领用"
     },
     {
       "id": "reverse-inbound",
-      "permission": "inbound"
+      "permission": "inbound",
+      "mode": "write",
+      "title": "撤销入库"
     },
     {
       "id": "reverse-outbound",
-      "permission": "delete-consumption"
+      "permission": "delete-consumption",
+      "mode": "write",
+      "title": "撤销领用"
     },
     {
-      "id": "list"
+      "id": "list",
+      "mode": "read",
+      "title": "查询物资与领用记录",
+      "documentation": {
+        "description": "查询授权范围内物资库存、流水或领用记录，kind为materials、movements或consumptions。不同类型按原业务权限分别校验。可按物资ID或关键词筛选；nextCursor非空时有下一页，不能把本页数量当总数。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "materials",
+                "movements",
+                "consumptions"
+              ],
+              "maxLength": 12
+            },
+            "afterId": {
+              "type": "string",
+              "maxLength": 36,
+              "format": "uuid"
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "materialId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "只在查询流水或领用记录时使用",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "rows"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "查询物资与领用记录",
+            "params": {
+              "kind": "materials"
+            },
+            "result": {
+              "rows": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "查看物资库存。",
+          "查询最近的领用记录。"
+        ]
+      },
+      "expose": "apps",
+      "sharedPermissions": [
+        "read-stock",
+        "read-records"
+      ]
     },
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "bootstrap"
+      "id": "bootstrap",
+      "mode": "read",
+      "title": "读取页面初始数据"
     },
     {
       "id": "members",
-      "permission": "manage"
+      "permission": "manage",
+      "mode": "read",
+      "title": "查询可选人员"
     },
     {
       "id": "set-manager",
-      "permission": "manage"
+      "permission": "manage",
+      "mode": "write",
+      "title": "设置物资管理员"
     }
   ]
 }

@@ -1,10 +1,10 @@
 {
   "id": "hazards",
   "name": "隐患提报 · 识隐",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "隐患识别建议、提报、治理复审与闭环案例库",
   "color": "#EA580C",
-  "platform": ">=0.30.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -100,51 +100,178 @@
   ],
   "api": [
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "catalog"
+      "id": "catalog",
+      "mode": "read",
+      "title": "查询业务目录"
     },
     {
       "id": "list",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询隐患记录",
+      "documentation": {
+        "description": "查询授权范围内隐患，按创建时间倒序。支持状态、组织和关键词筛选；nextCursor非空时还有下一页，本页数量不是总数。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "pending_review",
+                "closed"
+              ],
+              "maxLength": 14
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "after": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "format": "uuid"
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "rows"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "查询隐患记录",
+            "params": {},
+            "result": {
+              "rows": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "查看还没有关闭的隐患。"
+        ]
+      },
+      "expose": "apps"
     },
     {
       "id": "detail",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询记录详情"
     },
     {
       "id": "cases",
-      "permission": "cases"
+      "permission": "cases",
+      "mode": "read",
+      "title": "查询隐患案例"
     },
     {
       "id": "suggest",
-      "permission": "create"
+      "permission": "create",
+      "mode": "read",
+      "title": "生成隐患建议"
     },
     {
       "id": "create",
-      "permission": "create"
+      "permission": "create",
+      "mode": "write",
+      "title": "创建记录"
     },
     {
       "id": "update",
-      "permission": "update"
+      "permission": "update",
+      "mode": "write",
+      "title": "更新记录"
     },
     {
       "id": "close",
-      "permission": "review"
+      "permission": "review",
+      "mode": "write",
+      "title": "审核关闭隐患"
     },
     {
-      "id": "photo-begin"
+      "id": "photo-begin",
+      "mode": "write",
+      "title": "开始上传图片"
     },
     {
-      "id": "photo-part"
+      "id": "photo-part",
+      "mode": "write",
+      "title": "上传图片分片"
     },
     {
-      "id": "photo-finish"
+      "id": "photo-finish",
+      "mode": "write",
+      "title": "完成图片上传"
     },
     {
       "id": "photo-read",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "读取隐患图片"
     }
   ],
   "limits": {

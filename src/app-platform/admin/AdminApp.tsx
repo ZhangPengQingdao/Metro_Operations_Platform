@@ -1,5 +1,6 @@
 import {readThemePreference} from '../identity/theme';
-import {NotificationList} from '../host/NotificationList';
+import {NotificationList,type NotificationListItem} from '../host/NotificationList';
+import {ApplicationReviewPage} from '../submissions/AppSubmissions';
 import {PasswordChangeRequired} from '../identity/PasswordChangeRequired';
 import {applicationStatus} from './application-status';
 import DeveloperPage from './DeveloperPage';
@@ -50,11 +51,40 @@ function AppsPage(){
 
  </>;
 }
-function NotificationsPanel({onNavigate}:{onNavigate:()=>void}){const {data,error}=useRead<{notifications:{id:string;title:string;description:string;path:string}[]}>('/notifications');return <><FailureNotifications error={error}/>{!error&&<NotificationList items={data?data.notifications.map(item=>({id:item.id,title:item.title,body:item.description,unread:true,href:'/admin/apps'})):null} emptyText="暂无待处理通知" onNavigate={onNavigate}/>}</>;}
-function FailureNotifications({error}:{error:string}){return error?<ErrorNotice error={error}/>:null;}
+type AdminNotifications={total:number;notifications:{id:string;title:string;description:string;path:string;createdAt?:string}[]};
+function useAdminNotifications(enabled:boolean){
+ const [data,setData]=useState<AdminNotifications|null>(null),[error,setError]=useState(''),[serial,setSerial]=useState(0);
+ const refresh=useCallback(()=>setSerial(value=>value+1),[]);
+ useEffect(()=>{
+  if(!enabled){setData(null);setError('');return;}
+  const controller=new AbortController();
+  let running=false;
+  async function load(){
+   if(running||document.visibilityState==='hidden')return;
+   running=true;
+   try{
+    const result=await adminRequest<AdminNotifications>('/notifications',{signal:controller.signal});
+    if(!controller.signal.aborted){setData(result);setError('');}
+   }catch(error){if(!controller.signal.aborted)setError(error instanceof Error?error.message:'通知暂时无法读取。');}
+   finally{running=false;}
+  }
+  void load();
+  const timer=setInterval(()=>void load(),30000);
+  window.addEventListener('focus',load);document.addEventListener('visibilitychange',load);
+  return ()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',load);document.removeEventListener('visibilitychange',load);};
+ },[enabled,serial]);
+ return {data,error,refresh};
+}
+function NotificationsPanel({data,error,refresh,onNavigate}:ReturnType<typeof useAdminNotifications>&{onNavigate:()=>void}){
+ useEffect(()=>refresh(),[refresh]);
+ const items:NotificationListItem[]|null=data?.notifications.map(item=>({id:item.id,title:item.title,body:item.description,unread:true,href:item.path,
+  time:item.createdAt?new Date(item.createdAt).toLocaleString('zh-CN',{hour12:false}):undefined}))??null;
+ return <>{error&&<ErrorNotice error={error} reload={refresh}/>} {(items||!error)&&<NotificationList items={items} emptyText="暂无待处理通知" onNavigate={onNavigate}/>}</>;
+}
 export default function AdminApp(){
  const location=useLocation(),navigate=useNavigate();const [user,setUser]=useState<AdminUser|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const [sessionAttempt,setSessionAttempt]=useState(0);
+ const notifications=useAdminNotifications(!!user&&!user.passwordChangeRequired);
  useEffect(()=>{
   const controller=new AbortController();setLoading(true);setError('');
   const expire=()=>{controller.abort();setUser(null);setError('');setLoading(false);};
@@ -70,6 +100,6 @@ export default function AdminApp(){
  if(!user)return <Navigate to="/login" replace/>;
  if(user.passwordChangeRequired)return <PasswordChangeRequired kind="admin" onChanged={()=>{setUser(null);navigate('/login',{replace:true});}}/>;
  if(location.pathname==='/admin/login'||location.pathname==='/admin/updates'||location.pathname==='/admin/audit')return <Navigate to="/admin" replace/>;
- const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts/registrations'?<RegistrationReview/>:path==='/admin/accounts/employees'?<EmployeeAccounts/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/developer'?<DeveloperPage/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
- return <AdminShell user={user} applications={[]} onLogout={logout} profileContent={<ProfileSections basic={<dl className="afc-details"><dt>账号</dt><dd>{user.username}</dd><dt>名称</dt><dd>{user.displayName}</dd></dl>} password={<PasswordPanel onChanged={()=>{setUser(null);navigate('/login');}}/>}/>} notificationsContent={onNavigate=><NotificationsPanel onNavigate={onNavigate}/>}>{content}</AdminShell>;
+ const path=location.pathname;const content=path==='/admin'?<Overview/>:path==='/admin/apps'?<AppsPage/>:path==='/admin/apps/submissions'?<ApplicationReviewPage onReviewed={notifications.refresh}/>:(path==='/admin/data'||path.startsWith('/admin/data/'))?<DataPage/>:path==='/admin/accounts/registrations'?<RegistrationReview onReviewed={notifications.refresh}/>:path==='/admin/accounts/employees'?<EmployeeAccounts/>:path==='/admin/accounts'?<AccountsPage/>:path==='/admin/developer'?<DeveloperPage/>:<section className="admin-card"><h1>页面不存在</h1><Link to="/admin">返回系统总览</Link></section>;
+ return <AdminShell user={user} applications={[]} onLogout={logout} profileContent={<ProfileSections basic={<dl className="afc-details"><dt>账号</dt><dd>{user.username}</dd><dt>名称</dt><dd>{user.displayName}</dd></dl>} password={<PasswordPanel onChanged={()=>{setUser(null);navigate('/login');}}/>}/>} notificationCount={notifications.data?.total??notifications.data?.notifications.length??0} notificationsContent={onNavigate=><NotificationsPanel {...notifications} onNavigate={onNavigate}/>}>{content}</AdminShell>;
 }

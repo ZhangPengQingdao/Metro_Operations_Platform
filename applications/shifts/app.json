@@ -1,10 +1,10 @@
 {
   "id": "shifts",
   "name": "晨会交接",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "交接班台账、晨会记录与本人签署",
   "color": "#DB2777",
-  "platform": ">=0.30.0",
+  "platform": ">=1.12.0 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -98,66 +98,215 @@
   "api": [
     {
       "id": "save-draft",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "write",
+      "title": "保存草稿"
     },
     {
       "id": "clear-draft",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "write",
+      "title": "清除草稿"
     },
     {
       "id": "load-draft",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "read",
+      "title": "读取草稿"
     },
     {
-      "id": "session"
+      "id": "session",
+      "mode": "read",
+      "title": "读取当前授权信息"
     },
     {
-      "id": "members"
+      "id": "members",
+      "mode": "read",
+      "title": "查询可选人员"
     },
     {
-      "id": "previous"
+      "id": "previous",
+      "mode": "read",
+      "title": "查询上一条交接记录"
     },
     {
       "id": "template",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "read",
+      "title": "读取填报模板"
     },
     {
       "id": "bootstrap",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "read",
+      "title": "读取页面初始数据"
     },
     {
       "id": "settings",
-      "permission": "config"
+      "permission": "config",
+      "mode": "read",
+      "title": "读取设置"
     },
     {
       "id": "configure",
-      "permission": "config"
+      "permission": "config",
+      "mode": "write",
+      "title": "更新配置"
     },
     {
       "id": "test-webhook",
-      "permission": "config"
+      "permission": "config",
+      "mode": "write",
+      "title": "发送测试消息"
     },
     {
       "id": "list",
-      "permission": "read"
+      "permission": "read",
+      "mode": "read",
+      "title": "查询晨会与交接班记录",
+      "documentation": {
+        "description": "查询授权范围内晨会或交接班记录，kind为meeting或handover。from/to格式YYYY-MM-DD；按记录时间倒序，每页10条。nextCursor非空时可翻页。",
+        "input": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "meeting",
+                "handover"
+              ],
+              "maxLength": 8
+            },
+            "organizationId": {
+              "type": "string",
+              "maxLength": 36,
+              "description": "可选的授权组织ID；省略使用接口默认范围，不能根据组织名称编造ID",
+              "format": "uuid"
+            },
+            "from": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "to": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "shiftType": {
+              "type": "string",
+              "enum": [
+                "day",
+                "night"
+              ],
+              "maxLength": 5
+            },
+            "search": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "after": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 36,
+                  "format": "uuid"
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "rows"
+          ],
+          "additionalProperties": true
+        },
+        "examples": [
+          {
+            "title": "查询晨会与交接班记录",
+            "params": {
+              "kind": "meeting"
+            },
+            "result": {
+              "rows": []
+            }
+          }
+        ],
+        "errors": [
+          {
+            "code": "ACCESS_DENIED",
+            "description": "没有操作权限或记录不在授权范围"
+          },
+          {
+            "code": "INVALID_INPUT",
+            "description": "业务参数无效"
+          },
+          {
+            "code": "INVALID_PARAMS",
+            "description": "参数不符合接口契约"
+          }
+        ]
+      },
+      "ai": {
+        "examples": [
+          "查看最近的晨会记录。",
+          "查询本月交接班记录。"
+        ]
+      },
+      "expose": "apps"
     },
     {
-      "id": "detail"
+      "id": "detail",
+      "mode": "read",
+      "title": "查询记录详情"
     },
     {
-      "id": "signature-image"
+      "id": "signature-image",
+      "mode": "read",
+      "title": "读取签名图片"
     },
     {
       "id": "save",
-      "permission": "submit"
+      "permission": "submit",
+      "mode": "write",
+      "title": "保存记录"
     },
     {
       "id": "delete-record",
-      "permission": "delete"
+      "permission": "delete",
+      "mode": "write",
+      "title": "删除记录"
     },
     {
       "id": "sign",
-      "permission": "sign"
+      "permission": "sign",
+      "mode": "write",
+      "title": "签署记录"
     }
   ],
   "limits": {
