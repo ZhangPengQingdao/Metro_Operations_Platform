@@ -31,6 +31,7 @@
 | POST | `/api/employee/apps/:appId/api` | 调用本应用接口 `{apiId,method,path,payload}` |
 | POST | `/api/employee/apps/:appId/v2-platform` | 页面直接只读查询目录 `{operation,params}` |
 | GET/POST | `/api/employee/apps/:appId/attachments` | 附件上传、列表与下载（经应用 `authorize-attachment` 授权） |
+| GET | `/api/employee/notifications/unread-count` | 当前员工可见的最近 50 条有效消息中未读的条数，返回 `{count}`，与消息列表口径一致 |
 | GET | `/api/employee/apps/:appId/dashboard` | 工作台摘要卡片 |
 
 Cookie `mop_employee_session` 有效期 8 小时，HttpOnly、SameSite=Strict，路径 `/api/employee`，HTTPS 下启用 Secure；数据库仅保存随机令牌的 SHA-256 摘要。写请求必须提供配置的同源 Origin。登录按 IP 限制每分钟 5 次；当前限流为单进程，横向部署需另行接入共享限流。

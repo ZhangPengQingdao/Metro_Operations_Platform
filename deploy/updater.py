@@ -250,7 +250,7 @@ class Deployment:
    api.pop('networks');api['network_mode']='service:database'
    api['depends_on']={'database':{'condition':'service_healthy'}}
    api['volumes'] += [apps+':'+apps,root+'/secrets/app-management.json:/run/secrets/app-management.json:ro']
-   proxy=":80 {\n handle /api/* {\n reverse_proxy database:3101\n }\n handle {\n root * /srv\n try_files {path} /index.html\n file_server\n }\n}\n"
+   proxy=':80 {\n  handle /api/* {\n    @bundles path /api/employee/apps/*/v2/*/ui.js /api/employee/apps/*/v2/*/ui.css\n    encode @bundles zstd gzip\n    reverse_proxy database:3101\n  }\n  handle /assets/* {\n    root * /srv\n    encode zstd gzip\n    header Cache-Control "public, max-age=31536000, immutable" {\n      match status 200 304\n    }\n    file_server\n  }\n  handle {\n    root * /srv\n    encode zstd gzip\n    header Cache-Control "no-cache"\n    try_files {path} /index.html\n    file_server\n  }\n}\n'
    if self.config.get('proxyMode')!='external':proxy=proxy.replace(':80 {',self.config['domain']+' {',1)
    proxy_file=directory/'Caddyfile';proxy_file.write_text(proxy);proxy_file.chmod(0o644)
    web['volumes'].append(str(proxy_file)+':/etc/caddy/Caddyfile:ro')

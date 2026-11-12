@@ -2,13 +2,24 @@
 export interface PlatformSites { employee: string; admin: string }
 
 let sites: PlatformSites | null = null;
-export async function loadPlatformSites(): Promise<PlatformSites> {
-  if (sites) return sites;
+let pending: Promise<PlatformSites> | null = null;
+export function loadPlatformSites(): Promise<PlatformSites> {
+  if (sites) return Promise.resolve(sites);
+  if (!pending) pending = fetchSites().finally(() => { pending = null; });
+  return pending;
+}
+
+async function fetchSites(): Promise<PlatformSites> {
+  const fallback = { employee: window.location.origin, admin: window.location.origin };
   try {
-    const value = await (await fetch('/api/platform/sites', { credentials: 'same-origin' })).json() as PlatformSites;
-    if (typeof value?.employee === 'string' && typeof value?.admin === 'string') sites = value;
-  } catch { /* older API: single site */ }
-  return sites ??= { employee: window.location.origin, admin: window.location.origin };
+    const response = await fetch('/api/platform/sites', { credentials: 'same-origin', signal: AbortSignal.timeout(5000) });
+    if (response.status === 404) return sites = fallback;
+    if (response.ok) {
+      const value = await response.json() as PlatformSites;
+      if (typeof value?.employee === 'string' && typeof value?.admin === 'string') return sites = value;
+    }
+  } catch { /* Retry on the next navigation after a transient failure. */ }
+  return fallback;
 }
 
 /** The site a hash route belongs to, or null when both sites serve it (login, registration). */

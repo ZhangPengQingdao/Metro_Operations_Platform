@@ -5,13 +5,14 @@ import {isPasswordCompliant,PASSWORD_POLICY_MESSAGE} from '../identity/password-
 import type {ManagedApplication} from './ManagedApplications';
 import {ProfileSections} from '../identity/ProfileSections';
 import {lazy,Suspense,useCallback,useEffect,useState} from 'react';
-import {Link,Navigate,useLocation,useNavigate} from 'react-router-dom';
+import {Navigate,useLocation,useNavigate} from 'react-router-dom';
 import {Button,Input,IconButton,PlatformIcon} from '../../components/ui';
 import {AdminShell,type AdminApplication} from '../admin/AdminShell';
 import '../admin/admin.css';
 import {employeeRequest,EmployeeRequestError} from './client';
 import {readThemePreference} from '../identity/theme';
-import {AppErrorBoundary,AppPageV2} from '../host/v2/AppPage';
+import {AppErrorBoundary} from '../host/v2/AppErrorBoundary';
+import {AppPageV2} from '../host/v2/AppPageEntry';
 
 const DeveloperPage=lazy(()=>import('../admin/DeveloperPage'));
 const ChatPage=lazy(()=>import('./ChatPage').then(module=>({default:module.ChatPage})));
@@ -37,7 +38,7 @@ export default function EmployeeApp(){
   const controller=new AbortController();setLoading(true);setSessionError('');
   const expired=()=>{controller.abort();setLoading(false);setSessionError('');setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);};
   window.addEventListener('mop-employee-session-expired',expired);
-  employeeRequest<Account>('/auth/me',{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setAccount(value);})
+  employeeRequest<Account>('/auth/me',{signal:controller.signal,timeoutMs:15000}).then(value=>{if(!controller.signal.aborted)setAccount(value);})
    .catch(e=>{if(!controller.signal.aborted&&!(e instanceof EmployeeRequestError&&e.status===401))setSessionError(e instanceof Error?e.message:'登录状态暂时无法读取。');})
    .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
   return()=>{controller.abort();window.removeEventListener('mop-employee-session-expired',expired);};
@@ -46,25 +47,48 @@ export default function EmployeeApp(){
   if(!account||account.passwordChangeRequired)return;
   const controller=new AbortController();
   // Each catalogue settles independently; optional management data must not block app entry.
-  let appsRunning=false,managedRunning=false;
+  let appsRunning=false,lastRefresh=0;
   async function refreshApps(){
-   if(appsRunning||controller.signal.aborted)return;appsRunning=true;
-   try{const value=await employeeRequest<{applications:App[]}>('/apps',{signal:controller.signal});if(!controller.signal.aborted){setApps(value.applications);setAppsLoaded(true);setCatalogError('');}}
+   if(appsRunning||controller.signal.aborted||document.visibilityState==='hidden'||Date.now()-lastRefresh<30000)return;appsRunning=true;lastRefresh=Date.now();
+   try{const value=await employeeRequest<{applications:App[]}>('/apps',{signal:controller.signal,timeoutMs:15000});if(!controller.signal.aborted){setApps(value.applications);setAppsLoaded(true);setCatalogError('');}}
    catch(e){if(!controller.signal.aborted){if(e instanceof EmployeeRequestError&&[401,403].includes(e.status)){setApps([]);setAppsLoaded(false);}setCatalogError(e instanceof Error?e.message:'应用列表暂时无法读取。');}}
    finally{appsRunning=false;}
   }
+  const refresh=()=>{void refreshApps();},expired=()=>controller.abort();
+  refresh();const timer=setInterval(refresh,30000);
+  window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('mop-employee-session-expired',expired);
+  return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('mop-employee-session-expired',expired);};
+ },[account?.id,account?.passwordChangeRequired,catalogAttempt]);
+ const managementPage=pathname==='/employee/apps';
+ useEffect(()=>{
+  if(!account||account.passwordChangeRequired||!managementPage)return;
+  const controller=new AbortController();let managedRunning=false,lastRefresh=0;
   async function refreshManaged(){
-   if(managedRunning||controller.signal.aborted)return;managedRunning=true;
-   try{const value=await employeeRequest<{applications:ManagedApplication[]}>('/managed-apps',{signal:controller.signal});if(!controller.signal.aborted){setOwned(value.applications);setManagedError('');}}
+   if(managedRunning||controller.signal.aborted||document.visibilityState==='hidden'||Date.now()-lastRefresh<30000)return;managedRunning=true;lastRefresh=Date.now();
+   try{const value=await employeeRequest<{applications:ManagedApplication[]}>('/managed-apps',{signal:controller.signal,timeoutMs:15000});if(!controller.signal.aborted){setOwned(value.applications);setManagedError('');}}
    catch(e){if(!controller.signal.aborted){if(e instanceof EmployeeRequestError&&[401,403].includes(e.status))setOwned([]);setManagedError(e instanceof Error?e.message:'应用管理列表暂时无法读取。');}}
    finally{managedRunning=false;}
   }
-  const refresh=()=>{void refreshApps();void refreshManaged();},expired=()=>controller.abort();
-  refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')refresh();},30000);
-  window.addEventListener('focus',refresh);window.addEventListener('mop-employee-session-expired',expired);
-  return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('mop-employee-session-expired',expired);};
- },[account?.id,account?.passwordChangeRequired,catalogAttempt]);
- useEffect(()=>{if(!account||account.passwordChangeRequired){setUnreadNotifications(0);return;}let active=true;let running=false;const controller=new AbortController();async function refresh(){if(running)return;running=true;try{const value=await employeeRequest<{notifications:{readAt?:string|null;readBehavior?:string;navigation?:{href?:string|null}|null}[]}>('/notifications',{signal:controller.signal});if(active)setUnreadNotifications(value.notifications.filter(item=>item.readBehavior==='state_bound'||!item.readAt).length);}catch(error){if(active&&!controller.signal.aborted)console.warn('读取通知失败',error);}finally{running=false;}}void refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh();},30000);const focus=()=>void refresh();window.addEventListener('focus',focus);window.addEventListener('mop-notification-read',focus);return()=>{active=false;controller.abort();clearInterval(timer);window.removeEventListener('focus',focus);window.removeEventListener('mop-notification-read',focus);};},[account?.id]);
+  const refresh=()=>{void refreshManaged();},expired=()=>controller.abort();
+  refresh();const timer=setInterval(refresh,30000);
+  window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);window.addEventListener('mop-employee-session-expired',expired);
+  return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);window.removeEventListener('mop-employee-session-expired',expired);};
+ },[account?.id,account?.passwordChangeRequired,managementPage,catalogAttempt]);
+ useEffect(()=>{
+  if(!account||account.passwordChangeRequired){setUnreadNotifications(0);return;}
+  const controller=new AbortController();let running=false,lastRefresh=0;
+  async function refresh(force=false){
+   if(running||controller.signal.aborted||document.visibilityState==='hidden'||!force&&Date.now()-lastRefresh<30000)return;
+   running=true;lastRefresh=Date.now();
+   try{const value=await employeeRequest<{count:number}>('/notifications/unread-count',{signal:controller.signal,timeoutMs:15000});if(!controller.signal.aborted)setUnreadNotifications(value.count);}
+   catch(error){if(!controller.signal.aborted)console.warn('读取通知失败',error);}
+   finally{running=false;}
+  }
+  const poll=()=>void refresh(),read=()=>void refresh(true),expired=()=>controller.abort();
+  poll();const timer=setInterval(poll,30000);
+  window.addEventListener('focus',poll);document.addEventListener('visibilitychange',poll);window.addEventListener('mop-notification-read',read);window.addEventListener('mop-employee-session-expired',expired);
+  return()=>{controller.abort();clearInterval(timer);window.removeEventListener('focus',poll);document.removeEventListener('visibilitychange',poll);window.removeEventListener('mop-notification-read',read);window.removeEventListener('mop-employee-session-expired',expired);};
+ },[account?.id,account?.passwordChangeRequired]);
  async function logout(){if(busy)return;setBusy(true);try{await employeeRequest('/auth/logout',{method:'POST'});setAccount(null);setApps([]);setAppsLoaded(false);setOwned([]);navigate('/login');}catch(e){setError(e instanceof Error?e.message:'退出失败');}finally{setBusy(false);}}
  if(loading)return <main className="afc-admin afc-theme-neutral afc-auth-loading" data-theme={readThemePreference()}><p role="status">正在加载…</p></main>;
  if(sessionError)return <main className="afc-admin afc-theme-neutral afc-auth-loading" data-theme={readThemePreference()}><p role="alert">{sessionError}</p><Button onClick={()=>setSessionAttempt(value=>value+1)}>重试读取登录状态</Button></main>;
@@ -78,7 +102,7 @@ export default function EmployeeApp(){
  <AppErrorBoundary key={pathname} onRetry={()=>window.location.reload()}><Suspense fallback={<p role="status">正在加载页面…</p>}>
  {/^\/employee\/app\/[^/]+\/~management$/.test(pathname)?<Navigate replace to={`/employee/apps/${pathname.split('/')[3]}`}/>:pathname.startsWith('/employee/apps/')?<Navigate replace to="/employee/apps"/>:pathname==='/employee/apps'?<ManagedApplications applications={owned}/>:pathname==='/employee/developer'?<DeveloperPage employee/>:pathname==='/employee/chat'||pathname.startsWith('/employee/chat/')?<ChatPage key={`${account.id}:${locationKey}`} name={account.name??account.username}/>:activeApp?null:pathname==='/employee/messages'?<><h1>消息</h1><EmployeeMessages/></>:<EmployeeDashboard key={account.id} apps={visibleApps} loaded={appsLoaded} onBusyChange={setDashboardBusy} settingsOpen={dashboardSettingsOpen} onSettingsClose={closeDashboardSettings}/>}
  </Suspense></AppErrorBoundary>
- {activeEntry&&<AppPageV2 key={`${account.id}:${activeEntry.appId}`} app={{appId:activeEntry.appId,name:activeEntry.name,runtimeRevision:activeEntry.runtimeRevision,v2:activeEntry.v2}} path={pathname.slice(`/employee/app/${activeEntry.appId}`.length)||'/'} onNavigate={openAppPath}/>}
+ {activeEntry&&<AppErrorBoundary key={`${account.id}:${activeEntry.appId}`} onRetry={()=>window.location.reload()}><Suspense fallback={<p role="status">正在加载应用…</p>}><AppPageV2 app={{appId:activeEntry.appId,name:activeEntry.name,runtimeRevision:activeEntry.runtimeRevision,v2:activeEntry.v2}} path={pathname.slice(`/employee/app/${activeEntry.appId}`.length)||'/'} onNavigate={openAppPath}/></Suspense></AppErrorBoundary>}
  {activeAppId&&!activeEntry&&!catalogError&&<p role="status">{appsLoaded?'应用不可用或访问权限已变更。':'正在加载应用…'}</p>}
  </AdminShell>;
 }

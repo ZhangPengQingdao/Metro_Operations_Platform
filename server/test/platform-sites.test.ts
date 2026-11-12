@@ -17,3 +17,22 @@ test('writes to /api/admin must come from the admin site, everything else from t
   assert.equal(expectedOrigin('/api/administrators', sites), 'https://ops.example');
   assert.equal(expectedOrigin('/api/admin/x', { origin: 'https://ops.example' }), 'https://ops.example');
 });
+
+test('concurrent navigations share the site lookup and recover after a transient failure',async t=>{
+  const {loadPlatformSites}=await import('../../src/app-platform/identity/sites.ts');
+  const origin='https://employee.example',sites={employee:origin,admin:'https://admin.example'};
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'window');
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{origin}}});
+  t.after(()=>{if(previous)Object.defineProperty(globalThis,'window',previous);else Reflect.deleteProperty(globalThis,'window');});
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async()=>{
+    if(++calls===1)throw new DOMException('Request timed out','TimeoutError');
+    return Response.json(sites);
+  });
+  const first=loadPlatformSites();
+  assert.equal(loadPlatformSites(),first);
+  assert.deepEqual(await first,{employee:origin,admin:origin});
+  assert.deepEqual(await loadPlatformSites(),sites);
+  assert.deepEqual(await loadPlatformSites(),sites);
+  assert.equal(calls,2);
+});

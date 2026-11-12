@@ -42,6 +42,26 @@ test('employee requests send the pinned admission and successful response',async
  assert.deepEqual(await employeeRequest('/apps/demo/api',{method:'POST',body:{},admissionKey:'pinned'}),{result:{ok:true}});
 });
 
+test('a stalled read or response body times out once, while caller cancellation stays an abort',async t=>{
+ for(const phase of ['fetch','body'] as const){
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async(_input,init)=>{
+   calls++;
+   const stalled=()=>new Promise((_,reject)=>init!.signal!.addEventListener('abort',()=>reject(init!.signal!.reason),{once:true}));
+   if(phase==='fetch')return stalled();
+   return {status:200,ok:true,json:stalled} as Response;
+  });
+  await assert.rejects(employeeRequest('/apps',{timeoutMs:10}),error=>error instanceof EmployeeRequestError&&error.code==='EMPLOYEE_READ_TIMEOUT');
+  assert.equal(calls,1);
+  t.mock.restoreAll();
+ }
+ const controller=new AbortController();
+ t.mock.method(globalThis,'fetch',async(_input,init)=>{
+  controller.abort();init!.signal!.throwIfAborted();throw Error('unreachable');
+ });
+ await assert.rejects(employeeRequest('/apps',{signal:controller.signal,timeoutMs:10}),{name:'AbortError'});
+});
+
 test('confirmed 401 expires the employee session even with a malformed body, but failed login does not',async t=>{
  const previous=Object.getOwnPropertyDescriptor(globalThis,'window'),events:string[]=[];
  Object.defineProperty(globalThis,'window',{configurable:true,value:{dispatchEvent:(event:Event)=>{events.push(event.type);return true;}}});

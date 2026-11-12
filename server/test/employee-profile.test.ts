@@ -35,6 +35,10 @@ test('employee self profile and password: identity fields protected, unverified 
  const session=await app.inject({url:'/api/employee/auth/me',headers});
  assert.equal(session.statusCode,200);assert.equal(session.json().name,'Employee');assert.equal(session.json().personId,person);
  assert.equal('password_hash' in session.json(),false);
+ const count=await app.inject({url:'/api/employee/notifications/unread-count',headers});
+ assert.equal(count.statusCode,200);assert.deepEqual(count.json(),{count:0});
+ assert.equal(count.headers['cache-control'],'no-store');
+ assert.equal((await app.inject({url:'/api/employee/notifications/unread-count'})).statusCode,401);
  const layoutUrl='/api/employee/dashboard-layout';
  const layout={version:1,cards:['faults','todos'],charts:['faults:series'],shortcuts:['todos']};
  const saveLayout=(payload:object,h=headers)=>app.inject({method:'PUT',url:layoutUrl,headers:h,payload});

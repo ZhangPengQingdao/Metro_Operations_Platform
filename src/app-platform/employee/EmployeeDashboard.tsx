@@ -15,16 +15,16 @@ const appHref=(app:DashboardApplication)=>`/employee/app/${app.appId}${(app.rout
 const formatTime=(value:string)=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 
 export function EmployeeDashboard({apps,loaded,onBusyChange,settingsOpen,onSettingsClose}:{settingsOpen:boolean;onSettingsClose:()=>void;apps:DashboardApplication[];loaded:boolean;onBusyChange:(busy:boolean)=>void}){
- const [revision,setRevision]=useState(0),[states,setStates]=useState<{key:string;cards:Record<string,CardState>}>({key:'',cards:{}}),[loading,setLoading]=useState(false);
+ const [states,setStates]=useState<{key:string;cards:Record<string,CardState>}>({key:'',cards:{}}),[loading,setLoading]=useState(false);
  const [layoutState,setLayoutState]=useState<{layout:DashboardLayout|null;revision:number}|null>(null),[layoutError,setLayoutError]=useState(''),[editing,setEditing]=useState(false);
- useEffect(()=>{const controller=new AbortController();employeeRequest<{layout:DashboardLayout|null;revision:number}>('/dashboard-layout',{signal:controller.signal}).then(value=>{
+ useEffect(()=>{const controller=new AbortController();employeeRequest<{layout:DashboardLayout|null;revision:number}>('/dashboard-layout',{signal:controller.signal,timeoutMs:15000}).then(value=>{
   if(value.layout!==null&&!isDashboardLayout(value.layout))throw Error('INVALID_LAYOUT');
   if(!controller.signal.aborted)setLayoutState(value);
  }).catch(()=>{if(!controller.signal.aborted)setLayoutError('个人布局暂不可用，当前显示默认布局。');});return()=>controller.abort();},[]);
  useEffect(()=>{
   if(!settingsOpen)return;
   const controller=new AbortController();
-  employeeRequest<{layout:DashboardLayout|null;revision:number}>('/dashboard-layout',{signal:controller.signal}).then(value=>{
+  employeeRequest<{layout:DashboardLayout|null;revision:number}>('/dashboard-layout',{signal:controller.signal,timeoutMs:15000}).then(value=>{
    if(value.layout!==null&&!isDashboardLayout(value.layout))throw Error('INVALID_LAYOUT');
    if(!controller.signal.aborted){setLayoutState(value);setLayoutError('');setEditing(true);}
   }).catch(()=>{if(!controller.signal.aborted){setLayoutError('无法读取个人布局，请稍后再试。');onSettingsClose();}});
@@ -39,23 +39,31 @@ export function EmployeeDashboard({apps,loaded,onBusyChange,settingsOpen,onSetti
  // Catalogue polling creates new objects; only authority/version/route changes restart requests.
  const key=JSON.stringify(apps.map(app=>[app.appId,app.version,app.runtimeRevision,app.dashboard,app.routes]));
  useEffect(()=>{
-  const controller=new AbortController(),sources=apps.filter(app=>app.dashboard);let next=0;
-  setStates(old=>old.key===key?old:{key,cards:{}});setLoading(sources.length>0);onBusyChange(sources.length>0);
-  async function worker(){
-   while(next<sources.length&&!controller.signal.aborted){
-    const app=sources[next++];let state:CardState;
-    try{
-     const value=await employeeRequest<unknown>(`/apps/${app.appId}/dashboard`,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});
-     if(!isAppDashboardSnapshot(value))throw Error('INVALID_DASHBOARD');
-     state={data:value};
-    }catch(error){state={error:error instanceof EmployeeRequestError&&error.status===403?'当前无权查看此摘要':'摘要暂不可用，可打开应用查看或稍后自动更新'};}
-    if(!controller.signal.aborted)setStates(old=>({key,cards:{...old.cards,[app.appId]:state}}));
+  const controller=new AbortController(),sources=apps.filter(app=>app.dashboard);
+  let running=false,lastRefresh=0;
+  setStates(old=>old.key===key?old:{key,cards:{}});
+  async function refresh(){
+   if(running||controller.signal.aborted||document.visibilityState==='hidden'||Date.now()-lastRefresh<60000)return;
+   running=true;lastRefresh=Date.now();let next=0;
+   setLoading(sources.length>0);onBusyChange(sources.length>0);
+   async function worker(){
+    while(next<sources.length&&!controller.signal.aborted){
+     const app=sources[next++];let state:CardState;
+     try{
+      const value=await employeeRequest<unknown>(`/apps/${app.appId}/dashboard`,{signal:controller.signal,timeoutMs:15000});
+      if(!isAppDashboardSnapshot(value))throw Error('INVALID_DASHBOARD');
+      state={data:value};
+     }catch(error){state={error:error instanceof EmployeeRequestError&&error.status===403?'当前无权查看此摘要':'摘要暂不可用，可打开应用查看或稍后自动更新'};}
+     if(!controller.signal.aborted)setStates(old=>({key,cards:{...old.cards,[app.appId]:state}}));
+    }
    }
+   try{await Promise.all(Array.from({length:Math.min(2,sources.length)},()=>worker()));}
+   finally{running=false;if(!controller.signal.aborted){setLoading(false);onBusyChange(false);}}
   }
-  void Promise.all(Array.from({length:Math.min(2,sources.length)},()=>worker())).finally(()=>{if(!controller.signal.aborted){setLoading(false);onBusyChange(false);}});
-  return()=>controller.abort();
- },[key,revision,onBusyChange]);
- useEffect(()=>{const refresh=()=>{if(document.visibilityState==='visible')setRevision(v=>v+1);};const timer=setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};},[]);
+  const poll=()=>void refresh();
+  poll();const timer=setInterval(poll,60000);document.addEventListener('visibilitychange',poll);
+  return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',poll);};
+ },[key,onBusyChange]);
  const cards=states.key===key?states.cards:{};
  const sources=apps.filter(app=>app.dashboard);
  const recent=sources.flatMap(app=>(cards[app.appId]?.data?.items??[]).map(item=>({app,item}))).sort((a,b)=>(b.item.occurredAt??'').localeCompare(a.item.occurredAt??'')).slice(0,5);

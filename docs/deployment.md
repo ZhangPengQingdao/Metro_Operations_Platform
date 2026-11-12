@@ -12,6 +12,12 @@ API 入口 `npm --prefix server start`；`HOST` 默认为 127.0.0.1，容器内�
 
 开发端口冲突时，可在根 `.env` 设置 `VITE_DEV_PORT`，同时修改 server/.env 中 `PUBLIC_BASE_URL` 和 `CORS_ORIGIN` 的端口。不要终止其他项目服务来占用端口。
 
+## 前端资源缓存
+
+自 1.12.2 起，Caddy 对构建生成的 `/assets/*` 成功响应设置一年不可变缓存，入口 HTML 使用 `no-cache` 以便升级时重新校验。缺失的构建资源返回 404。静态文本和版本化应用 JS/CSS 支持 gzip 和 zstd。应用文件沿用 API 的私有不可变缓存，员工会话和业务数据使用 `no-store`。
+
+启用业务应用的宿主由更新器生成并挂载 Caddyfile。已有宿主应在准备新版本前按现有流程同步受信更新器，否则 web 镜像内的缓存规则会被旧配置覆盖。验收时从公网域名检查入口、实际哈希 JS 及已授权应用 JS 的响应头，并用同一员工账号比较首次打开和再次切换的耗时。
+
 ## 应用
 
 - 配置：`MOP_APP_MANAGEMENT_CONFIG` 指向 `{"version":1,"artifactRoot":"…","uploadRoot":"…"}`（模板 `config/app-management.example.json`）。

@@ -60,10 +60,12 @@ export class AppDataServiceV2 {
     if (!(await context.authorize(write ? 'platform.app_data.write' : 'platform.app_data.read', {})).allowed) throw new GatewayError('ACCESS_DENIED', 403);
     const parsed = OPERATIONS.find(op => op.mode === mode)!.schema.parse(input);
     const schema = appSchemaName(installation.id);
+    const check = () => { if (signal.aborted) throw new GatewayError('ABORTED', 499); };
+    check();
     const client = await this.options.pool.connect();
     let open = false, committing = false;
-    const check = () => { if (signal.aborted) throw new GatewayError('ABORTED', 499); };
     try {
+      check();
       await client.query(write ? 'BEGIN' : 'BEGIN READ ONLY'); open = true;
       await client.query("SET LOCAL statement_timeout='5s'");
       await client.query("SET LOCAL lock_timeout='2s'");
@@ -129,6 +131,7 @@ export class AppDataServiceV2 {
       if (mode === 'read_batch') {
         const results: GatewayJson[] = [];
         for (const item of (parsed as z.infer<typeof readBatchInput>).operations) {
+          check();
           const table = `${q(schema)}.${q(item.table)}`, columns = columnSets.get(item.table)!;
           if ('kind' in item && item.kind === 'daily_count') {
             const daily = runtimeDailyCountQuery(item, columns);

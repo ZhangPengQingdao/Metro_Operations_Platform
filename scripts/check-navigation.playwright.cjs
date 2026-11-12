@@ -47,6 +47,7 @@ async (page) => {
     if(path.endsWith('/api'))return json({result:{ok:true}});
     if(path.endsWith('/icon'))return route.fulfill({status:204});
     if(path.endsWith('/notifications'))return json({notifications:[]});
+    if(path.endsWith('/notifications/unread-count'))return json({count:0});
     if(path.endsWith('/dashboard-layout'))return json({layout:null,revision:0});
     if(path.endsWith('/chat/capabilities'))return json({capabilities:[]});
     if(path.endsWith('/chats'))return json({sessions:[]});
@@ -58,12 +59,14 @@ async (page) => {
   const record=path=>page.getByTestId('record').filter({hasText:path}).waitFor();
   const mounts=()=>page.evaluate(()=>window.__mounts?.length??0);
   const waitRequest=async path=>{for(let i=0;i<100&&!requests.includes(path);i++)await new Promise(resolve=>setTimeout(resolve,20));check(requests.includes(path),`missing session request ${path}`);};
+  let now=Date.now();
+  const refocus=async()=>{now+=31000;await page.clock.setFixedTime(now);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));};
 
   try{
     await page.goto(`${origin}/#/employee/app/demo/records/one`);
     await record('/records/one');
     check(profileRequests===0,'app startup must not depend on profile');
-    check(managedRequests>0,'management request should start independently');
+    check(managedRequests===0,'business app startup must not load the management catalogue');
     releaseManaged();
     const initial=await mounts();
     hold('/records/two');
@@ -89,7 +92,7 @@ async (page) => {
 
     appsStatus=503;managedStatus=503;
     const priorApps=appsRequests;
-    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await refocus();
     await page.getByRole('alert').filter({hasText:'服务暂时不可用'}).waitFor();
     check(appsRequests>priorApps,'background refresh must run');
     await record('/records/fast');
@@ -101,7 +104,7 @@ async (page) => {
     await page.getByRole('alert').filter({hasText:'没有访问此页面的权限'}).waitFor();
     check(await page.getByTestId('record').count()===0,'real permission denial must not show old content');
     await navigate('/records/one');await record('/records/one');
-    appsVisible=false;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    appsVisible=false;await refocus();
     await page.getByText('应用不可用或访问权限已变更。').waitFor();
     check(await page.getByTestId('record').count()===0,'successful revocation must remove the app');
     appsVisible=true;
