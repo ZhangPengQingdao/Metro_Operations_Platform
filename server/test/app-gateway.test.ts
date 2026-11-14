@@ -82,6 +82,17 @@ test('bounded immutable params/results and errors never leak implementation deta
  f.setExecute(async()=>{throw new GatewayError('KNOWLEDGE_EMBEDDING_UNAVAILABLE',502);});await assert.rejects(f.call(),error=>error instanceof GatewayError&&error.code==='KNOWLEDGE_EMBEDDING_UNAVAILABLE'&&error.statusCode===502);
  await assert.rejects(f.gateway.invokeService(f.r.appId,f.issued.credential,{...f.request,params:{target:'x'.repeat(2000)}}),/PAYLOAD_TOO_LARGE/);
 });
+test('authorized long reads get extra time while ordinary operations retain the default deadline',async()=>{
+ const f=await gatewayFixture();
+ const longRead={...f.operation,name:'assets.long_read',readTimeoutMs:1000};
+ f.setExecute(async()=>{await new Promise(resolve=>setTimeout(resolve,100));return {ok:true};});
+ const options={registry:f.registry,contextResolver:f.resolver,operations:[f.operation,longRead],limits:{timeoutMs:50}};
+ const gateway=new AppGateway(options);
+ const invoke=(operation:string)=>gateway.invokeService(f.r.appId,f.issued.credential,{...f.request,operation});
+ await assert.rejects(invoke(f.operation.name),/TIMEOUT/);
+ assert.equal(((await invoke(longRead.name)).result as {ok:boolean}).ok,true);
+ assert.throws(()=>new AppGateway({...options,operations:[{...longRead,mode:'write'}]}),/Invalid gateway read timeout/);
+});
 test('timeouts retain slots until actual settlement and writes remain uncertain',async()=>{
  const f=await gatewayFixture({timeoutMs:20,concurrency:1});let resolve!:(v:unknown)=>void;
  f.setExecute(async(_ctx,_p,signal)=>new Promise(r=>{resolve=r;signal.addEventListener('abort',()=>assert.equal(signal.aborted,true));}));

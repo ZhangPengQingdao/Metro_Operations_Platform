@@ -334,6 +334,7 @@ export async function requestOpenAiMessage(
   };
 
   let response: Response;
+  const timeout = AbortSignal.timeout(config.timeoutMs);
   try {
     response = await fetchImpl(config.endpoint, {
       method: 'POST',
@@ -344,7 +345,7 @@ export async function requestOpenAiMessage(
       },
       body: JSON.stringify(body),
       redirect: 'error',
-      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(config.timeoutMs)]) : AbortSignal.timeout(config.timeoutMs)
+      signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
     });
   } catch (error) {
     throw new AiProviderTransportError(
@@ -354,6 +355,8 @@ export async function requestOpenAiMessage(
   }
 
   const payload = await response.json().catch(() => ({})) as OpenAiChatResponse;
+  options.signal?.throwIfAborted();
+  if (timeout.aborted) throw new AiProviderTransportError('在线模型请求超时', { code: 'AI_PROVIDER_TIMEOUT' });
   if (!response.ok) {
     throw new AiProviderTransportError(payload.error?.message || `在线模型返回 HTTP ${response.status}`, {
       code: 'AI_PROVIDER_HTTP_ERROR',

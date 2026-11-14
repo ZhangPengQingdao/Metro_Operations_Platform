@@ -136,7 +136,10 @@ test('annual range 2-5 includes all four months, is personal, and completion sto
  await write(f,'record-progress',{id:row.id,expectedVersion:1,summary:'',complete:true});assert.equal((await f.service['annual-hints']({organizationId:f.department,month:'2026-03'},f.employee)).rows.length,0);
 });
 test('annual import is batched, checks personnel and never duplicates a confirmed batch',async()=>{
- const f=fixture(),id=randomUUID(),rows=Array.from({length:5},(_,i)=>f.draft('annual',{content:`计划${i}`}));await write(f,'annual-import',{id,organizationId:f.department,rows,offset:0,total:6});assert.equal(f.tables.get('work_records').size,5);
+ const f=fixture(),id=randomUUID(),rows=Array.from({length:5},(_,i)=>f.draft('annual',{content:`计划${i}`,qualityStandard:i===0?'  提交排查清单  ':''}));await write(f,'annual-import',{id,organizationId:f.department,rows,offset:0,total:6});assert.equal(f.tables.get('work_records').size,5);
+ const stored=[...f.tables.get('work_records').values()];
+ assert.equal(stored.find(row=>row.content==='计划0').quality_standard,'提交排查清单');
+ assert.equal(stored.find(row=>row.content==='计划1').quality_standard,'');
  await assert.rejects(write(f,'annual-import',{id,organizationId:f.department,rows,offset:0,total:6}),/CONFLICT/);
  await write(f,'annual-import',{id,organizationId:f.department,rows:[f.draft('annual')],offset:5,total:6});assert.equal(f.tables.get('annual_imports').get(id).status,'completed');assert.equal(f.tables.get('work_records').size,6);
  const before=f.writes.length;await assert.rejects(write(f,'annual-import',{id:randomUUID(),organizationId:f.department,rows:[f.draft('annual',{startMonth:8,endMonth:2})],offset:0,total:1}),/ANNUAL_INVALID/);assert.equal(f.writes.length,before);

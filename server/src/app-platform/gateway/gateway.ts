@@ -9,6 +9,7 @@ import { GatewayAdmission, type GatewayLimits } from './limits.js';
 import { GatewayError, jsonSnapshot, parseGatewayRequest, type AppGatewayOperation, type AppGatewayResponse } from './model.js';
 /** Additional maximum wait for terminal audit acknowledgment after execution deadline. */
 const AUDIT_ACK_GRACE_MS = 100;
+const MAX_READ_TIMEOUT_MS = 120_000;
 export interface AppGatewayOptions {
   registry: Pick<AppRegistryService,'authenticateServiceCredential'>;
   contextResolver: Pick<PlatformActorContextResolver,'resolve'>;
@@ -31,6 +32,7 @@ export class AppGateway {
     if (options.operations.length > 256) throw new Error('Too many gateway operations');
     for(const op of options.operations) {
       if(!/^[a-z][a-z0-9._-]{0,99}$/.test(op.name) || !/^[a-z][a-z0-9._-]{0,199}$/.test(op.permissionCode) || !['read','write'].includes(op.mode) || this.operations.has(op.name)) throw new Error('Invalid gateway operation');
+      if(op.readTimeoutMs!==undefined&&(op.mode!=='read'||!Number.isSafeInteger(op.readTimeoutMs)||op.readTimeoutMs<1||op.readTimeoutMs>MAX_READ_TIMEOUT_MS)) throw new Error('Invalid gateway read timeout');
       this.operations.set(op.name,Object.freeze({...op}));
     }
   }
@@ -122,7 +124,8 @@ export class AppGateway {
       void boundedAudit(recordTerminal('failed',failure.code)).then(()=>rejectDeadline(failure),rejectDeadline);
     };
     controller.signal.addEventListener('abort',onAbort,{once:true});
-    const timer=setTimeout(abort,this.admission.limits.timeoutMs);
+    const started=performance.now();
+    let timer=setTimeout(abort,this.admission.limits.timeoutMs);
     if(controller.signal.aborted)onAbort();
     const run=async():Promise<AppGatewayResponse>=>{
       check();
@@ -157,6 +160,12 @@ export class AppGateway {
         for(const resource of resources) {if(!(await context.authorize(operation.permissionCode,resource)).allowed) throw new GatewayError('ACCESS_DENIED',403);check();}
       };
       await authorize(false);check();
+      if(operation.readTimeoutMs!==undefined){
+        clearTimeout(timer);
+        const remaining=operation.readTimeoutMs-(performance.now()-started);
+        if(remaining<=0){abort();check();}
+        timer=setTimeout(abort,remaining);
+      }
       writeStarted=operation.mode==='write';
       const result=jsonSnapshot(await operation.execute(context,request.params,controller.signal),this.admission.limits.resultBytes);check();
       if(!operation.validateResult(result)) throw new GatewayError('INVALID_RESULT',502);

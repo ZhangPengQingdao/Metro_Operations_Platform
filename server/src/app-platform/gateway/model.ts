@@ -12,6 +12,8 @@ export interface AppGatewayOperation {
   name: string;
   permissionCode: string;
   mode: 'read' | 'write';
+  /** Host-defined total deadline for a long-running read, after initial authorization. */
+  readTimeoutMs?: number;
   validateParams(value: GatewayJson): boolean;
   resolveResources(context: GatewayActorContext, params: GatewayJson): Promise<readonly AuthorizationResource[]>;
   execute(context: GatewayActorContext, params: GatewayJson, signal: AbortSignal): Promise<unknown>;

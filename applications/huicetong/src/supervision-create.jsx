@@ -16,7 +16,7 @@ const sourceErrors={
  MODEL_PROVIDER_FAILED:'语音服务未能识别该文件，请核对模型和音频格式。',
  AI_UNAVAILABLE:'平台聊天模型调用失败。请联系管理员测试聊天模型连接，或先手动填写督办。',
  AI_INVALID_RESULT:'模型没有返回可识别的督办事项，请重新整理或手动填写。',
- TIMEOUT:'模型整理超时，请缩短会议纪要后重试。',
+ TIMEOUT:'聊天模型未在规定时间内完成整理。请重试，或请管理员核对模型响应和超时设置。',
  UNSUPPORTED_FILE:'请选择 Word（.docx）、TXT 或 Markdown 文件。'
 };
 

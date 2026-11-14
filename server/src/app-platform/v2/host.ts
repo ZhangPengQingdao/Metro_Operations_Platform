@@ -161,9 +161,12 @@ export class AppHostV2 {
     const readOnly=!!source&&!!definition&&appApiReadOnly(source,definition);
     const process = this.process;
     if (!process) throw new AppV2CallError('APP_NOT_RUNNING', 503);
-    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal,readOnly,noAppCalls:request.consumer==='tool'||!!tool||!!definition?.expose});
+    const readLifetime=readOnly?new AbortController():undefined;
+    const callerSignal=readOnly||request.consumer?signal:undefined;
+    const platformSignal=readLifetime&&callerSignal?AbortSignal.any([readLifetime.signal,callerSignal]):readLifetime?.signal??callerSignal;
+    this.employees.set(requestId,{actor:actor as PlatformPersonActorContext,signal:platformSignal,readOnly,noAppCalls:request.consumer==='tool'||!!tool||!!definition?.expose});
     try {
-      const result=jsonSnapshot(await process.call(api.handler, payload, employee, signal, requestId), 256 * 1024);
+      const result=jsonSnapshot(await process.call(api.handler, payload, employee, callerSignal, requestId), 256 * 1024);
       if(documentation){
         // Existing function-table apps return an envelope. defineServer handlers can return the value directly.
         const envelope=result!==null&&typeof result==='object'&&!Array.isArray(result)&&'ok' in result&&typeof result.ok==='boolean';
@@ -180,7 +183,7 @@ export class AppHostV2 {
       if (error instanceof AppV2CallError) throw error;
       if (error instanceof AppProcessError) throw new AppV2CallError(error.code, PLATFORM_FAILURE.has(error.code) ? 503 : 400, error.writeOutcome);
       throw new AppV2CallError('INVALID_RESULT', 502, 'unknown');
-    } finally { this.employees.delete(requestId); }
+    } finally { readLifetime?.abort(); this.employees.delete(requestId); }
   }
 
   /**

@@ -1,10 +1,10 @@
 {
   "id": "huicetong",
   "name": "慧策通·计划督办",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "月度计划、上级督办、年度计划与AI语料管理",
   "color": "#059669",
-  "platform": ">=1.12.0 <2.0.0",
+  "platform": ">=1.12.3 <2.0.0",
   "permissions": [
     {
       "code": "read",
@@ -774,7 +774,7 @@
   ],
   "limits": {
     "memoryMiB": 128,
-    "timeoutSeconds": 30
+    "timeoutSeconds": 120
   },
   "knowledgeBases": [
     {
