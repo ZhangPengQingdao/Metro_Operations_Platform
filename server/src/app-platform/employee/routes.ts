@@ -132,10 +132,15 @@ export function registerEmployeeRoutes(app:FastifyInstance,options:{pool?:Connec
    reply.header('Cache-Control','private, max-age=300').header('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'").header('X-Content-Type-Options','nosniff');
    return reply.type(icon.contentType).send(icon.bytes);
   });
-  scoped.post<{Params:{appId:string}}>('/apps/:appId/api',{bodyLimit:65536},async req=>{
+  scoped.post<{Params:{appId:string}}>('/apps/:appId/api',{bodyLimit:65536},async(req,reply)=>{
    if(!options.management)throw new EmployeeIdentityError(503,'APP_MANAGEMENT_UNAVAILABLE');
    const input=z.object({apiId:z.string().min(1).max(100),method:z.enum(['GET','POST','PUT','PATCH','DELETE']),path:z.string().min(1).max(512),payload:z.unknown().refine(value=>value!==undefined)}).strict().parse(req.body);
-   return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>resolveRequestIdentity(req),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']))};
+   const controller=new AbortController(),abort=()=>controller.abort();
+   reply.raw.once('close',abort);
+   try{
+    if(reply.raw.destroyed)abort();
+    return {result:await options.management.invokeEmployeeApi(req.params.appId,()=>resolveRequestIdentity(req),{...input,payload:input.payload},z.string().min(1).max(256).parse(req.headers['x-mop-employee-admission']),controller.signal)};
+   }finally{reply.raw.off('close',abort);}
   });
   scoped.addContentTypeParser('application/octet-stream',(_req,body,done)=>done(null,body));
   let activeUploads=0;

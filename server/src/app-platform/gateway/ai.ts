@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getActiveAiRuntimeConfig, requestOpenAiMessage } from '../../core/integrations/ai/index.js';
+import { AiProviderTransportError, getActiveAiRuntimeConfig, requestOpenAiMessage } from '../../core/integrations/ai/index.js';
 import { GatewayError, type AppGatewayOperation } from './model.js';
 
 const input = z.object({
@@ -7,6 +7,7 @@ const input = z.object({
   prompt: z.string().trim().min(1).max(12000)
 }).strict();
 const output = z.object({ content: z.string().min(1).max(12000) }).strict();
+const MODEL_TIMEOUT_MS = 100_000;
 
 /** One bounded text completion. The platform owns credentials and endpoint policy. */
 export function createAiCompletionOperation(dependencies: {
@@ -17,6 +18,7 @@ export function createAiCompletionOperation(dependencies: {
   const request = dependencies.request ?? requestOpenAiMessage;
   return {
     name: 'platform.ai.complete', permissionCode: 'platform.ai.complete', mode: 'read',
+    readTimeoutMs: MODEL_TIMEOUT_MS + 5_000,
     validateParams: value => input.safeParse(value).success,
     resolveResources: async () => [{}],
     async execute(_context, value, signal) {
@@ -26,7 +28,7 @@ export function createAiCompletionOperation(dependencies: {
       catch { throw new GatewayError('AI_NOT_CONFIGURED', 503); }
       try {
         const message = await request(
-          { ...runtime, timeoutMs: Math.min(runtime.timeoutMs, 25_000) },
+          { ...runtime, timeoutMs: Math.min(runtime.timeoutMs, MODEL_TIMEOUT_MS) },
           [{ role: 'system', content: parsed.system }, { role: 'user', content: parsed.prompt }],
           [], fetch, { signal }
         );
@@ -34,7 +36,9 @@ export function createAiCompletionOperation(dependencies: {
         return { content: message.content };
       } catch (error) {
         if (error instanceof GatewayError) throw error;
-        throw new GatewayError(signal.aborted ? 'ABORTED' : 'AI_UNAVAILABLE', signal.aborted ? 499 : 502);
+        if (signal.aborted) throw new GatewayError('ABORTED', 499);
+        if (error instanceof AiProviderTransportError && error.code === 'AI_PROVIDER_TIMEOUT') throw new GatewayError('TIMEOUT', 504);
+        throw new GatewayError('AI_UNAVAILABLE', 502);
       }
     },
     validateResult: value => output.safeParse(value).success

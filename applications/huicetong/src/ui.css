@@ -46,6 +46,7 @@
 .hct-extension{padding-top:0}.hct-extension summary{cursor:pointer;font-size:14px;font-weight:500}.hct-extension[open] summary{margin-bottom:16px}
 .hct-settings-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:12px;padding-top:24px;border-top:1px solid var(--afc-color-line)}.hct-settings-heading h2{margin:0}
 .hct-import-content{min-width:260px}
+.hct-import-month select{min-width:104px}
 
 .hct-import-source summary{cursor:pointer;font-size:14px;font-weight:500;margin-bottom:18px}.hct-import-source:not([open]) summary{margin-bottom:0}.hct-import-content textarea.afc-control{min-height:76px}
 

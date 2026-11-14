@@ -6,7 +6,7 @@
 
 ## 已接通的应用能力
 
-- 文本生成：申请 ai.complete，使用 createPlatformAiClient(gateway).complete({system,prompt})。返回 content；当前不是通用结构化输出或模型自主工具循环接口。模型未配置返回 AI_NOT_CONFIGURED。
+- 文本生成：申请 ai.complete，使用 createPlatformAiClient(gateway).complete({system,prompt})。返回 content；当前不是通用结构化输出或模型自主工具循环接口。模型未配置返回 AI_NOT_CONFIGURED，模型请求超时返回 TIMEOUT。模型请求上限为 100 秒，应用子进程超时可通过 `limits.timeoutSeconds` 配置。
 - 应用知识库：声明 knowledgeBases，申请 knowledge.read / knowledge.write。支持授权组织内的文本条目管理、精确检索、文本或向量相似检索。索引不可用时的行为见知识库指南。
 - 统一对话：在业务接口上声明 `ai: true`，平台根据说明准备参数并执行。复杂编排仍可声明 agents。业务提交仍在应用页面完成。
 - 只读工具 / MCP：通过接口的 ai / tool 标记发布工具，调用本应用工具需申请 tools.read，createAppToolClient 查询和调用本应用工具；这是平台受管通道，不是任意外部 MCP 服务器接入。

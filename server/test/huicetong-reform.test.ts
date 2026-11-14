@@ -142,7 +142,8 @@ test('real Huicetong server entry runs its background hook and returns the raw a
 
 test('Huicetong meeting notes reach the platform model operation through real app IPC',async()=>{
  const {build}=await import('esbuild'),{AppProcessV2}=await import('../src/app-platform/v2/process.ts');
- const root=await mkdtemp(join(tmpdir(),'hct-minutes-')),notes='张三在11月13日前检查设备并提交清单。补充应急备件。';
+ const root=await mkdtemp(join(tmpdir(),'hct-minutes-'));
+ const notes=('与会人员听取设备运行情况、备件库存和各班组工作进展汇报。'.repeat(500)).slice(0,9975)+'张三在11月13日前检查设备并提交清单。补充应急备件。';
  let configured=true;
  const model=createAiCompletionOperation({
   config:async()=>{

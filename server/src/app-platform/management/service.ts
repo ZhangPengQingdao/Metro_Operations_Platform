@@ -248,9 +248,9 @@ export async function createAppManagement(configFile:string,origin:string){
    };
    return agent.execution==='api'?runApiAgent(agent,input,invoke,signal):invoke(input);
   },
-  async invokeEmployeeApi(appId:string,resolveIdentity:ResolveIdentity,request:{apiId:string;method:string;path:string;payload:unknown},admissionKey:string){
+  async invokeEmployeeApi(appId:string,resolveIdentity:ResolveIdentity,request:{apiId:string;method:string;path:string;payload:unknown},admissionKey:string,signal?:AbortSignal){
    assertOpen();const host=apps.findHost(appId);if(!host)throw new GatewayError('ACCESS_DENIED',403);
-   return host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),request);
+   return host.invokeEmployeeApi(employeeApi(appId,resolveIdentity,admissionKey),request,signal);
   },
   async authorizeEmployeeTranscription(appId:string,resolveIdentity:ResolveIdentity,admissionKey:string){
    assertOpen();
