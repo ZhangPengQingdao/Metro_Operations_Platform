@@ -128,6 +128,32 @@ test('admin notifications track new apps, owner updates and registrations throug
  assert.equal((await get('/api/admin/apps/another-app')).json().manifest.version,'1.1.0');
  assert.equal(installs,3);
  assert.equal((await notifications()).total,0);
+ const markUninstalled=async()=>{
+  const [row]=(await pg.query<{record:{revision:number}}>('SELECT record FROM platform_app_installations WHERE app_id=$1',['another-app'])).rows;
+  const record={...row.record,enabled:false,revision:row.record.revision+1,
+   lifecycle:{operationId:randomUUID(),action:'uninstall',status:'completed',startedAt:new Date().toISOString(),settledAt:new Date().toISOString()}};
+  await pg.query('UPDATE platform_app_installations SET revision=$2,record=$3 WHERE app_id=$1',['another-app',record.revision,JSON.stringify(record)]);
+ };
+ await markUninstalled();
+ actor=other;
+ assert.equal((await post('/api/employee/app-submissions',{kind:'update',requestId:randomUUID(),package:updatePackage})).statusCode,404);
+ const submitReinstall=()=>post('/api/employee/app-submissions',{kind:'new',requestId:randomUUID(),package:updatePackage});
+ const reinstall=await submitReinstall();assert.equal(reinstall.statusCode,200,reinstall.body);
+ const reinstallId=reinstall.json().id;
+ assert.equal((await submitReinstall()).json().id,reinstallId);
+ const reviewReinstall=(await get('/api/admin/app-submissions?submission='+reinstallId)).json().selected;
+ beforeClaim=markUninstalled;
+ const changed=await post('/api/admin/app-submissions/'+reinstallId+'/review',{revision:reviewReinstall.revision,decision:'approve',digest:updatePreview.sha256});
+ assert.equal(changed.statusCode,409,changed.body);assert.equal(changed.json().error,'SUBMISSION_TARGET_CHANGED');assert.equal(installs,3);
+ beforeClaim=undefined;
+ await post('/api/admin/app-submissions/'+reinstallId+'/review',{revision:reviewReinstall.revision,decision:'reject',reason:'重新提交'});
+ const freshReinstall=await submitReinstall();assert.equal(freshReinstall.statusCode,200,freshReinstall.body);
+ const freshId=freshReinstall.json().id,freshItem=(await get('/api/admin/app-submissions?submission='+freshId)).json().selected;
+ assert.equal((await post('/api/admin/app-submissions/'+freshId+'/review',{revision:freshItem.revision,decision:'approve',digest:updatePreview.sha256})).json().status,'completed');
+ assert.equal(installs,4);
+ assert.equal((await get('/api/admin/apps/another-app')).json().id,installed.id);
+ assert.equal((await submitReinstall()).statusCode,409);
+
 
  }finally{await app.close();await pg.close();}
 });

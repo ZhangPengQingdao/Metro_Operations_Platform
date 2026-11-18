@@ -5,7 +5,7 @@ import type { AppManifestV2 } from '@metro/platform-sdk/manifest';
 export interface InstallationGrant extends AppPermissionGrant { serviceIdentityId: string | null }
 export type AppFrontendRunMode = 'standard' | 'trusted';
 export function frontendRunMode(record:Pick<AppInstallation,'frontendRunMode'>):AppFrontendRunMode { return record.frontendRunMode === 'trusted' ? 'trusted' : 'standard'; }
-export type AppLifecycleAction = 'install' | 'enable' | 'disable' | 'upgrade' | 'rollback' | 'uninstall';
+export type AppLifecycleAction = 'install' | 'enable' | 'disable' | 'upgrade' | 'rollback' | 'uninstall' | 'reinstall';
 export interface AppLifecycleOperation {
   operationId: string;
   action: AppLifecycleAction;
@@ -50,4 +50,9 @@ export interface AppInstallationHistory {
 }
 export class AppRegistryError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'AppRegistryError'; }
+}
+
+/** A retained installation is available for package reinstallation only after uninstall has completed. */
+export function isAppUninstalled(record: Pick<AppInstallation, 'lifecycle'>): boolean {
+  return record.lifecycle?.action === 'uninstall' && record.lifecycle.status === 'completed';
 }

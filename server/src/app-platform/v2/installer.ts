@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { readMopkg } from '@metro/platform-sdk/mopkg';
 import type { AppManifestIssueV2 } from '@metro/platform-sdk/manifest';
-import { runDatabaseTransaction, type ConnectablePool } from '../../core/database/index.js';
+import { runAtomicOperation, runDatabaseTransaction, type ConnectablePool } from '../../core/database/index.js';
 import type { PlatformManagementContext } from '../../platform/context/index.js';
 import { previewAppPackageV2, summarizeInstallation } from './preview.js';
 import { approveInstalledPlatformGrants } from '../management/platform-grants.js';
-import type { AppInstallation, AppRegistryService, AppRuntimePackage } from '../registry/index.js';
+import {isAppUninstalled, type AppInstallation, type AppRegistryService, type AppRuntimePackage} from '../registry/index.js';
 import type { AppHostV2 } from './host.js';
 import { applyAppMigrationsV2 } from './migration.js';
 import { projectV2Manifest } from './projection.js';
@@ -62,6 +62,7 @@ export class AppInstallerV2 {
       if (record.enabled) record = await host.execute(context, { revision: record.revision, action: 'disable' });
     }
     const wasEnabled = !!existing?.enabled;
+    const reinstall = !!existing && isAppUninstalled(record);
 
     const client = await this.options.pool.connect();
     try {
@@ -70,9 +71,12 @@ export class AppInstallerV2 {
       });
     } finally { client.release(); }
 
-    if (existing && kind === 'upgrade') {
-      record = await registry.beginLifecycle(context, appId, record.revision, 'upgrade', projectFor(record));
-      record = await registry.settleLifecycle(context, appId, record.revision, record.lifecycle!.operationId, 'completed');
+    if (existing && (reinstall || kind === 'upgrade' && record.manifest.version !== manifest.version)) {
+      // Package switching has no external work between these transitions. Commit its history atomically.
+      record = await runAtomicOperation([registry], async () => {
+        const switching = await registry.beginLifecycle(context, appId, record.revision, reinstall ? 'reinstall' : 'upgrade', projectFor(record));
+        return registry.settleLifecycle(context, appId, switching.revision, switching.lifecycle!.operationId, 'completed');
+      });
     }
     if (existing && record.runtime?.sha256 !== preview.sha256) record = await registry.setRuntimePackage(context, appId, record.revision, runtime);
     // Upgrades clear the service identity and grants; issue them again for the new version.
@@ -81,6 +85,6 @@ export class AppInstallerV2 {
 
     const start = !existing || kind === 'reinstall' || wasEnabled;
     if (start) record = record.lifecycle ? await host.execute(context, { revision: record.revision, action: 'enable' }) : await host.install(context, record.revision);
-    return { state: !existing ? 'installed' : kind === 'upgrade' ? 'updated' : 'repaired', appId, version: manifest.version, enabled: record.enabled };
+    return { state: !existing || reinstall ? 'installed' : kind === 'upgrade' ? 'updated' : 'repaired', appId, version: manifest.version, enabled: record.enabled };
   }
 }

@@ -1,3 +1,5 @@
+import {compareAppVersions} from '@metro/platform-sdk/manifest';
+import {isAppUninstalled} from './model.js';
 import {isAppendOnlyStorageVersion} from '../manifest/storage-version.js';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -57,14 +59,17 @@ export class AppRegistryService {
       await admin(context, 'manage');
       const record = await this.require(appId, true);
       checkRevision(record, revision);
-      if (!['install','enable','disable','upgrade','rollback','uninstall'].includes(action)) throw new AppRegistryError('INVALID_LIFECYCLE_ACTION');
-      if (record.lifecycle && (!['completed','cancelled'].includes(record.lifecycle.status) || (record.lifecycle.status === 'completed' && record.lifecycle.action === 'uninstall'))) throw new AppRegistryError('LIFECYCLE_BLOCKED');
+      if (!['install','enable','disable','upgrade','rollback','uninstall','reinstall'].includes(action)) throw new AppRegistryError('INVALID_LIFECYCLE_ACTION');
+      const reinstall = action === 'reinstall' && isAppUninstalled(record);
+      if (action === 'reinstall' && !reinstall) throw new AppRegistryError('LIFECYCLE_BLOCKED');
+      if (record.lifecycle && (!['completed','cancelled'].includes(record.lifecycle.status) || (isAppUninstalled(record) && !reinstall))) throw new AppRegistryError('LIFECYCLE_BLOCKED');
       if (action === 'install' && (record.lifecycle || record.enabled)) throw new AppRegistryError('LIFECYCLE_BLOCKED');
-      const versionChange = action === 'upgrade' || action === 'rollback';
+      const versionChange = action === 'upgrade' || action === 'rollback' || action === 'reinstall';
       if (versionChange) {
         if (!parsed?.ok) throw new AppRegistryError('INVALID_MANIFEST');
         if (parsed.manifest.id !== record.appId || parsed.manifest.publisherId !== record.manifest.publisherId || !isAppendOnlyStorageVersion(record.manifest,parsed.manifest)) throw new AppRegistryError('IMMUTABLE_INSTALLATION');
-        if (parsed.manifest.version === record.manifest.version) throw new AppRegistryError('UNCHANGED_VERSION');
+        if (!reinstall && parsed.manifest.version === record.manifest.version) throw new AppRegistryError('UNCHANGED_VERSION');
+        if (reinstall && compareAppVersions(parsed.manifest.version, record.manifest.version) < 0) throw new AppRegistryError('INVALID_MANIFEST');
         if (!checkAppManifestCompatibility(parsed.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       } else if (parsed !== null) throw new AppRegistryError('UNEXPECTED_TARGET_MANIFEST');
       const now = this.clock().toISOString();
@@ -85,10 +90,10 @@ export class AppRegistryService {
       const op = record.lifecycle;
       if (!op || op.operationId !== operationId || ['completed','cancelled'].includes(op.status)) throw new AppRegistryError('LIFECYCLE_BLOCKED');
       if (!['completed','failed','cancelled'].includes(outcome)) throw new AppRegistryError('INVALID_LIFECYCLE_OUTCOME');
-      if (outcome === 'completed' && ['install','enable','upgrade','rollback'].includes(op.action) && !checkAppManifestCompatibility(op.targetManifest ?? record.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
+      if (outcome === 'completed' && ['install','enable','upgrade','rollback','reinstall'].includes(op.action) && !checkAppManifestCompatibility(op.targetManifest ?? record.manifest, await this.options.host()).ok) throw new AppRegistryError('INCOMPATIBLE_MANIFEST');
       record.enabled = outcome === 'completed' && (op.action === 'install' || op.action === 'enable');
-      if (outcome === 'completed' && (op.action === 'upgrade' || op.action === 'rollback')) record.manifest = structuredClone(op.targetManifest!);
-      if (outcome === 'completed' && ['upgrade','rollback','uninstall'].includes(op.action)) { record.grants = []; record.serviceIdentityId = null; record.credentialDigest = null; }
+      if (outcome === 'completed' && (op.action === 'upgrade' || op.action === 'rollback' || op.action === 'reinstall')) record.manifest = structuredClone(op.targetManifest!);
+      if (outcome === 'completed' && ['upgrade','rollback','uninstall','reinstall'].includes(op.action)) { record.grants = []; record.serviceIdentityId = null; record.credentialDigest = null; }
       op.status = outcome; op.settledAt = this.clock().toISOString();
       record.revision++; record.updatedAt = op.settledAt;
       await this.repository.saveLifecycle(record, revision);

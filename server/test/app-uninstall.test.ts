@@ -11,7 +11,9 @@ import {createMopkg,readMopkg} from '@metro/platform-sdk/mopkg';
 import {ADMIN_PASSWORD_SESSION_SQL} from '../src/setup/password-policy-migration.ts';
 import {ADMIN_IDENTITY_MIGRATION,AdminIdentityService,registerAdminIdentityRoutes} from '../src/core/admin-identity/index.ts';
 import {registerAdminConsoleRoutes} from '../src/app-platform/admin/routes.ts';
-import {AppRegistryService,MemoryAppRegistryRepository} from '../src/app-platform/registry/index.ts';
+import {AppRegistryService,PostgresAppRegistryRepository,APP_REGISTRY_SQL} from '../src/app-platform/registry/index.ts';
+import {AppInstallerV2} from '../src/app-platform/v2/installer.ts';
+import {APP_V2_SQL,applyAppMigrationsV2,appSchemaName} from '../src/app-platform/v2/migration.ts';
 import {AppHostV2} from '../src/app-platform/v2/host.ts';
 import {AppPackageStoreV2} from '../src/app-platform/v2/store.ts';
 import {previewAppPackageV2,summarizeInstallation} from '../src/app-platform/v2/preview.ts';
@@ -22,14 +24,19 @@ test('confirmed administrator uninstall stops the child, revokes access and reta
  const directory=await mkdtemp(join(tmpdir(),'mop-uninstall-')),db=new PGlite();
  const client={query:(sql:string,args?:readonly unknown[])=>db.query(sql,[...(args??[])]),release(){}};
  const pool={connect:async()=>client};
- await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);
+ await db.exec(ADMIN_IDENTITY_MIGRATION);await db.exec(ADMIN_PASSWORD_SESSION_SQL);await db.exec(APP_REGISTRY_SQL);await db.exec(APP_V2_SQL);
  const identity=new AdminIdentityService(pool);
  const account=await identity.bootstrap({username:'uninstall.admin',displayName:'Admin',password:'Administrator-test-123'});
  const context:PlatformAdministratorContext={actorType:'administrator',administrator:account,execution:{type:'platform'},request:{requestId:'test',traceId:'test',startedAt:new Date().toISOString()},authorize:async permissionCode=>({id:'decision',allowed:true,reasonCode:'allowed',permissionCode,subjectType:'administrator',effectiveScopes:[],decidedAt:new Date().toISOString()})};
- const registry=new AppRegistryService(new MemoryAppRegistryRepository(),{host:()=>({platformVersion:'1.12.3',capabilities:[],applications:[]}),authorization:{listPermissions:async()=>[]}});
+ const registry=new AppRegistryService(new PostgresAppRegistryRepository(client),{host:()=>({platformVersion:'1.12.3',capabilities:[],applications:[]}),authorization:{listPermissions:async()=>['platform.app_data.read','platform.app_data.write'].map(code=>({
+  id:code,code,name:code,description:null,status:'active' as const,createdAt:'',updatedAt:'',
+ }))}});
+ const initialMigration=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'createTable',table:'records',
+  columns:[{name:'id',type:'uuid',nullable:false},{name:'title',type:'text',nullable:false}],primaryKey:['id']}]});
  const bytes=createMopkg(Object.entries({
   'app.json':JSON.stringify({id:'uninstall-demo',name:'卸载测试',description:'测试应用',version:'1.0.0',platform:'>=1.0.0',permissions:[{code:'read',name:'读取'}],api:[{id:'read',permission:'read'}]}),
   'icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>',
+  'migrations/001-initial.json':initialMigration,
   'server.js':"export default {kind:'mop-server',version:1,hooks:{},handlers:{read:async()=>({ok:true})}};",
  }).map(([path,value])=>({path,data:new TextEncoder().encode(value)})));
  const preview=await previewAppPackageV2(bytes,{platformVersion:'1.12.3',findInstalled:async()=>null});
@@ -38,6 +45,9 @@ test('confirmed administrator uninstall stops the child, revokes access and reta
  await store.write('uninstall-demo',preview.sha256,files);
  const manifest=projectV2Manifest(preview.manifest,preview,path=>createHash('sha256').update(files.get(path)!).digest('hex'));
  let record=await registry.register(context,manifest,undefined,'standard',{model:'v2',sha256:preview.sha256,manifest:preview.manifest});
+ await applyAppMigrationsV2(client,record.id,[{id:'001-initial',text:initialMigration}]);
+ const rowId='11111111-1111-4111-8111-111111111111';
+ await db.query('INSERT INTO "'+appSchemaName(record.id)+'".records(id,title) VALUES($1,$2)',[rowId,'卸载前的数据']);
  const issued=await registry.issueServiceCredential(context,record.appId,record.revision);record=issued.installation;
  let failDrain=false,drains=0;
  const host=new AppHostV2({appId:record.appId,registry,store,gateway:{invokeHosted:async()=>{throw Error('unused');},drain:async()=>{drains++;if(failDrain){failDrain=false;throw Error('drain failed');}}},api:{contextResolver:{resolve:async()=>{throw Error('unused');}},authorize:async()=>false,businessAuthorization:async()=>{throw Error('unused');}},log:()=>{}});
@@ -75,5 +85,33 @@ test('confirmed administrator uninstall stops the child, revokes access and reta
   assert.ok((await registry.listHistory(context,record.appId)).some(h=>h.lifecycle?.action==='uninstall'&&h.lifecycle.status==='completed'));
   assert.ok(await readFile(join(store.directory(record.appId,preview.sha256),'server.js')));
   assert.equal(summarizeInstallation(record).uninstalled,true);
+  const installationId=record.id,historyBefore=(await registry.listHistory(context,record.appId)).length;
+  const installer=new AppInstallerV2({registry,pool,store,host:()=>host,platformVersion:()=> '1.12.3',
+   findInstallation:appId=>registry.runtimeSnapshot(appId)});
+  const packageWith=(version:string,migration=initialMigration,extra?:string)=>createMopkg([...files].map(([path,data])=>({
+   path,data:path==='app.json'?Buffer.from(JSON.stringify({...JSON.parse(data.toString()),version})):path==='migrations/001-initial.json'?Buffer.from(migration):data,
+  })).concat(extra?[{path:'migrations/002-note.json',data:Buffer.from(extra)}]:[]));
+  await assert.rejects(installer.install(context,packageWith('0.9.0')),/PACKAGE_INVALID/);
+  await assert.rejects(installer.install(context,packageWith('1.0.0',initialMigration+' ')),/MIGRATION_HISTORY_CHANGED/);
+  assert.equal(summarizeInstallation(await registry.get(context,record.appId)).uninstalled,true);
+  const reinstalled=await installer.install(context,bytes);
+  assert.equal(reinstalled.state,'installed');assert.equal(reinstalled.enabled,true);
+  record=await registry.get(context,record.appId);
+  assert.equal(record.id,installationId);assert.equal(record.manifest.version,'1.0.0');
+  assert.notEqual(record.serviceIdentityId,issued.installation.serviceIdentityId);
+  assert.ok(record.grants.some(grant=>grant.permissionCode==='platform.app_data.read'&&grant.status==='active'));
+  await assert.rejects(registry.authenticateServiceCredential(record.appId,issued.credential),/INVALID_CREDENTIAL/);
+  assert.equal((await host.status(context)).serving,true);
+  assert.ok((await registry.listHistory(context,record.appId)).length>historyBefore);
+  assert.equal((await db.query('SELECT title FROM "'+appSchemaName(record.id)+'".records WHERE id=$1',[rowId])).rows[0].title,'卸载前的数据');
+
+  record=await host.execute(context,{revision:record.revision,action:'uninstall'});
+  const additional=JSON.stringify({migrationVersion:'1.0',operations:[{kind:'addColumn',table:'records',column:{name:'note',type:'text',nullable:true}}]});
+  assert.equal((await installer.install(context,packageWith('1.1.0',initialMigration,additional))).enabled,true);
+  record=await registry.get(context,record.appId);
+  assert.equal(record.id,installationId);assert.equal(record.manifest.version,'1.1.0');
+  const restored=await db.query('SELECT title,note FROM "'+appSchemaName(record.id)+'".records WHERE id=$1',[rowId]);
+  assert.deepEqual(restored.rows,[{title:'卸载前的数据',note:null}]);
+
  }finally{await host.close();await app.close();await db.close();await rm(directory,{recursive:true,force:true});}
 });

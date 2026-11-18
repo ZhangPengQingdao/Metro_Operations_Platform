@@ -1,3 +1,5 @@
+import {compareAppVersions} from '@metro/platform-sdk/manifest';
+import {isAppUninstalled} from './model.js';
 import {isAppendOnlyStorageVersion} from '../manifest/storage-version.js';
 import { runAtomicOperation, type AtomicParticipant, type QueryableClient } from '../../core/database/index.js';
 import { validateAppManifest } from '../manifest/index.js';
@@ -90,13 +92,16 @@ function validateLifecycleTransition(current: StoredAppInstallation | null, next
   const expected = structuredClone(current);
   expected.revision = revision + 1; expected.updatedAt = next.updatedAt; expected.enabled = false;
   if (!prior || op.operationId !== prior.operationId) {
-    if (prior && (!['completed','cancelled'].includes(prior.status) || (prior.status === 'completed' && prior.action === 'uninstall'))) return reject();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(op.operationId) || !['install','enable','disable','upgrade','rollback','uninstall'].includes(op.action)) return reject();
+    const reinstall = op.action === 'reinstall' && isAppUninstalled(current);
+    if (op.action === 'reinstall' && !reinstall) return reject();
+    if (prior && (!['completed','cancelled'].includes(prior.status) || (isAppUninstalled(current) && !reinstall))) return reject();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(op.operationId) || !['install','enable','disable','upgrade','rollback','uninstall','reinstall'].includes(op.action)) return reject();
     if (op.action === 'install' && (prior || current.enabled)) return reject();
-    const versionChange = op.action === 'upgrade' || op.action === 'rollback';
+    const versionChange = op.action === 'upgrade' || op.action === 'rollback' || op.action === 'reinstall';
     if (versionChange) {
       const parsed = validateAppManifest(op.targetManifest);
-      if (!parsed.ok || !isDeepStrictEqual(parsed.manifest, op.targetManifest) || parsed.manifest.id !== current.appId || parsed.manifest.publisherId !== current.manifest.publisherId || parsed.manifest.version === current.manifest.version || !isAppendOnlyStorageVersion(current.manifest,parsed.manifest)) return reject();
+      if (!parsed.ok || !isDeepStrictEqual(parsed.manifest, op.targetManifest) || parsed.manifest.id !== current.appId || parsed.manifest.publisherId !== current.manifest.publisherId || (!reinstall && parsed.manifest.version === current.manifest.version) || !isAppendOnlyStorageVersion(current.manifest,parsed.manifest)) return reject();
+      if (reinstall && compareAppVersions(parsed.manifest.version, current.manifest.version) < 0) return reject();
     } else if (op.targetManifest !== null) return reject();
     expected.lifecycle = { operationId: op.operationId, action: op.action, status: 'running', baseManifest: structuredClone(current.manifest), targetManifest: structuredClone(op.targetManifest), startedAt: next.updatedAt, settledAt: null };
   } else {
@@ -104,11 +109,11 @@ function validateLifecycleTransition(current: StoredAppInstallation | null, next
     expected.lifecycle = { ...structuredClone(prior), status: op.status, settledAt: next.updatedAt };
     if (op.status === 'completed') {
       expected.enabled = prior.action === 'install' || prior.action === 'enable';
-      if (prior.action === 'upgrade' || prior.action === 'rollback') {
+      if (prior.action === 'upgrade' || prior.action === 'rollback' || prior.action === 'reinstall') {
         if (!prior.targetManifest) return reject();
         expected.manifest = structuredClone(prior.targetManifest);
       }
-      if (['upgrade','rollback','uninstall'].includes(prior.action)) { expected.grants = []; expected.serviceIdentityId = null; expected.credentialDigest = null; }
+      if (['upgrade','rollback','uninstall','reinstall'].includes(prior.action)) { expected.grants = []; expected.serviceIdentityId = null; expected.credentialDigest = null; }
     }
   }
   if (!isDeepStrictEqual(expected, next)) return reject();
