@@ -7,12 +7,13 @@ export const MOPKG_INSTALL_BLOCKED_REASON = '安装应用需要在平台配置�
 
 function installability(hasIssues: boolean, installed: InstalledAppSummary | null, change: AppPackageV2Preview['change'], available: boolean): Pick<AppPackageV2Preview, 'installable' | 'blockedReason'> {
   if (hasIssues || !change || change.kind === 'downgrade') return { installable: false, blockedReason: null };
+  if (installed?.uninstalled) return { installable: false, blockedReason: '此应用已卸载，保留的数据和历史记录不能通过上传安装包覆盖。' };
   if (!available) return { installable: false, blockedReason: MOPKG_INSTALL_BLOCKED_REASON };
   return { installable: true, blockedReason: null };
 }
 const PREVIEW_SCHEMA = `app_${'0'.repeat(32)}`;
 
-export interface InstalledAppSummary { version: string; permissions: string[]; platformAccess: string[]; enabled?: boolean }
+export interface InstalledAppSummary { version: string; permissions: string[]; platformAccess: string[]; enabled?: boolean; uninstalled?: boolean }
 export interface AppPackageV2Preview {
   format: 'mopkg';
   sha256: string;
@@ -35,8 +36,9 @@ export interface AppPackageV2Preview {
 /** Permission and platform-access view of an installation, for upgrade comparison. */
 export function summarizeInstallation(record: AppInstallation): InstalledAppSummary {
   const manifest = record.runtime?.manifest;
-  if (!manifest) return { version: record.manifest.version, permissions: [], platformAccess: [], enabled: record.enabled };
-  return { version: manifest.version, permissions: manifest.permissions.map(permission => appPermissionCode(manifest.id, permission.code)), platformAccess: [...manifest.platformAccess], enabled: record.enabled };
+  const uninstalled = record.lifecycle?.action === 'uninstall' && record.lifecycle.status === 'completed';
+  if (!manifest) return { version: record.manifest.version, permissions: [], platformAccess: [], enabled: record.enabled, uninstalled };
+  return { version: manifest.version, permissions: manifest.permissions.map(permission => appPermissionCode(manifest.id, permission.code)), platformAccess: [...manifest.platformAccess], enabled: record.enabled, uninstalled };
 }
 
 /** Read-only: parses and validates the package, nothing is written or installed. */

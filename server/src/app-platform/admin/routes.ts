@@ -70,7 +70,7 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    if(error instanceof AdminDataError)return reply.code(error.statusCode).send({error:error.code,message:error.message});
    if(error instanceof LocationDirectoryError)return reply.code(400).send({error:error.code,message:error.message});
    if(error instanceof AppRegistryError){
-    const clientErrors:Record<string,number>={STALE_REVISION:409,APP_NOT_FOUND:404,GRANT_NOT_FOUND:404,REGISTRY_ACCESS_DENIED:403,UNDECLARED_PERMISSION:400,PERMISSION_NOT_ACTIVE:400,INVALID_DATA_SCOPE:400,INVALID_GRANT_MODE:400,SERVICE_IDENTITY_MISMATCH:400,SERVICE_RELATIVE_SCOPE:400,UNEXPECTED_SERVICE_IDENTITY:400,INVALID_GRANT_INTERVAL:400,GRANT_LIMIT:409};
+    const clientErrors:Record<string,number>={STALE_REVISION:409,APP_NOT_FOUND:404,GRANT_NOT_FOUND:404,REGISTRY_ACCESS_DENIED:403,UNDECLARED_PERMISSION:400,PERMISSION_NOT_ACTIVE:400,INVALID_DATA_SCOPE:400,INVALID_GRANT_MODE:400,SERVICE_IDENTITY_MISMATCH:400,SERVICE_RELATIVE_SCOPE:400,UNEXPECTED_SERVICE_IDENTITY:400,INVALID_GRANT_INTERVAL:400,GRANT_LIMIT:409,LIFECYCLE_BLOCKED:409};
     return reply.code(clientErrors[error.code]??503).send({error:error.code});
    }
    if(error instanceof MopkgError)return reply.code(400).send({error:error.code});
@@ -142,7 +142,10 @@ export async function registerAdminConsoleRoutes(app:FastifyInstance,options:Adm
    return withRegistry(req,(service,context)=>service.revokeGrant(context,req.params.appId,body.revision,req.params.grantId));
   });
   scoped.post<{Params:{appId:string}}>('/apps/:appId/lifecycle',{bodyLimit:65536},async req=>{
-   const body=z.object({revision:z.number().int().positive(),action:z.enum(['enable','disable'])}).strict().parse(req.body);
+   const body=z.discriminatedUnion('action',[
+    z.object({revision:z.number().int().positive(),action:z.enum(['enable','disable'])}).strict(),
+    z.object({revision:z.number().int().positive(),action:z.literal('uninstall'),confirmed:z.literal(true)}).strict(),
+   ]).parse(req.body);
    const context=await createAdministratorContext(req,options.identity);
    const host=await options.lifecycle?.getHost(req.params.appId);
    if(!host)throw new AdminIdentityError(503,'APP_RUNTIME_NOT_CONFIGURED');

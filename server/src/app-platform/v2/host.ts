@@ -7,12 +7,12 @@ import type { TrustedActorIdentity } from '../../core/identity/index.js';
 import type { PlatformActorContext, PlatformActorContextResolver, PlatformManagementContext, PlatformPersonActorContext } from '../../platform/context/index.js';
 import type { AppGateway } from '../gateway/gateway.js';
 import { GatewayError, jsonSnapshot, type GatewayJson } from '../gateway/model.js';
-import type { AppInstallation, AppRegistryService } from '../registry/index.js';
+import { AppRegistryError, type AppInstallation, type AppRegistryService } from '../registry/index.js';
 import { AppProcessError, AppProcessV2, type AppProcessStatus } from './process.js';
 import type { AppPackageStoreV2 } from './store.js';
 
 /** Administrator lifecycle action; installing and upgrading go through `.mopkg` upload. */
-export interface AppLifecycleRequest { revision: number; action: 'enable' | 'disable' }
+export interface AppLifecycleRequest { revision: number; action: 'enable' | 'disable' | 'uninstall' }
 
 /** Error returned to the employee client; `code` may be the application's own error code. */
 export class AppV2CallError extends Error {
@@ -83,11 +83,16 @@ export class AppHostV2 {
   }
 
   /** Lifecycle: begin → start/stop the process → settle. A failed start settles as failed and leaves the app disabled. */
-  private async transition(context: PlatformManagementContext, revision: number, action: 'install' | 'enable' | 'disable') {
-    let record = await this.options.registry.beginLifecycle(context, this.options.appId, revision, action);
+  private async transition(context: PlatformManagementContext, revision: number, action: 'install' | 'enable' | 'disable' | 'uninstall') {
+    const current = action === 'uninstall' ? await this.options.registry.get(context, this.options.appId) : null;
+    if (current && current.revision !== revision) throw new AppRegistryError('STALE_REVISION');
+    // Reconcile the same interrupted uninstall; stopping a process is safe to repeat.
+    const resume = current?.lifecycle?.action === 'uninstall' && ['running', 'failed'].includes(current.lifecycle.status);
+    if (resume && !(await context.authorize('platform.authorization.manage', {})).allowed) throw new AppRegistryError('REGISTRY_ACCESS_DENIED');
+    let record = resume ? current! : await this.options.registry.beginLifecycle(context, this.options.appId, revision, action);
     const operationId = record.lifecycle!.operationId;
     try {
-      if (action === 'disable') await this.stopProcess();
+      if (action === 'disable' || action === 'uninstall') await this.stopProcess();
       else await this.startProcess(record);
     } catch (error) {
       await this.stopProcess().catch(() => undefined);
@@ -95,7 +100,7 @@ export class AppHostV2 {
       throw error instanceof AppProcessError ? new AppV2CallError(error.code, 409) : error;
     }
     record = await this.options.registry.settleLifecycle(context, this.options.appId, record.revision, operationId, 'completed');
-    if (action !== 'disable') this.active = record;
+    if (action === 'install' || action === 'enable') this.active = record;
     return record;
   }
 

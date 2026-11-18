@@ -11,4 +11,6 @@ test('application status distinguishes stopped, pending calls and interrupted li
  assert.equal(applicationStatus({...app,enabled:true},false),'运行中断，待核对');
  assert.equal(applicationStatus({...app,enabled:true},true),'正在运行');
  assert.equal(applicationStatus({...app,lifecycle:{action:'disable',status:'cancelled'}},false),'已停用');
+ assert.equal(applicationStatus({...app,lifecycle:{action:'uninstall',status:'completed'}},false),'已卸载');
+ assert.equal(applicationStatus({...app,lifecycle:{action:'uninstall',status:'failed'}},false),'卸载结果待核对');
 });

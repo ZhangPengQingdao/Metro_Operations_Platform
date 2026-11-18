@@ -133,6 +133,10 @@ test('preview compiles migrations, checks platform version and compares with the
   assert.match(fresh.icon!.dataUrl, /^data:image\/svg\+xml;base64,/);
   assert.equal(fresh.installable, false);
 
+  const uninstalled = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.26.0', installAvailable: true, findInstalled: async () => ({version:'1.0.0',permissions:[],platformAccess:[],uninstalled:true}) });
+  assert.equal(uninstalled.installable, false);
+  assert.match(uninstalled.blockedReason!, /已卸载/);
+
   const old = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.25.0', findInstalled: none });
   assert.equal(old.platform.compatible, false);
   assert.ok(old.issues.some(issue => issue.path === 'app.json#platform'));
