@@ -134,8 +134,14 @@ test('preview compiles migrations, checks platform version and compares with the
   assert.equal(fresh.installable, false);
 
   const uninstalled = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.26.0', installAvailable: true, findInstalled: async () => ({version:'1.0.0',permissions:[],platformAccess:[],uninstalled:true}) });
-  assert.equal(uninstalled.installable, false);
-  assert.match(uninstalled.blockedReason!, /已卸载/);
+  assert.equal(uninstalled.installable, true);
+  assert.equal(uninstalled.change?.kind, 'reinstall');
+  assert.equal(uninstalled.installed?.uninstalled, true);
+  assert.equal(uninstalled.blockedReason, null);
+  const uninstalling = await previewAppPackageV2(createMopkg(entries()), { platformVersion:'0.26.0', installAvailable:true,
+    findInstalled:async()=>({version:'1.0.0',permissions:[],platformAccess:[],uninstalling:true}) });
+  assert.equal(uninstalling.installable,false);
+  assert.match(uninstalling.blockedReason!,/卸载尚未完成/);
 
   const old = await previewAppPackageV2(createMopkg(entries()), { platformVersion: '0.25.0', findInstalled: none });
   assert.equal(old.platform.compatible, false);

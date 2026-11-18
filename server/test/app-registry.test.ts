@@ -151,3 +151,32 @@ test('PostgreSQL constraints reject malformed aggregate and registry migration i
     assert.equal(APP_REGISTRY_MIGRATIONS[0].layer,'L4');assert.deepEqual(APP_REGISTRY_MIGRATIONS[0].dataRows,[]);
   }finally{await db.close();}
 });
+
+for(const kind of ['memory','postgres'] as const) {
+ test(kind+': package reinstall is restricted to completed uninstalls and preserves identity',async()=>{
+  const s=await store(kind);
+  try{
+   const f=await setup(s.repository);
+   let record=await f.registry.register(f.admin,manifest());
+   const installationId=record.id;
+   await assert.rejects(f.registry.beginLifecycle(f.admin,record.appId,record.revision,'reinstall',manifest()),/LIFECYCLE_BLOCKED/);
+   record=await f.registry.beginLifecycle(f.admin,record.appId,record.revision,'uninstall');
+   await assert.rejects(f.registry.beginLifecycle(f.admin,record.appId,record.revision,'reinstall',manifest()),/LIFECYCLE_BLOCKED/);
+   record=await f.registry.settleLifecycle(f.admin,record.appId,record.revision,record.lifecycle!.operationId,'completed');
+   await assert.rejects(f.registry.beginLifecycle(f.admin,record.appId,record.revision,'enable'),/LIFECYCLE_BLOCKED/);
+   await assert.rejects(f.registry.beginLifecycle(f.admin,record.appId,record.revision,'reinstall',{...manifest(),version:'0.9.0'}),/INVALID_MANIFEST/);
+   await assert.rejects(f.registry.beginLifecycle(f.admin,record.appId,record.revision,'reinstall',{...manifest(),publisherId:'other'}),/IMMUTABLE_INSTALLATION/);
+   record=await f.registry.beginLifecycle(f.admin,record.appId,record.revision,'reinstall',manifest());
+   record=await f.registry.settleLifecycle(f.admin,record.appId,record.revision,record.lifecycle!.operationId,'completed');
+   assert.equal(record.id,installationId);
+   assert.equal(record.enabled,false);
+   assert.equal(record.serviceIdentityId,null);
+   assert.deepEqual(record.grants,[]);
+   assert.ok((await f.registry.listHistory(f.admin,record.appId)).some(item=>item.lifecycle?.action==='uninstall'));
+   record=(await f.registry.issueServiceCredential(f.admin,record.appId,record.revision)).installation;
+   record=await f.registry.beginLifecycle(f.admin,record.appId,record.revision,'enable');
+   record=await f.registry.settleLifecycle(f.admin,record.appId,record.revision,record.lifecycle!.operationId,'completed');
+   assert.equal(record.enabled,true);
+  }finally{await s.close();}
+ });
+}

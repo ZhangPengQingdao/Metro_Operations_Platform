@@ -1,19 +1,19 @@
 import { appPermissionCode, compareAppVersions, satisfiesPlatformRange, type AppManifestIssueV2, type AppManifestV2 } from '@metro/platform-sdk/manifest';
 import { inspectMopkg } from '@metro/platform-sdk/mopkg';
-import type { AppInstallation } from '../registry/index.js';
+import {isAppUninstalled, type AppInstallation} from '../registry/index.js';
 import { compileAppMigration } from './declarative-migration.js';
 
 export const MOPKG_INSTALL_BLOCKED_REASON = '安装应用需要在平台配置中启用应用管理（MOP_APP_MANAGEMENT_CONFIG）。';
 
 function installability(hasIssues: boolean, installed: InstalledAppSummary | null, change: AppPackageV2Preview['change'], available: boolean): Pick<AppPackageV2Preview, 'installable' | 'blockedReason'> {
   if (hasIssues || !change || change.kind === 'downgrade') return { installable: false, blockedReason: null };
-  if (installed?.uninstalled) return { installable: false, blockedReason: '此应用已卸载，保留的数据和历史记录不能通过上传安装包覆盖。' };
+  if (installed?.uninstalling) return { installable: false, blockedReason: '卸载尚未完成，请先核对并完成卸载后再重新安装。' };
   if (!available) return { installable: false, blockedReason: MOPKG_INSTALL_BLOCKED_REASON };
   return { installable: true, blockedReason: null };
 }
 const PREVIEW_SCHEMA = `app_${'0'.repeat(32)}`;
 
-export interface InstalledAppSummary { version: string; permissions: string[]; platformAccess: string[]; enabled?: boolean; uninstalled?: boolean }
+export interface InstalledAppSummary { version: string; permissions: string[]; platformAccess: string[]; enabled?: boolean; uninstalled?: boolean; uninstalling?: boolean }
 export interface AppPackageV2Preview {
   format: 'mopkg';
   sha256: string;
@@ -26,7 +26,7 @@ export interface AppPackageV2Preview {
   migrations: { id: string; file: string; bytes: number; sha256: string; statements: number }[];
   issues: AppManifestIssueV2[];
   platform: { version: string; compatible: boolean };
-  installed: { version: string; enabled?: boolean } | null;
+  installed: { version: string; enabled?: boolean; uninstalled?: boolean } | null;
   change: { kind: 'install' | 'upgrade' | 'reinstall' | 'downgrade'; addedPermissions: string[]; removedPermissions: string[]; addedPlatformAccess: string[] } | null;
   installable: boolean;
   /** Why installation is unavailable when the package itself is valid; null when installable or when `issues` explain it. */
@@ -36,9 +36,10 @@ export interface AppPackageV2Preview {
 /** Permission and platform-access view of an installation, for upgrade comparison. */
 export function summarizeInstallation(record: AppInstallation): InstalledAppSummary {
   const manifest = record.runtime?.manifest;
-  const uninstalled = record.lifecycle?.action === 'uninstall' && record.lifecycle.status === 'completed';
-  if (!manifest) return { version: record.manifest.version, permissions: [], platformAccess: [], enabled: record.enabled, uninstalled };
-  return { version: manifest.version, permissions: manifest.permissions.map(permission => appPermissionCode(manifest.id, permission.code)), platformAccess: [...manifest.platformAccess], enabled: record.enabled, uninstalled };
+  const uninstalled = isAppUninstalled(record);
+  const uninstalling = record.lifecycle?.action === 'uninstall' && ['running','failed'].includes(record.lifecycle.status);
+  if (!manifest) return { version: record.manifest.version, permissions: [], platformAccess: [], enabled: record.enabled, uninstalled, uninstalling };
+  return { version: manifest.version, permissions: manifest.permissions.map(permission => appPermissionCode(manifest.id, permission.code)), platformAccess: [...manifest.platformAccess], enabled: record.enabled, uninstalled, uninstalling };
 }
 
 /** Read-only: parses and validates the package, nothing is written or installed. */
@@ -62,7 +63,7 @@ export async function previewAppPackageV2(bytes: Uint8Array, options: { platform
     const previous = installedSummary?.permissions ?? [];
     const order = installedSummary ? compareAppVersions(manifest.version, installedSummary.version) : 1;
     change = {
-      kind: !installedSummary ? 'install' : order > 0 ? 'upgrade' : order === 0 ? 'reinstall' : 'downgrade',
+      kind: !installedSummary ? 'install' : installedSummary.uninstalled && order >= 0 ? 'reinstall' : order > 0 ? 'upgrade' : order === 0 ? 'reinstall' : 'downgrade',
       addedPermissions: next.filter(code => !previous.includes(code)),
       removedPermissions: previous.filter(code => !next.includes(code)),
       addedPlatformAccess: manifest.platformAccess.filter(code => !(installedSummary?.platformAccess ?? []).includes(code)),
@@ -74,7 +75,7 @@ export async function previewAppPackageV2(bytes: Uint8Array, options: { platform
     icon: inspection.icon ? { contentType: inspection.icon.contentType, dataUrl: `data:${inspection.icon.contentType};base64,${inspection.icon.data.toString('base64')}` } : null,
     readme: inspection.readme, changelog: inspection.changelog, files: inspection.files, migrations, issues,
     platform: { version: options.platformVersion, compatible },
-    installed: installedSummary ? { version: installedSummary.version, ...(installedSummary.enabled !== undefined ? { enabled: installedSummary.enabled } : {}) } : null,
+    installed: installedSummary ? { version: installedSummary.version, ...(installedSummary.uninstalled ? {uninstalled:true} : {}), ...(installedSummary.enabled !== undefined ? { enabled: installedSummary.enabled } : {}) } : null,
     change, ...installability(issues.length > 0, installedSummary, change, options.installAvailable === true),
   };
 }

@@ -1,3 +1,4 @@
+import {isAppUninstalled, type AppInstallation} from '../registry/index.js';
 import {expectedOrigin} from '../../core/http/index.js';
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
@@ -21,9 +22,9 @@ export function registerAppSubmissionRoutes(app:FastifyInstance,options:{pool:Co
  async function native(req:FastifyRequest){const context=await options.resolveAdmin(req);if(!(await context.authorize('platform.authorization.manage',{})).allowed)fail('ADMIN_ACCESS_DENIED');return context;}
  const management=()=>options.management??fail('APP_MANAGEMENT_UNAVAILABLE',503);
  async function current(db:QueryableClient,person:string,appId:string,kind:string){
-  const [installed]=await rows<{id:string;record:{revision:number}}>(db,'SELECT id,record FROM platform_app_installations WHERE app_id=$1',[appId]);
-  if(kind==='new'){if(installed)fail('APP_ALREADY_INSTALLED',409);return null;}
-  if(!installed)fail('APP_NOT_FOUND',404);
+  const [installed]=await rows<{id:string;record:Pick<AppInstallation,'revision'|'lifecycle'>}>(db,'SELECT id,record FROM platform_app_installations WHERE app_id=$1',[appId]);
+  if(kind==='new'){if(installed && !isAppUninstalled(installed.record))fail('APP_ALREADY_INSTALLED',409);return installed?.record.revision??null;}
+  if(!installed || isAppUninstalled(installed.record))fail('APP_NOT_FOUND',404);
   if(!(await rows(db,'SELECT installation_id FROM platform_app_authorization WHERE installation_id=$1 AND owner_person_id=$2',[installed.id,person])).length)fail('APP_OWNER_REQUIRED');
   return installed.record.revision;
  }
